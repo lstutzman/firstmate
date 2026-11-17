@@ -42,8 +42,8 @@ Read that fact before presenting the remaining choice, rather than asking whethe
 The script's help owns policy registration, supported events, and retry mechanics.
 
 
-Never close anything the captain owns without recording what he actually said: `bin/fm-captain-hold.sh answer` writes his exact words into the task and closes a question-shaped call, while `--release` frees a captain-gated work item to proceed.
-A phased plan files every remaining phase, the go-live step included, as an open backlog item before release: `--release` refuses without `--phases-filed <id>[,<id>...]` or, for a plan with no phases, `--no-phases`.
+When recording a captain answer, preserve what he actually said: `bin/fm-captain-hold.sh answer` writes his exact words into the task and closes a question-shaped call, while `--release` frees a captain-gated work item to proceed.
+A phased plan files every remaining phase, the go-live step included, as an open backlog item before release: `--release` and a `pr-policy ... release` declaration each refuse without `--phases-filed <id>[,<id>...]` or, for a plan with no phases, `--no-phases`, and a forge release re-checks those phases before it frees the work.
 A merge approval uses that existing release path because approval permits the merge to proceed; cleanup closes the work only after it lands and records what shipped.
 Closing a held row at merge approval instead records completion before landing, so the backlog claims completion before the work actually ships.
 When the answer changes what a task must build, follow `AGENTS.md` section 7's mid-task ask rule to preserve the captain's words in the brief and steer the worker.

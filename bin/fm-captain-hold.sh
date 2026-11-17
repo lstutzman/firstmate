@@ -27,7 +27,7 @@
 #   fm-captain-hold.sh answer <task-id> --decision-file <path|-> [--release (--phases-filed <id>[,<id>...] | --no-phases)]   (- reads stdin)
 #   fm-captain-hold.sh answer <task-id> --deadline-default
 #   fm-captain-hold.sh defaults-due
-#   fm-captain-hold.sh pr-policy <task-id> <PR-url> <merged|closed|terminal> <close|release>
+#   fm-captain-hold.sh pr-policy <task-id> <PR-url> <merged|closed|terminal> (close | release (--phases-filed <id>[,<id>...] | --no-phases))
 #   fm-captain-hold.sh settle-pr <task-id> <PR-url>
 #   fm-captain-hold.sh answers [<legacy-origin> | --any-origin] --source <provenance>   (keyed answers on stdin)
 #   fm-captain-hold.sh reconcile-requests --source-id <source-id> --source <provenance>   (task ids on stdin)
@@ -268,10 +268,13 @@
 # With config/hold-pr-settle present, pr-policy declares which forge events
 # answer this particular hold. It adds the structured PR link and atomically
 # records data/<task>/hold-pr-policy.json: schema fm-hold-pr.v1, task, url, on,
-# action, fingerprint (SHA-256 of the shown reason, title without its structured
-# links, hold-set timestamp and resolution count), occurrence.
+# action, phases, fingerprint (SHA-256 of the shown reason, title without its
+# structured links, hold-set timestamp and resolution count), occurrence.
 # `close` asserts the task contains only the decision; `release` preserves
-# unfinished work. `terminal` accepts either merge or unmerged closure.
+# unfinished work and, like `answer --release`, takes exactly one of
+# `--phases-filed <id>[,<id>...]` or `--no-phases` (phases is the id list,
+# "none", or null for `close`). settle-pr checks every named phase is still an
+# open backlog item and writes the same `Phases:` line before releasing. `terminal` accepts either merge or unmerged closure.
 # No policy is inferred from links or prose. Re-holding invalidates the policy,
 # and editing the reason or title makes it stale; linking another PR does not.
 # A policy that can no longer settle is removed: silently once the task is done
@@ -2266,17 +2269,36 @@ $(resolution_record_count "$(show_field "$1" body)")"
 }
 
 command_pr_policy() {
-  local id=${1:-} url=${2:-} event=${3:-} action=${4:-} show dir tmp occurrence fingerprint
-  [ "$#" -eq 4 ] || { usage >&2; exit 2; }
+  local id=${1:-} url=${2:-} event=${3:-} action=${4:-} phases='' no_phases=0 show dir tmp occurrence fingerprint
+  [ "$#" -ge 4 ] || { usage >&2; exit 2; }
+  shift 4
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --phases-filed) shift; phases=${1:-}; [ -n "$phases" ] || fail "--phases-filed needs at least one backlog item id" ;;
+      --no-phases) no_phases=1 ;;
+      *) usage >&2; exit 2 ;;
+    esac
+    shift
+  done
   [ -f "$CONFIG/hold-pr-settle" ] || fail 'config/hold-pr-settle is required'
   validate_slug task-id "$id"
   jq -ne --arg url "$url" '$url | test("^https://github[.]com/[A-Za-z0-9-]+/[A-Za-z0-9._-]+/pull/[1-9][0-9]*$")' >/dev/null \
     || fail 'pr-policy requires a canonical github.com PR URL'
   case "$event" in merged|closed|terminal) ;; *) fail 'event must be merged, closed, or terminal' ;; esac
   case "$action" in close|release) ;; *) fail 'action must be close or release' ;; esac
+  if [ "$action" = release ]; then
+    { [ -n "$phases" ] && [ "$no_phases" = 1 ]; } \
+      && fail "release takes --phases-filed or --no-phases, not both"
+    [ -n "$phases" ] || [ "$no_phases" = 1 ] \
+      || fail "a release policy needs --phases-filed <id>[,<id>...] naming a filed open backlog item for every remaining phase of the approved plan (the go-live step included), or --no-phases when the plan has none"
+    [ "$no_phases" = 0 ] || phases=none
+  else
+    [ -z "$phases" ] && [ "$no_phases" = 0 ] || fail "--phases-filed and --no-phases belong to a release policy"
+  fi
   acquire_task_control_lock "$id"
   require_tasks_axi
   command_open "$id" || fail "task $id is not an open captain hold"
+  [ -z "$phases" ] || [ "$phases" = none ] || verify_phases_filed "$id" "$phases"
   tasks_axi update "$id" --pr "$url" >/dev/null || fail "could not link the PR on $id"
   task_show_or_fail "$id" "task $id disappeared while declaring its PR policy"
   fingerprint=$(pr_hold_fingerprint "$show")
@@ -2287,15 +2309,15 @@ command_pr_policy() {
   [ ! -L "$dir/hold-pr-policy.json" ] || fail 'PR policy is a symlink'
   [ ! -e "$dir/hold-pr-policy.json" ] || [ -f "$dir/hold-pr-policy.json" ] || fail 'PR policy is not a regular file'
   tmp=$(umask 077; mktemp "$dir/.hold-pr-policy.XXXXXX")
-  jq -n --arg task "$id" --arg url "$url" --arg on "$event" --arg action "$action" \
+  jq -n --arg task "$id" --arg url "$url" --arg on "$event" --arg action "$action" --arg phases "$phases" \
     --arg fingerprint "$fingerprint" --argjson occurrence "$occurrence" \
-    '{schema:"fm-hold-pr.v1",task:$task,url:$url,on:$on,action:$action,fingerprint:$fingerprint,occurrence:$occurrence}' > "$tmp"
+    '{schema:"fm-hold-pr.v1",task:$task,url:$url,on:$on,action:$action,phases:(if $phases == "" then null else $phases end),fingerprint:$fingerprint,occurrence:$occurrence}' > "$tmp"
   mv -f -- "$tmp" "$dir/hold-pr-policy.json"
   printf 'pr-policy: %s %s %s %s\n' "$id" "$url" "$event" "$action"
 }
 
 command_settle_pr() {
-  local id=${1:-} url=${2:-} policy record show body event action mode occurrence observed fingerprint evidence
+  local id=${1:-} url=${2:-} policy record show body event action phases mode occurrence observed fingerprint evidence
   [ "$#" -eq 2 ] || { usage >&2; exit 2; }
   [ -f "$CONFIG/hold-pr-settle" ] || return 0
   validate_slug task-id "$id"
@@ -2309,7 +2331,8 @@ command_settle_pr() {
   [ -f "$policy" ] || return 0
   [ ! -L "$DATA/$id" ] && [ ! -L "$policy" ] || fail 'unsafe PR policy path'
   jq -e --arg task "$id" '.schema == "fm-hold-pr.v1" and .task == $task
-    and (.on | IN("merged","closed","terminal")) and (.action | IN("close","release"))
+    and (.on | IN("merged","closed","terminal"))
+    and ((.action == "close" and .phases == null) or (.action == "release" and (.phases | type == "string" and length > 0)))
     and (.fingerprint | test("^[a-f0-9]{64}$"))
     and (.occurrence | type == "number" and . > 0 and floor == .)' "$policy" >/dev/null \
     || fail "invalid PR settlement policy for $id"
@@ -2356,6 +2379,13 @@ Settlement policy: $(jq -r .on "$policy") -> $action"
     if [ "$(pr_hold_fingerprint "$show")" != "$fingerprint" ]; then
       rm -f -- "$policy"
       fail "dropped the PR policy for $id: its question changed after the policy was declared; the hold stays open"
+    fi
+    if [ "$action" = release ]; then
+      phases=$(jq -r .phases "$policy")
+      if [ "$phases" = none ]; then PHASES_RECORD=none; else
+        verify_phases_filed "$id" "$phases"
+        PHASES_RECORD="filed $phases"
+      fi
     fi
     write_resolution_record "$id" "$mode" "$body"
   fi

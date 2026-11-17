@@ -2248,7 +2248,7 @@ test_forge_settles_only_declared_holds() {
       id="question-$action"
       with_home "$home" "$ROOT/bin/fm-tasks-axi.sh" add "$id" 'Decide this PR' --pr https://github.com/o/r/pull/8 >/dev/null || fail 'add failed'
       with_home "$home" "$ROOT/bin/fm-captain-hold.sh" hold "$id" --reason 'Decide this PR' >/dev/null || fail 'hold failed'
-      with_home "$home" "$ROOT/bin/fm-captain-hold.sh" pr-policy "$id" https://github.com/o/r/pull/8 terminal "$action" >/dev/null || fail 'policy failed'
+      with_home "$home" "$ROOT/bin/fm-captain-hold.sh" pr-policy "$id" https://github.com/o/r/pull/8 terminal "$action" $([ "$action" = release ] && printf -- --no-phases) >/dev/null || fail 'policy failed'
     done
     with_home "$home" "$ROOT/bin/fm-captain-hold.sh" hold delivery --reason 'Unrelated unfinished work' >/dev/null || fail 'unrelated hold failed'
     with_home "$home" "$ROOT/bin/fm-tasks-axi.sh" add bystander 'Work without a captain hold' --pr https://github.com/o/r/pull/8 >/dev/null || fail 'bystander add failed'
@@ -2373,7 +2373,7 @@ test_forge_release_waits_for_an_attended_session() {
   forge_home "$home"
   touch "$home/config/hold-pr-settle"
   with_home "$home" "$ROOT/bin/fm-captain-hold.sh" hold delivery --reason 'Merge this PR?' >/dev/null || fail 'hold failed'
-  with_home "$home" "$ROOT/bin/fm-captain-hold.sh" pr-policy delivery https://github.com/o/r/pull/8 merged release >/dev/null || fail 'policy failed'
+  with_home "$home" "$ROOT/bin/fm-captain-hold.sh" pr-policy delivery https://github.com/o/r/pull/8 merged release --no-phases >/dev/null || fail 'policy failed'
   with_home "$home" "$ROOT/bin/fm-afk-contract.sh" enter --words 'watch the fleet' >/dev/null || fail 'could not enter away posture'
   printf 'merged\n' > "$home/forge/state"
   out=$(with_home "$home" "$ROOT/bin/fm-contributions.sh" poll) || fail 'away poll failed'
@@ -2383,6 +2383,50 @@ test_forge_release_waits_for_an_attended_session() {
   with_home "$home" "$ROOT/bin/fm-contributions.sh" poll >/dev/null || fail 'attended poll failed'
   if with_home "$home" "$ROOT/bin/fm-captain-hold.sh" open delivery; then fail 'the hold stayed after the captain returned'; fi
   pass 'a declared release waits while the home is away and applies on the next attended poll'
+}
+
+test_forge_release_names_its_filed_phases() {
+  local home id out body pr=https://github.com/o/r/pull/8
+  home=$(new_home hold-release-phases)
+  forge_home "$home"
+  rm "$home/state/delivery.meta"
+  touch "$home/config/hold-pr-settle"
+  for id in q-none q-filed q-stale; do
+    with_home "$home" "$ROOT/bin/fm-tasks-axi.sh" add "$id" 'Approve this phased plan' --pr "$pr" >/dev/null || fail 'add failed'
+    with_home "$home" "$ROOT/bin/fm-captain-hold.sh" hold "$id" --reason 'Approve this phased plan' >/dev/null || fail 'hold failed'
+  done
+  for id in live-a live-b; do
+    with_home "$home" "$ROOT/bin/fm-tasks-axi.sh" add "$id" 'Go-live phase' >/dev/null || fail 'phase add failed'
+  done
+  if with_home "$home" "$ROOT/bin/fm-captain-hold.sh" pr-policy q-none "$pr" merged release >/dev/null 2>&1; then
+    fail 'a release policy without phases was accepted'
+  fi
+  if with_home "$home" "$ROOT/bin/fm-captain-hold.sh" pr-policy q-none "$pr" merged release --no-phases --phases-filed live-a >/dev/null 2>&1; then
+    fail 'a release policy naming both phase forms was accepted'
+  fi
+  if with_home "$home" "$ROOT/bin/fm-captain-hold.sh" pr-policy q-none "$pr" merged close --no-phases >/dev/null 2>&1; then
+    fail 'a close policy accepted a phase argument'
+  fi
+  if with_home "$home" "$ROOT/bin/fm-captain-hold.sh" pr-policy q-none "$pr" merged release --phases-filed missing-phase >/dev/null 2>&1; then
+    fail 'a release policy naming an unfiled phase was accepted'
+  fi
+  [ ! -e "$home/data/q-none/hold-pr-policy.json" ] || fail 'a refused declaration left a policy behind'
+  with_home "$home" "$ROOT/bin/fm-captain-hold.sh" pr-policy q-none "$pr" merged release --no-phases >/dev/null || fail 'no-phases policy failed'
+  with_home "$home" "$ROOT/bin/fm-captain-hold.sh" pr-policy q-filed "$pr" merged release --phases-filed live-a >/dev/null || fail 'filed-phase policy failed'
+  with_home "$home" "$ROOT/bin/fm-captain-hold.sh" pr-policy q-stale "$pr" merged release --phases-filed live-b >/dev/null || fail 'stale-phase policy failed'
+  with_home "$home" "$ROOT/bin/fm-tasks-axi.sh" done live-b >/dev/null || fail 'could not finish live-b'
+  printf 'merged\n' > "$home/forge/state"
+  out=$(with_home "$home" "$ROOT/bin/fm-contributions.sh" poll) || fail 'merged poll failed'
+  for id in q-none q-filed; do
+    if with_home "$home" "$ROOT/bin/fm-captain-hold.sh" open "$id"; then fail "$id stayed held after its PR merged"; fi
+  done
+  body=$(with_home "$home" "$ROOT/bin/fm-tasks-axi.sh" show q-none --full)
+  case "$body" in *'Phases: none'*) ;; *) fail "the no-phases release recorded no Phases line: $body" ;; esac
+  body=$(with_home "$home" "$ROOT/bin/fm-tasks-axi.sh" show q-filed --full)
+  case "$body" in *'Phases: filed live-a'*) ;; *) fail "the filed-phase release did not record its phase: $body" ;; esac
+  with_home "$home" "$ROOT/bin/fm-captain-hold.sh" open q-stale || fail 'a release whose phase was already Done freed the work'
+  case "$out" in *'PR hold settlement failed for q-stale'*'live-b'*) ;; *) fail "the refused release gave no diagnostic: $out" ;; esac
+  pass 'a forge release names its filed phases and refuses when a named phase is no longer open'
 }
 
 hold_lock() { # home lock: hold the lock until $home/release exists; sets HOLDER_PID
@@ -2406,7 +2450,7 @@ test_forge_release_waits_for_the_away_record_lock() {
   forge_home "$home"
   touch "$home/config/hold-pr-settle"
   with_home "$home" "$ROOT/bin/fm-captain-hold.sh" hold delivery --reason 'Merge this PR?' >/dev/null || fail 'hold failed'
-  with_home "$home" "$ROOT/bin/fm-captain-hold.sh" pr-policy delivery https://github.com/o/r/pull/8 merged release >/dev/null || fail 'policy failed'
+  with_home "$home" "$ROOT/bin/fm-captain-hold.sh" pr-policy delivery https://github.com/o/r/pull/8 merged release --no-phases >/dev/null || fail 'policy failed'
   # An away entry in progress holds this lock before its record exists.
   hold_lock "$home" "$home/state/.afk-contract.lock"
   holder_pid=$HOLDER_PID
@@ -2530,7 +2574,7 @@ test_settled_task_gets_no_closed_event_for_its_other_pr() {
 }
 
 failures=0
-for test_name in test_forge_settlement_defers_while_the_task_is_busy test_settled_task_gets_no_closed_event_for_its_other_pr test_forge_release_waits_for_an_attended_session test_forge_release_waits_for_the_away_record_lock test_forge_policy_survives_a_follow_up_pr_link test_closed_pr_is_reported_only_to_open_captain_holds test_late_linked_hold_gets_its_own_closed_event_once test_forge_hold_settlement_retry test_forge_hold_settlement_rejects_uncertain_evidence test_forge_settles_only_declared_holds test_forge_hold_policy_guards test_actor_coverage test_stale_verdict test_unchecked_is_not_silence test_newest_check_has_no_verdict test_comment_wake test_review_wake test_inline_wake test_review_bot_inline_wake test_review_bot_watching_is_opt_in test_review_bot_allowlist_is_configurable test_ready_issue_wake test_fresh_issue_requires_maintainer test_missing_lane_remains_missing test_partial_freshness_keeps_measured_rows test_malformed_record_cannot_prove_silence test_issue_timeline_and_exact_ack test_verdict_retains_judged_head test_verdict_actor_values_are_discoverable test_observed_replacement_refreshes_verdict test_unobserved_head_leaves_verdict_unknown test_away_yolo_is_fleet_work test_away_yolo_cross_home_is_fleet_work test_retired_and_unsupported_coverage test_unsupported_forge_is_not_fleet_work test_held_unsupported_forge_is_not_captain_work test_unsupported_poll_is_silent_and_clears_legacy_errors test_legacy_cleanup_preserves_supported_failure test_shared_contribution_signal_wakes_once test_watcher_keeps_diagnostics_separate_from_contribution_wakes test_expired_child_unsupported_forge_stays_unmeasured test_watcher_surfaces_new_contribution_once test_home_summary_coverage test_unreadable_pending_is_not_empty test_record_task_identity_matches_dirname_basename test_read_only_views_create_no_state test_budget_refusal_between_calls test_budget_bounded_call_timeout test_genuine_failure_near_deadline_is_unavailable test_http_500_once_retries_without_waking test_http_500_twice_records_the_failed_read test_http_404_is_not_retried test_real_gh_errors_drive_retry_and_summary test_next_url_does_not_inherit_a_forge_diagnostic test_shared_url_observed_once test_terminal_contribution_settles test_late_owner_inherits_terminal_observation test_interrupted_multi_owner_poll_settles_every_owner test_done_task_open_pr_still_observed test_many_settled_records_keep_the_poll_inside_the_check_bound test_many_settled_records_beside_a_malformed_one_keep_the_poll_inside_the_check_bound test_record_without_trailing_newline_does_not_join_its_neighbour test_records_beyond_one_read_batch_are_all_read test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain test_three_second_pr_reads_complete_fresh_in_one_cycle test_slow_read_deadline_kill_is_budget_refusal test_unmeasured_url_does_not_starve_the_tail test_budget_is_cut_down_to_the_watcher_check_bound test_arm_plumbs_a_configured_budget_into_the_check_shim test_unavailable_forge_records_error_and_wakes_once_per_episode test_late_owner_keeps_failure_episode_suppressed test_retire_ends_observation_of_a_gone_contribution test_late_owner_of_a_retired_final_contribution_is_not_retired test_retire_is_idempotent_and_refuses_unknown_pairs test_unanswered_thread_is_raised_again_under_hold test_resolved_thread_is_answered test_reply_rules test_reply_age_is_configurable_and_validated test_closed_pull_request_drops_its_threads test_unanswered_reraise_is_off_unless_configured test_arm_plumbs_the_reply_age_into_the_check_shim test_many_reviews_stay_readable test_author_human_comment_is_kept test_author_automated_writes_are_dropped test_comment_routes_to_owning_task_inbox test_comment_without_owner_wakes_firstmate_only test_author_review_routes_to_owning_task_inbox test_parked_owner_is_not_routed test_secondmate_owner_is_not_routed test_review_bot_signal_is_not_routed test_unanswered_reraise_is_not_routed test_author_thread_is_never_tracked; do
+for test_name in test_forge_settlement_defers_while_the_task_is_busy test_settled_task_gets_no_closed_event_for_its_other_pr test_forge_release_waits_for_an_attended_session test_forge_release_names_its_filed_phases test_forge_release_waits_for_the_away_record_lock test_forge_policy_survives_a_follow_up_pr_link test_closed_pr_is_reported_only_to_open_captain_holds test_late_linked_hold_gets_its_own_closed_event_once test_forge_hold_settlement_retry test_forge_hold_settlement_rejects_uncertain_evidence test_forge_settles_only_declared_holds test_forge_hold_policy_guards test_actor_coverage test_stale_verdict test_unchecked_is_not_silence test_newest_check_has_no_verdict test_comment_wake test_review_wake test_inline_wake test_review_bot_inline_wake test_review_bot_watching_is_opt_in test_review_bot_allowlist_is_configurable test_ready_issue_wake test_fresh_issue_requires_maintainer test_missing_lane_remains_missing test_partial_freshness_keeps_measured_rows test_malformed_record_cannot_prove_silence test_issue_timeline_and_exact_ack test_verdict_retains_judged_head test_verdict_actor_values_are_discoverable test_observed_replacement_refreshes_verdict test_unobserved_head_leaves_verdict_unknown test_away_yolo_is_fleet_work test_away_yolo_cross_home_is_fleet_work test_retired_and_unsupported_coverage test_unsupported_forge_is_not_fleet_work test_held_unsupported_forge_is_not_captain_work test_unsupported_poll_is_silent_and_clears_legacy_errors test_legacy_cleanup_preserves_supported_failure test_shared_contribution_signal_wakes_once test_watcher_keeps_diagnostics_separate_from_contribution_wakes test_expired_child_unsupported_forge_stays_unmeasured test_watcher_surfaces_new_contribution_once test_home_summary_coverage test_unreadable_pending_is_not_empty test_record_task_identity_matches_dirname_basename test_read_only_views_create_no_state test_budget_refusal_between_calls test_budget_bounded_call_timeout test_genuine_failure_near_deadline_is_unavailable test_http_500_once_retries_without_waking test_http_500_twice_records_the_failed_read test_http_404_is_not_retried test_real_gh_errors_drive_retry_and_summary test_next_url_does_not_inherit_a_forge_diagnostic test_shared_url_observed_once test_terminal_contribution_settles test_late_owner_inherits_terminal_observation test_interrupted_multi_owner_poll_settles_every_owner test_done_task_open_pr_still_observed test_many_settled_records_keep_the_poll_inside_the_check_bound test_many_settled_records_beside_a_malformed_one_keep_the_poll_inside_the_check_bound test_record_without_trailing_newline_does_not_join_its_neighbour test_records_beyond_one_read_batch_are_all_read test_reservation_defers_later_url_when_fifteen_seconds_do_not_remain test_three_second_pr_reads_complete_fresh_in_one_cycle test_slow_read_deadline_kill_is_budget_refusal test_unmeasured_url_does_not_starve_the_tail test_budget_is_cut_down_to_the_watcher_check_bound test_arm_plumbs_a_configured_budget_into_the_check_shim test_unavailable_forge_records_error_and_wakes_once_per_episode test_late_owner_keeps_failure_episode_suppressed test_retire_ends_observation_of_a_gone_contribution test_late_owner_of_a_retired_final_contribution_is_not_retired test_retire_is_idempotent_and_refuses_unknown_pairs test_unanswered_thread_is_raised_again_under_hold test_resolved_thread_is_answered test_reply_rules test_reply_age_is_configurable_and_validated test_closed_pull_request_drops_its_threads test_unanswered_reraise_is_off_unless_configured test_arm_plumbs_the_reply_age_into_the_check_shim test_many_reviews_stay_readable test_author_human_comment_is_kept test_author_automated_writes_are_dropped test_comment_routes_to_owning_task_inbox test_comment_without_owner_wakes_firstmate_only test_author_review_routes_to_owning_task_inbox test_parked_owner_is_not_routed test_secondmate_owner_is_not_routed test_review_bot_signal_is_not_routed test_unanswered_reraise_is_not_routed test_author_thread_is_never_tracked; do
   ( "$test_name" ) || failures=$((failures + 1))
 done
 [ "$failures" -eq 0 ] || fail "$failures contribution regressions"

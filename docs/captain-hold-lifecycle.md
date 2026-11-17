@@ -358,6 +358,7 @@ The observer invokes settlement for both fresh and retained terminal observation
 It records evidence before applying the declared task transition, under the task's control lock.
 A retry uses that evidence to finish an interrupted transition without writing a second resolution.
 The existing parent channel receives the resolution before the declaration is retired.
+A `release` declaration names its phases exactly as `answer --release` does, with `--phases-filed <id>[,<id>...]` or `--no-phases`; settlement refuses while a named phase is missing or Done, and the release record carries the same `Phases:` line.
 A `release` declaration follows the attended-only rule of [Answering a call](#answering-a-call-answer): while the home is away or the away-posture record is locked the hold stays unchanged, and a later poll applies the declaration after the captain returns.
 When another command holds the task, for example a captain answer in progress, settlement leaves the declaration unchanged and a later poll applies it.
 Linking a follow-up PR to the held task keeps its declaration valid.
