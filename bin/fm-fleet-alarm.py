@@ -35,7 +35,7 @@ resolves when the condition clears.
 A secondmate whose own latest line is `working`, or `paused` with no `until` time, younger than
 working_ceiling_multiple (6) times silent_minutes, or `paused` with an `until` time less than
 silent_minutes past, while it holds work (in flight, an active child or a parked child), has asked main
-nothing open (a `[handoff=<home>]` merge handoff is not a question to main), and has no status-source ask (one on a task it also holds as a captain-hold row
+nothing open (a `needs-decision [key=merge-handoff-<n>]` whose text starts `[handoff=<home>]` is not a question to main), and has no status-source ask (one on a task it also holds as a captain-hold row
 does not count) and a complete decision list, is working a long task and
 is not silent either. A `paused [cause=external]` line with no `until` time is a declared wait
 that counts instead while younger than external_wait_ceiling_hours (24), then alarms again; only an
@@ -385,7 +385,7 @@ while IFS= read -r line || [ -n "$line" ]; do
       cause=$(status_line_cause "$line")
       folded=$(status_open_decisions "$window" secondmate)
       # An external merge handoff ([handoff=<home>]) waits on another home, not on the captain or the mate going quiet, so it is not an unanswered decision here.
-      open=$(printf '%s\n' "$folded" | LC_ALL=C awk -F '\t' '($2 == "needs-decision" || $2 == "blocked") && $3 !~ /^\[handoff=/' | LC_ALL=C wc -l | tr -d ' ')
+      open=$(printf '%s\n' "$folded" | LC_ALL=C awk -F '\t' '($2 == "needs-decision" || $2 == "blocked") && !($2 == "needs-decision" && $1 ~ /^merge-handoff-/ && $3 ~ /^\[handoff=/)' | LC_ALL=C wc -l | tr -d ' ')
       asks=$(printf '%s\n' "$folded" | LC_ALL=C awk -F '\t' '$2 == "needs-decision" { printf "%s%s", sep, $1; sep = " " }')
       printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$SECONDMATE_REGISTRY_HOST" "$SECONDMATE_REGISTRY_HOME" "$age" "$open" "$verb" "$until" "$asks" "$cause" "$state_age"
       ;;

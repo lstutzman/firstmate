@@ -491,6 +491,22 @@ mate 1 0 7200
 assert_contains "$(run_alarm check)" 'holding work silent' 'the same pause past its until plus the silence window alarms despite the handoff'
 mate 0 0 0
 run_alarm check >/dev/null
+mate 1 0 7200
+{
+  printf 'blocked [at=%s] [key=merge-handoff-5948]: [handoff=slarti] cannot reach the merger\n' "$((now - 9000))"
+  printf 'paused [at=%s] [cause=external]: waiting on merge until %s\n' "$((now - 7200))" "$(date -u -d "@$((now + 3000))" +%Y-%m-%dT%H:%MZ)"
+} > "$HOME_FIX/state/mate.status"
+assert_contains "$(run_alarm check)" 'holding work silent' 'a blocked line whose text starts with [handoff= still blocks the paused exemption'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 1 0 7200
+{
+  printf 'needs-decision [at=%s] [key=pick-one]: [handoff=slarti] which option\n' "$((now - 9000))"
+  printf 'paused [at=%s] [cause=external]: waiting on merge until %s\n' "$((now - 7200))" "$(date -u -d "@$((now + 3000))" +%Y-%m-%dT%H:%MZ)"
+} > "$HOME_FIX/state/mate.status"
+assert_contains "$(run_alarm check)" 'holding work silent' 'a [handoff= needs-decision under any other key still blocks the paused exemption'
+mate 0 0 0
+run_alarm check >/dev/null
 now=$(date +%s)
 # A real open captain decision with no pause still keeps the mate out of the working exemption.
 mate 1 0 7200
