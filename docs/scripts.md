@@ -182,7 +182,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-check-lib.sh`        | Validate custom-check registrations and prepare private execution snapshots          |
 | `fm-tool-update-check.sh` | Report watched tooling with an update available, and updates installed but left inert by PATH order |
 | `fm-watch-backstop.sh`   | Per-home timer check that rings a home's own session once per stale episode when supervision stays down with nothing in the session to re-arm it ([configuration](configuration/supervision.md#watcher-backstop-timer)) |
-| `fm-fleet-alarm.py`      | Opt-in custom check and independent timer that alarm on Claude weekly quota pressure and silent second mates holding work ([configuration](configuration/away-and-alarms.md#fleet-quota-and-secondmate-alarm-configfleet-alarmjson)) |
+| `fm-fleet-alarm.py`      | Opt-in custom check and independent timer that alarm on Claude weekly quota pressure, silent second mates holding work and orphaned build or test processes ([configuration](configuration/away-and-alarms.md#fleet-quota-and-secondmate-alarm-configfleet-alarmjson)) |
 | `fm-startup-growth-check.sh` | Daily metadata-only growth check for startup memory and tracked startup/instruction surfaces |
 | `fm-usage-warner.sh`     | Opt-in macOS threshold warner that notifies once when a configured Claude usage window crosses its percentage |
 | `fm-pr-lib.sh`           | Own canonical task and PR validation, the branch-to-PR lookup shared by teardown and the PR health monitor, plus private atomic PR-poll publication, merge-notification identity, and retirement |
@@ -207,7 +207,8 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-reserved-classify.sh` | Generic path-rule admission classifier: map changed paths to class words from a home-local `<glob> <class>` rules file ([configuration](configuration/projects-and-forges.md#path-rule-classifier-binfm-reserved-classifysh)) |
 | `fm-parent-channel-lib.sh` | Resolve a secondmate home's parent channel and append a captain-facing outcome line to it at most once |
 | `fm-promote.sh`          | Promote a scout task in place to a protected ship task with an explicit delivery mode, write the ship instructions carrying that mode's definition of done, and supersede the task's brief so a later relaunch cannot revive stale scout delivery text |
-| `fm-teardown.sh`         | Fail-closed teardown: return landed ship worktrees, require completed scout deliverables, retire secondmate homes |
+| `fm-teardown.sh`         | Fail-closed teardown: return landed ship worktrees, require completed scout deliverables, retire secondmate homes, and stop a worker's own leftover process family first |
+| `fm-proc-family.py`      | Capture a worker shell's session identity at spawn and stop that session's leftover processes (plus, on Linux, marker-carrying build or test processes) at teardown, never by name alone |
 | `fm-harness.sh`          | Detect the running harness, resolve crew or secondmate harness, model, and effort, and validate the native-only `ultra` effort |
 | `fm-lock.sh`             | Per-home firstmate session lock                                                      |
 | `fm-x-lib.sh`            | Shared Relay config, relay, and reply-threading helpers                              |
