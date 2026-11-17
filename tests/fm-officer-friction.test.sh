@@ -517,23 +517,30 @@ needs-decision [at=$T] [cause=policy] [key=prod-flag]: Turn rightmove-search-inb
 needs-decision [at=$T] [cause=policy] [key=copy-word]: Copy word for refer-a-friend at flag-on only
 needs-decision [at=$T] [cause=policy] [key=acrpull]: Optional cleanup: delete the redundant AcrPull assignments
 needs-decision [at=$T] [cause=decision] [key=drain-class]: For PC-5120, which do you want? 1. Launch it under the lee-research drain class; Lee's word on it
+needs-decision [at=$T] [cause=policy] [key=billing-pr]: the billing change needs Lee's word
+needs-decision [at=$T] [cause=policy] [key=rotate-key]: rotate the named Stripe API key; needs Lee's word
+needs-decision [at=$T] [cause=credential] [key=licence-cred]: needs Lee's word on the licence
 needs-decision [at=$T] [cause=policy] [key=routine-rename]: rename the helper script; needs Lee's word
 resolved [key=routine-rename] [at=$((T + 600))]: Lee said yes
+needs-decision [at=$T] [cause=policy] [key=restack-12]: outside my authority; needs Lee's word to restack PR 12
+needs-decision [at=$T] [cause=policy] [key=rename-helper]: needs Lee's word to rename the helper; nothing touches production
 EOF
   run_officer "$home" >/dev/null || fail "a run with reserved asks must succeed"
   json="$home/data/officers/friction/$DATE.json"
   md="$home/data/officers/friction/$DATE.md"
   vel="$home/data/officers/friction/$DATE.velocity-findings.json"
-  assert_equals "routine-rename" "$(finding "$json" policy approval '.evidence.status_keys | map(split("@")[0]) | join(",")')" \
-    "only the ask a standing yes could cover is counted as friction"
-  assert_equals 6 "$(finding "$json" policy approval '.reserved_to_lee')" "the finding shows how many asks the rules reserve to Lee"
-  assert_equals '{"destructive":1,"member-copy":1,"merge-class":2,"product-choice":1,"production":1}' \
+  # A bare keyword (authority) or a denied one ("nothing touches production") is no reserved subject: still friction.
+  assert_equals "rename-helper,restack-12,routine-rename" \
+    "$(finding "$json" policy approval '.evidence.status_keys | map(split("@")[0]) | sort | join(",")')" \
+    "only the asks a standing yes could cover are counted as friction"
+  assert_equals 9 "$(finding "$json" policy approval '.reserved_to_lee')" "the finding shows how many asks the rules reserve to Lee"
+  assert_equals '{"credential":2,"destructive":1,"member-copy":1,"merge-class":3,"product-choice":1,"production":1}' \
     "$(jq -c '.reserved_to_lee.by_class' "$json")" "each reserved ask is counted under its class: key, text or stated cause"
   assert_equals 0 "$(jq '[.events[] | select(.key == "admit-351-authority" or .key == "prod-flag")] | length' "$json")" \
     "a reserved ask is not among the friction events"
-  assert_grep "Reserved to Lee by the rules, not counted as friction: 6 event(s)" "$md" "the digest states the reserved total"
-  assert_grep "Reserved to Lee by the rules: 6 (not counted above" "$md" "the finding states its reserved count"
-  assert_contains "$(jq -r '[.bottlenecks[] | select(.id == "policy-approval")][0].evidence' "$vel")" "reserved to Lee by the rules: 6" \
+  assert_grep "Reserved to Lee by the rules, not counted as friction: 9 event(s)" "$md" "the digest states the reserved total"
+  assert_grep "Reserved to Lee by the rules: 9 (not counted above" "$md" "the finding states its reserved count"
+  assert_contains "$(jq -r '[.bottlenecks[] | select(.id == "policy-approval")][0].evidence' "$vel")" "reserved to Lee by the rules: 9" \
     "the card's evidence carries the reserved count, not a Start fix reason"
   # A day on which every approval ask is reserved leaves no finding to start, only the count.
   cat > "$home/state/task-rsv.status" <<EOF
@@ -1787,10 +1794,25 @@ test_fixed_reported_again_and_settled_states() {
   pass "fm-officer friction: fixed, reported-again and settled findings carry their link, merge, rule and actions"
 }
 
+write_recorded_fixes() {  # <file>: a fixes file in the documented schema; other-other's two newest fixes share a date
+  cat > "$1" <<'EOF'
+{"schema_version": 1, "fixes": {
+  "other-other": [
+    {"date": "2026-10-31", "link": "https://github.com/o/fm/commit/aaa1", "what": "workers state a cause"},
+    {"date": "2026-11-02", "link": "https://github.com/o/fm/commit/ccc3", "what": "captain steps state a cause"},
+    {"date": "2026-11-02", "link": "https://github.com/o/fm/commit/bbb2", "what": "cards state a cause"}],
+  "policy-approval": [
+    {"date": "2026-11-11", "link": "https://github.com/o/skills/pull/291", "what": "a named standing-yes list"},
+    {"date": "2026-11-02", "link": "https://github.com/o/skills/pull/94", "what": "standing yes for routine choices"}]}}
+EOF
+}
+
 test_a_recorded_fix_is_shown_and_never_restarted() {
-  local home json vel
+  local home json vel fixes out
   home="$TMP_ROOT/recordedfix/home"
+  fixes="$TMP_ROOT/recordedfix/fixes.json"
   mkdir -p "$home/state/inbox" "$home/data"
+  write_recorded_fixes "$fixes"
   # Lee tapped Start fix on 3 and 4 Nov and again on 13 Nov; no tap names a task or a pull request.
   for day in 03 04 13; do
     printf "Captain's Log reply [friction-%s]: Start fix: Routine steps wait on Lee's explicit word\nat=2026-11-%sT08:00:00Z\n" \
@@ -1798,7 +1820,7 @@ test_a_recorded_fix_is_shown_and_never_restarted() {
     printf "Captain's Log reply [friction-%s]: Start fix: Blocked steps carry no recorded cause\nat=2026-11-%sT08:00:00Z\n" \
       other-other "$day" > "$home/state/inbox/o$day.note"
   done
-  python3 -I - "$ROOT/bin/fm-officer-friction.py" "$ROOT/docs/officers/friction-fixes.json" "$home" <<'PY' || fail "a recorded fix must be shown, not restarted"
+  python3 -I - "$ROOT/bin/fm-officer-friction.py" "$fixes" "$home" "$ROOT/docs/officers/friction-fixes.json" <<'PY' || fail "a recorded fix must be shown, not restarted"
 import calendar, importlib.util, sys
 spec = importlib.util.spec_from_file_location("fm_officer_friction", sys.argv[1])
 friction = importlib.util.module_from_spec(spec)
@@ -1807,7 +1829,10 @@ home = friction.triage.Home(sys.argv[3])
 at = lambda stamp: calendar.timegm(__import__("time").strptime(stamp, "%Y-%m-%dT%H:%M:%SZ"))
 shipped = friction.load_recorded_fixes(sys.argv[2])
 assert [r["date"] for r in shipped["policy-approval"]] == ["2026-11-02", "2026-11-11"], shipped
-assert [r["date"] for r in shipped["other-other"]] == ["2026-10-31", "2026-10-31", "2026-11-02"], shipped
+assert [r["date"] for r in shipped["other-other"]] == ["2026-10-31", "2026-11-02", "2026-11-02"], shipped
+# The fleet's own record parses in the same schema.
+real = friction.load_recorded_fixes(sys.argv[4])
+assert real and all(rows for rows in real.values()), real
 
 def finding(fid, seen):
     return {"id": fid, "title": "t", "fix": "f", "event_ats": [at(x) for x in seen],
@@ -1820,13 +1845,15 @@ assert (bare["policy-approval"]["state"], bare["policy-approval"]["reopen"]) == 
 states = friction.finding_states(findings, [home], [], "2026-11-16", {"other-other"}, recorded=shipped)
 pol, oth = states["policy-approval"], states["other-other"]
 assert pol["state"] == "fixed" and pol["actions"] == [] and not pol["reopen"], pol
-assert pol["link"] == "https://github.com/lstutzman/skills/pull/291", pol
-assert pol["fix_note"] == "Fixed on 2026-11-11 by https://github.com/lstutzman/skills/pull/291, still seen 2 time(s) since (counted on 2026-11-16).", pol
-assert pol["retaps"] == 1 and "earlier: https://github.com/lstutzman/skills/pull/94 on 2026-11-02" in pol["fix_more"], pol
+assert pol["link"] == "https://github.com/o/skills/pull/291", pol
+assert pol["fix_note"] == "Fixed on 2026-11-11 by https://github.com/o/skills/pull/291, still seen 2 time(s) since (counted on 2026-11-16).", pol
+assert pol["retaps"] == 1 and "earlier: https://github.com/o/skills/pull/94 on 2026-11-02" in pol["fix_more"], pol
 # A standing-work finding with a recorded fix is not started by default again.
 assert oth["state"] == "fixed" and oth["actions"] == [] and oth["retaps"] == 3, oth
-assert oth["link"].endswith("/commit/ae757b9905c5d67f42814b1d995efe052e470379"), oth
-assert oth["fix_note"].startswith("Fixed on 2026-11-02 by https://github.com/lstutzman/firstmate/commit/ae757b9"), oth
+# Two fixes on the newest date: the card's link, the fixed record and the note all name the same one.
+assert oth["link"] == oth["fixed"]["link"] == "https://github.com/o/fm/commit/ccc3", oth
+assert oth["fix_note"].startswith("Fixed on 2026-11-02 by https://github.com/o/fm/commit/ccc3,"), oth
+assert "https://github.com/o/fm/commit/bbb2 on 2026-11-02" in oth["fix_more"], oth
 # Not seen again since the fix: it says so.
 quiet = friction.finding_states([finding("policy-approval", ["2026-11-10T08:00:00Z"])], [home], [], "2026-11-16", recorded=shipped)
 assert "not seen again since" in quiet["policy-approval"]["fix_note"], quiet
@@ -1843,7 +1870,7 @@ home = friction.triage.Home(sys.argv[3])
 later = friction.finding_states(findings, [home], [], "2026-11-16", {"policy-approval"}, recorded=shipped)["policy-approval"]
 assert (later["state"], later["actions"], later["link"]) == ("fixed", [], "https://github.com/o/r/pull/99"), later
 assert later["fix_note"] == "Fixed on 2026-11-14 by https://github.com/o/r/pull/99, still seen 2 time(s) since (counted on 2026-11-16).", later
-assert "https://github.com/lstutzman/skills/pull/291 on 2026-11-11" in later["fix_more"], later
+assert "https://github.com/o/skills/pull/291 on 2026-11-11" in later["fix_more"], later
 # An unreadable record is an error the run reports, never a silent empty one.
 try:
     friction.load_recorded_fixes(sys.argv[3] + "/missing.json")
@@ -1855,15 +1882,18 @@ PY
   # End to end, a card with a recorded fix reads fixed, links the fix, offers no action and leads with the note.
   home=$(make_world recordedcard)
   printf 'blocked [at=%s] [key=nc-blocked]: Lee, the build cache needs a look\n' "$T" > "$home/state/task-nc.status"
-  run_officer "$home" >/dev/null || fail "run with a recorded fix must succeed"
-  vel="$home/data/officers/friction/$DATE.velocity-findings.json"
-  assert_equals "fixed [] true true" \
-    "$(jq -r '[.bottlenecks[] | select(.id == "other-other")][0] | "\(.state) \(.actions | tojson) \(.link | endswith("ae757b9905c5d67f42814b1d995efe052e470379")) \(.evidence | startswith("Fixed on 2026-11-02 by "))"' "$vel")" \
+  out="$TMP_ROOT/recordedcard/out"
+  mkdir -p "$out"
+  python3 -I "$ROOT/bin/fm-officer-friction.py" run --archive "$TMP_ROOT/recordedcard/archive" --date "$DATE" --out "$out" \
+    --home "$home" --now "$NOW" --fixes "$fixes" >/dev/null || fail "run with a recorded fix must succeed"
+  vel="$out/$DATE.velocity-findings.json"
+  assert_equals "fixed [] https://github.com/o/fm/commit/ccc3 true" \
+    "$(jq -r '[.bottlenecks[] | select(.id == "other-other")][0] | "\(.state) \(.actions | tojson) \(.link) \(.evidence | startswith("Fixed on 2026-11-02 by https://github.com/o/fm/commit/ccc3,"))"' "$vel")" \
     "the card shows the fix link it already has, leads its evidence with the note and offers no Start fix"
-  json="$home/data/officers/friction/$DATE.json"
+  json="$out/$DATE.json"
   assert_equals "fixed" "$(finding "$json" other other '.state.state')" "the digest records the recorded fix as the finding's state"
-  assert_grep "Recorded fix: Fixed on 2026-11-02 by https://github.com/lstutzman/firstmate/commit/ae757b9" \
-    "$home/data/officers/friction/$DATE.md" "the digest quotes the recorded fix"
+  assert_grep "Recorded fix: Fixed on 2026-11-02 by https://github.com/o/fm/commit/ccc3" \
+    "$out/$DATE.md" "the digest quotes the recorded fix"
   pass "fm-officer friction: a recorded fix is shown on the card and never offered as a fresh Start fix"
 }
 

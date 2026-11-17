@@ -77,11 +77,16 @@ wait for Lee to do. One day's friction events come from three sources:
 
 Asks the fleet rules reserve to Lee by design are not friction. A status line or card
 that lands in policy/approval is reserved when its key is a reserved merge class
-(admit-<pr>-<class>, or captain-hold-...-admit-<pr>-<class>-<n>), when its text names
-authority, payments, billing, legal text, a data-rewriting migration, a gate file,
-production, a credential or secret, member-facing copy, a video or post to publish, or a
-destructive action, or when its stated cause is credential or decision (a product or
-design choice). RESERVED_RULES owns the text rules. A standing yes could not cover such
+(admit-<pr>-<class>, or captain-hold-...-admit-<pr>-<class>-<n>), when its text has a
+phrase anchored on a reserved subject (a merge word or class, payments, billing, legal
+text, a data-rewriting migration, a gate file; a production deploy, write, change, flag or
+go, or a step turned on or deployed in production; creating or rotating a credential,
+secret, key, token or password; member-facing copy, a copy word, release notes, or a
+video or post to publish; deleting, discarding or dropping named work, or a force-push),
+or when its stated cause is credential or decision (a product or design choice). A bare
+keyword (authority, prod, token, password, video, publish, wording) is never enough, and a
+phrase in a clause that denies it (no, not, nothing, never, without, outside: "nothing
+touches production") does not count. RESERVED_RULES owns the text rules. A standing yes could not cover such
 an ask, so it is left out of the events and findings and counted instead: doc
 reserved_to_lee {events, lee_events, by_class}, each finding's reserved_to_lee, the
 digest's "Reserved to Lee by the rules" lines and "reserved to Lee by the rules: N" in a
@@ -400,17 +405,28 @@ STATED_CAUSES = {"policy": ("policy", "approval"), "credential": ("credential", 
 RESERVED_KEY_RE = re.compile(r"(?:^|-)admit-\d+-[a-z][a-z-]*?(?:-\d+)?$")
 RESERVED_RULES = [
     ("merge-class", re.compile(
-        r"\bauthority\b|needs the captain'?s word before it merges|cannot land without Lee|\bmerge word\b"
-        r"|\bpayments?\b|\bbilling\b|legal (?:text|lines?|wording)|data-rewriting|gate[- ]files?|ALLOW_GATE_EDIT"
-        r"|protected gate|Lee'?s (?:\S+ )?word on <url>", re.I)),
-    ("production", re.compile(r"\bprod(?:uction)?\b", re.I)),
-    ("credential", re.compile(r"\bcredentials?\b|\bsecrets?\b|\bapi keys?\b|\bpasswords?\b|\btoken\b", re.I)),
+        r"needs the captain'?s word before it merges|cannot land without Lee|\bmerge word\b|\bmerge[- ]class\b"
+        r"|grants? new authority|\bpayments?\b|\bbilling\b|legal (?:text|lines?|wording)"
+        r"|data-rewriting (?:migrations?|changes?)|gate[- ]files?|ALLOW_GATE_EDIT|Lee'?s (?:\S+ )?word on <url>", re.I)),
+    ("production", re.compile(
+        r"\bprod(?:uction)?[- ](?:deploy\w*|writes?|changes?|flags?|releases?|data|config\w*|settings?|go|promotion"
+        r"|migrations?|restarts?)\b|\b(?:deploy|releas|promot|turn|flip|enabl|disabl|writ|appl|roll)\w*\b"
+        r"[^.;:?!]{0,40}?\b(?:on|to|in|into) prod(?:uction)?\b", re.I)),
+    ("credential", re.compile(
+        r"\b(?:creat|rotat|revok|roll|mint|re-?mint|widen|issu|regenerat|chang|updat)\w*\s+(?:\S+\s+){0,3}?"
+        r"(?:credentials?|secrets?|api[- ]keys?|tokens?|passwords?)\b"
+        r"|\b(?:credential|secret|key|token|password) rotation\b", re.I)),
     ("member-copy", re.compile(
-        r"\bcopy word\b|\bwording\b|member[- ]facing|member[- ]visible|release[- ]notes?|menu label|how this page works"
-        r"|explainer video|\bvideo\b|blog posts?|\bpublish", re.I)),
+        r"\bcopy word\b|member[- ](?:facing|visible)|\b(?:copy|wording|text) (?:that )?members see|release[- ]notes?"
+        r"|menu label|how this page works|explainer video|blog posts?"
+        r"|\bpublish\w*\s+(?:\S+\s+){0,2}?(?:videos?|posts?|articles?)\b", re.I)),
     ("destructive", re.compile(
-        r"destructive|\bdiscard|\bdelete\b|\bdrop(?:ping)?\b|\bpurge\b|\bwipe\b|force[- ]push|never-pushed", re.I)),
+        r"destructive (?:operations?|actions?|changes?|steps?)|force[- ]push|never-pushed"
+        r"|\b(?:delet(?:e|es|ed|ing)|discard\w*|drop(?:s|ped|ping)?|purg(?:e|es|ed|ing)|wip(?:e|es|ed|ing)|trash\w*)"
+        r"\s+(?:the|a|an|this|that|these|those|its|all|every|named|unpushed|unlanded|\d+)\b", re.I)),
 ]
+# A reserved phrase in a clause that denies it ("nothing touches production", "no production change") names no ask.
+RESERVED_NEGATION_RE = re.compile(r"\b(?:no|not|nothing|never|without|none|neither|nor|outside)\b|n't\b", re.I)
 URL_RE = re.compile(r"https?://\S+")
 CORR_RE = re.compile(r"\bcorr=[0-9a-f]+\s*")
 SSH_HOST_RE = re.compile(r"\bssh (?:-\w+ )*(?:[\w.-]+@)?([\w.-]+) '")
@@ -1606,7 +1622,8 @@ def reserved_class(key, stated, text):
     if key and RESERVED_KEY_RE.search(key):
         return "merge-class"
     for name, pattern in RESERVED_RULES:
-        if pattern.search(text or ""):
+        if any(not RESERVED_NEGATION_RE.search(re.split(r"[;:.,?!]", (text or "")[:m.start()])[-1])
+               for m in pattern.finditer(text or "")):
             return name
     return {"credential": "credential", "decision": "product-choice"}.get(stated)
 
@@ -2296,7 +2313,7 @@ def finding_states(findings, homes, replies, date="1970-01-01", eligible=(), mer
                        task=next((h["task"] for h in current if h["task"]), None))
             rec["reopen"] = not rec["link"] and not rec["task"]
         elif latest:
-            merged = max((h for h in hits if h["merged"]), key=lambda h: h["merged"])
+            merged = [h for h in hits if h["merged"] == latest][-1]
             seen = f.get("last_seen_at") or day_start
             rec.update(state="reported-again" if seen > latest else "fixed",
                        fixed={"link": merged["link"], "merged_at": iso_utc(latest)},
