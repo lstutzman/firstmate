@@ -314,7 +314,10 @@ test_security_brief_needs_a_linear_item() {
   peak_then 0
   brief sec-none no-mistakes --pr-drain security && fail "a security brief with no --linear was scaffolded"
   assert_grep "needs --linear" "$TMP_ROOT/brief.out" "the refusal did not name --linear"
-  printf '#!/usr/bin/env bash\nprintf '"'"'issue:\\n  identifier: %%s\\n  description: "Acceptance:\\\\n- fixed"\\n'"'"' "$3"\n' > "$FAKEBIN/linear-axi"
+  cat > "$FAKEBIN/linear-axi" <<'STUB'
+#!/usr/bin/env bash
+printf 'issue:\n  identifier: %s\n  description: "Acceptance:\\n- fixed"\n' "$3"
+STUB
   chmod +x "$FAKEBIN/linear-axi"
   peak_then 7
   brief sec-ok no-mistakes --pr-drain security --linear PC-5174 || fail "a security brief with --linear did not scaffold: $(cat "$TMP_ROOT/brief.out")"

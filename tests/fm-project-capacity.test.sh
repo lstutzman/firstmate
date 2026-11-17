@@ -1266,7 +1266,11 @@ test_pr_drain_security_needs_a_qualifying_linear_item() {
   home="$case_dir/home"
   drain_gh "$case_dir" 25
   reader="$case_dir/linear-reader"
-  printf '#!/usr/bin/env bash\n[ -z "${FAKE_LINEAR_FAIL:-}" ] || { echo boom >&2; exit 1; }\nprintf %%s "$FAKE_LINEAR_JSON"\n' > "$reader"
+  cat > "$reader" <<'STUB'
+#!/usr/bin/env bash
+[ -z "${FAKE_LINEAR_FAIL:-}" ] || { echo boom >&2; exit 1; }
+printf %s "$FAKE_LINEAR_JSON"
+STUB
   chmod +x "$reader"
   export FM_PR_DRAIN_LINEAR_READER="$reader"
   for id in sec-ok sec-nolabel sec-low sec-noitem sec-down; do
