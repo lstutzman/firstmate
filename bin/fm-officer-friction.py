@@ -14,6 +14,7 @@ Usage:
                              [--start-home <home>=<projects>[=<role>[=<mandate>]]]...
                              [--writes none|linear] [--team PC] [--max-creates <n>]
                              [--max-linear-calls <n>] [--rubric <file>] [--jev <jev.py>]
+                             [--fixes <friction-fixes.json>]
 
 Friction is anything that slowed an agent down, above all a step it had to
 wait for Lee to do. One day's friction events come from three sources:
