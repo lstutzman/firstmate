@@ -146,7 +146,7 @@ ANSWER_ASK = re.compile(r"^(?:(?:yes|no|yep|nope|ok|okay|sure|thanks|thank you|f
                         r"|(?:never ?mind|(?:ignore|disregard|skip|drop)\s+(?:this|that|it|these|those))\s*(?:[.!,;:]|$))", re.I)
 QUESTION_ASK = re.compile(r"^(?:(?:why|what|how|when|where|who)\s+(?:is|are|was|were|do|does|did|can|could|should|would|will)"
                           r"|(?:is|are|should)\s+(?:we|you|i|they|it|this|that|there))\b", re.I)
-APPROVAL_ASK = re.compile(r"^(?:(?:approved?|merged?)\s+(?:the\s+)?(?:pr\b|#\d|[0-9a-f]{7,40}\b)|lgtm\b|ship it\b"
+APPROVAL_ASK = re.compile(r"^(?:(?:approved?|merged?)\s+(?:the\s+)?(?:pr\b|#\d|[0-9a-f]{7,40}\b|[a-z]+-\d+\b)|lgtm\b|ship it\b"
                           r"|(?:approved?|merged?)(?:\s+(?:it|this|that))?[\s.!,]*(?:(?:thanks|thank you|ok|okay)[\s.!]*)?$)", re.I)
 
 

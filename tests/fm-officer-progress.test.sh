@@ -2141,6 +2141,8 @@ PY
 {"id":"logs","words":"keep every local session log; do NOT let the Bosun trash archived local logs","status":"not-started","work":[]},
 {"id":"appr-bare","words":"approved","status":"not-started","work":[]},
 {"id":"appr-thanks","words":"Approved, thanks","status":"not-started","work":[]},
+{"id":"appr-linear","words":"Approved PC-555","status":"not-started","work":[]},
+{"id":"appr-linear-sha","words":"approve PC-123 at 45c238aa51","status":"not-started","work":[]},
 {"id":"merge-it","words":"Merge it","status":"not-started","work":[]},
 {"id":"appr-join","words":"approve PR 77 for PC-97","status":"not-started","work":[]},
 {"id":"imp-skip","words":"Skip flaky e2e retries in CI for PC-1234","status":"not-started","work":[]},
@@ -2158,6 +2160,8 @@ JSON
   assert_contains "$reasons" 'appr=Not a new start: an approval or merge word for existing work' 'an unmatched approval is listed, not started'
   assert_contains "$reasons" 'appr-bare=Not a new start: an approval' 'a bare approval reply is listed, not started'
   assert_contains "$reasons" 'appr-thanks=Not a new start: an approval' 'an approval with thanks is listed, not started'
+  assert_contains "$reasons" 'appr-linear=Not a new start: an approval' 'an approval naming a Linear issue is listed, not started'
+  assert_contains "$reasons" 'appr-linear-sha=Not a new start: an approval' 'an approval naming a Linear issue and SHA is listed, not started'
   assert_contains "$reasons" 'merge-it=Not a new start: an approval' 'a bare merge word is listed, not started'
   assert_contains "$reasons" 'fix1=Routed to the friction lane' 'a Start fix row is routed to the friction lane'
   assert_contains "$reasons" 'fix2=Routed to the friction lane' 'every Start fix row is routed'
