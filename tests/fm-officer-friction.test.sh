@@ -1835,6 +1835,15 @@ with open(sys.argv[3] + "/data/backlog.md", "w") as fh:
     fh.write("- [ ] fix-pa - fix policy-approval https://github.com/o/r/pull/99\n")
 work = friction.finding_states(findings, [home], [], "2026-11-16", recorded=shipped)["policy-approval"]
 assert (work["state"], work["link"], work["task"]) == ("started", "https://github.com/o/r/pull/99", "fix-pa"), work
+# A fix that merged after the recorded ones is the newest fix: still fixed with its link, never a fresh Start fix.
+with open(sys.argv[3] + "/state/fleet-ledger.jsonl", "w") as fh:
+    fh.write('{"v":1,"ts":%d,"event":"task.merged","task":"fix-pa","via":"pr","pr":"https://github.com/o/r/pull/99"}\n'
+             % at("2026-11-14T10:00:00Z"))
+home = friction.triage.Home(sys.argv[3])
+later = friction.finding_states(findings, [home], [], "2026-11-16", {"policy-approval"}, recorded=shipped)["policy-approval"]
+assert (later["state"], later["actions"], later["link"]) == ("fixed", [], "https://github.com/o/r/pull/99"), later
+assert later["fix_note"] == "Fixed on 2026-11-14 by https://github.com/o/r/pull/99, still seen 2 time(s) since (counted on 2026-11-16).", later
+assert "https://github.com/lstutzman/skills/pull/291 on 2026-11-11" in later["fix_more"], later
 # An unreadable record is an error the run reports, never a silent empty one.
 try:
     friction.load_recorded_fixes(sys.argv[3] + "/missing.json")

@@ -251,8 +251,8 @@ state is read-only and as of the run's day, one of:
                       docs/officers/friction-fixes.json (--fixes; finding id ->
                       [{date, link, what}], added by pull request when a fix ships)
                       counts as merged at the end of its date and keeps the finding
-                      fixed even when it recurs: the card carries `link` (the newest
-                      fix) and its evidence leads with "Fixed on <date> by <link>,
+                      fixed even when it recurs, also after a later real merge: the
+                      card carries `link` (the newest fix) and its evidence leads with "Fixed on <date> by <link>,
                       still seen N time(s) since". Its actions stay empty, it is
                       never started by default again, and a Start fix tap newer than
                       the fix that names no task or link starts nothing (the digest
@@ -2184,7 +2184,8 @@ def fix_note(recorded, since, date):
 
 def fix_more(recorded, retaps):
     """What else the record knows about a recorded fix: the earlier fixes, and Start fix taps made after the newest."""
-    parts = ["earlier: %s" % ", ".join("%s on %s (%s)" % (r["link"], r["date"], r["what"]) for r in reversed(recorded[:-1]))] \
+    parts = ["earlier: %s" % ", ".join("%s on %s%s" % (r["link"], r["date"], " (%s)" % r["what"] if r["what"] else "")
+                                       for r in reversed(recorded[:-1]))] \
         if len(recorded) > 1 else []
     if retaps:
         parts.append("Start fix was tapped %d more time(s) after it, and no task or link names new work" % retaps)
@@ -2300,12 +2301,15 @@ def finding_states(findings, homes, replies, date="1970-01-01", eligible=(), mer
             rec.update(state="reported-again" if seen > latest else "fixed",
                        fixed={"link": merged["link"], "merged_at": iso_utc(latest)},
                        task=merged["task"], generation=merged["link"] or merged["task"] or "merged")
-            if merged.get("recorded"):
-                # fleet-app draws a start only on open and reported-again, so a recorded fix stays "fixed" with its
-                # link, and fix_note (carried into the card's evidence) says it was seen again.
+            if shipped:
+                # fleet-app draws a start only on open and reported-again, so a finding with a recorded fix stays
+                # "fixed" with its newest fix's link, and fix_note (carried into the card's evidence) says it was seen
+                # again. The newest fix may be a real merge that came after the recorded ones.
+                newest = {"date": iso_utc(latest)[:10], "what": "", "link": merged["link"] or "task %s" % merged["task"]}
+                chain = shipped if merged.get("recorded") else shipped + [newest]
                 since = sum(1 for at in f.get("event_ats", []) if at > latest)
                 rec.update(state="fixed", link=merged["link"], retaps=len(retaps),
-                           fix_note=fix_note(shipped, since, date), fix_more=fix_more(shipped, len(retaps)))
+                           fix_note=fix_note(chain, since, date), fix_more=fix_more(chain, len(retaps)))
         if rec["state"] in ("open", "reported-again") and f["id"] in eligible and not objected:
             rec["state"] = "started-by-default"
         rec["actions"] = ["reopen"] if rec["reopen"] else STATE_ACTIONS[rec["state"]]
