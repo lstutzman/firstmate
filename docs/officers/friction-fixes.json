@@ -1,0 +1,34 @@
+{
+ "fixes": {
+  "other-other": [
+   {
+    "date": "2026-10-31",
+    "link": "https://github.com/lstutzman/firstmate/commit/29091e02d85a280ab1f2974b6ceffad1992b4b5e",
+    "what": "workers state a [cause=...] on blocked and needs-decision lines"
+   },
+   {
+    "date": "2026-10-31",
+    "link": "https://github.com/lstutzman/firstmate/commit/417491c22f4e7ebfc583ad5b5d6ec6fb1ac1442b",
+    "what": "the remaining needs-decision lines are tagged"
+   },
+   {
+    "date": "2026-11-02",
+    "link": "https://github.com/lstutzman/firstmate/commit/ae757b9905c5d67f42814b1d995efe052e470379",
+    "what": "captain steps state a cause"
+   }
+  ],
+  "policy-approval": [
+   {
+    "date": "2026-11-02",
+    "link": "https://github.com/lstutzman/skills/pull/94",
+    "what": "fleet rules section 2: standing yes for routine choices"
+   },
+   {
+    "date": "2026-11-11",
+    "link": "https://github.com/lstutzman/skills/pull/291",
+    "what": "fleet rules section 2: one relay table and a named standing-yes list"
+   }
+  ]
+ },
+ "schema_version": 1
+}

@@ -14,6 +14,7 @@ Usage:
                              [--start-home <home>=<projects>[=<role>[=<mandate>]]]...
                              [--writes none|linear] [--team PC] [--max-creates <n>]
                              [--max-linear-calls <n>] [--rubric <file>] [--jev <jev.py>]
+                             [--fixes <friction-fixes.json>]
 
 Friction is anything that slowed an agent down, above all a step it had to
 wait for Lee to do. One day's friction events come from three sources:
@@ -34,7 +35,13 @@ wait for Lee to do. One day's friction events come from three sources:
                classify it first; a line they leave unclassified joins the group
                of its stated [cause=...] tag (policy, credential, sudo, tool,
                decision, physical, external), and each finding tallies its lines by stated
-               cause, with untagged ones as unstated. The digest also counts the
+               cause, with untagged ones as unstated. A paused line joins the group of its
+               stated cause too, except [cause=external]: that is a wait on another owner,
+               rechecked on a timer, so it is no step of Lee's and is not counted. A paused
+               line no rule recognises needs no tag, so it is left in the unlabelled group
+               (other/unlabelled), which is reported and never carded; "Blocked steps carry
+               no recorded cause" (other/other) is only blocked and needs-decision lines
+               with no [cause=] tag before the colon (bin/fm-classify-lib.sh reads that head). The digest also counts the
                asks that name Lee by stated cause over the --days window
                (lee_steps_by_cause; one line in the .md), untagged ones as unstated.
   archive     each claude-code session of the archive day: a <bash-input>
@@ -60,9 +67,31 @@ wait for Lee to do. One day's friction events come from three sources:
                <fleet-app>/api/captains-log (src/captains-log.ts), read with
                curl and never written: a card asked that day whose id is no
                status line's card id (fleet-app's cardId of its task and key)
-               is a Lee step the status logs missed, measured to its answer.
+               is a Lee step the status logs missed, measured to its answer. A card
+               id that equals a status key once dashes, a captain hold's wrapper and a
+               trailing -card are dropped (pc5068-video-approval and
+               captain-hold-pc-5068-video-approval-1) is that status line's ask and is
+               not counted again. A card carries no [cause=] tag, so one no rule
+               recognises goes to the unlabelled group, never to other/other.
                An unreachable endpoint is a coverage gap in the digest, and
                the pass continues on the other two sources.
+
+Asks the fleet rules reserve to Lee by design are not friction. A status line or card
+that lands in policy/approval is reserved when its key is a reserved merge class
+(admit-<pr>-<class>, or captain-hold-...-admit-<pr>-<class>-<n>), when its text has a
+phrase anchored on a reserved subject (a merge word or class, payments, billing, legal
+text, a data-rewriting migration, a gate file; a production deploy, write, change, flag or
+go, or a step turned on or deployed in production; creating or rotating a credential,
+secret, key, token or password; member-facing copy, a copy word, release notes, or a
+video or post to publish; deleting, discarding or dropping named work, or a force-push),
+or when its stated cause is credential or decision (a product or design choice). A bare
+keyword (authority, prod, token, password, video, publish, wording) is never enough, and a
+phrase a negator directly governs ("no production change", "nothing touches billing",
+"does not touch billing") does not count, while "can't merge without Lee's merge word" does. RESERVED_RULES owns the text rules. A standing yes could not cover such
+an ask, so it is left out of the events and findings and counted instead: doc
+reserved_to_lee {events, lee_events, by_class}, each finding's reserved_to_lee, the
+digest's "Reserved to Lee by the rules" lines and "reserved to Lee by the rules: N" in a
+card's evidence. A group left with no other event has no finding.
 
 Agent complaints are a fifth kind of event. Each --home's data/agent-complaints.jsonl
 (written by bin/fm-complain.sh, one JSON line per complaint: at, task, home,
@@ -224,7 +253,18 @@ state is read-only and as of the run's day, one of:
   fixed               the started fix merged (a task.merged record in a home's
                       fleet ledger, by its task or pull request) and the
                       finding has no event after the merge. The card carries
-                      `fixed` {link, merged_at};
+                      `fixed` {link, merged_at}. A fix recorded in
+                      docs/officers/friction-fixes.json (--fixes; finding id ->
+                      [{date, link, what}], added by pull request when a fix ships)
+                      counts as merged at the end of its date and keeps the finding
+                      fixed even when it recurs, also after a later real merge: the
+                      card carries `link` (the newest fix) and its evidence leads with "Fixed on <date> by <link>,
+                      still seen N time(s) since". Its actions stay empty, it is
+                      never started by default again, and a Start fix tap newer than
+                      the fix that names no task or link starts nothing (the digest
+                      counts those as retaps); a start that names a task or link is
+                      real work and wins. The velocity file's schema has no field for
+                      the note, so the card says it in `evidence`;
   reported-again      the fix merged and the finding has an event after the
                       merge (the newest stamped event, else the start of the
                       run's day) and no start newer than the merge;
@@ -360,6 +400,37 @@ STATED_CAUSES = {"policy": ("policy", "approval"), "credential": ("credential", 
                  "sudo": ("sudo", "sudo"), "tool": ("missing-tool", "tool"),
                  "decision": ("decision", "decision"), "external": ("environment", "external"),
                  "physical": ("lee-command", "run")}
+# Asks the fleet rules reserve to Lee by design (sections 2 to 8), so no standing yes could cover them. A
+# policy/approval event in one of these classes is counted as "reserved to Lee by the rules", never as friction.
+# The key of a reserved merge class is admit-<pr>-<class>, or a captain hold wrapping it.
+RESERVED_KEY_RE = re.compile(r"(?:^|-)admit-\d+-[a-z][a-z-]*?(?:-\d+)?$")
+RESERVED_RULES = [
+    ("merge-class", re.compile(
+        r"needs the captain'?s word before it merges|cannot land without Lee|\bmerge word\b|\bmerge[- ]class\b"
+        r"|grants? new authority|\bpayments?\b|\bbilling\b|legal (?:text|lines?|wording)"
+        r"|data-rewriting (?:migrations?|changes?)|gate[- ]files?|ALLOW_GATE_EDIT|Lee'?s (?:\S+ )?word on <url>", re.I)),
+    ("production", re.compile(
+        r"\bprod(?:uction)?[- ](?:deploy\w*|writes?|changes?|flags?|releases?|data|config\w*|settings?|go|promotion"
+        r"|migrations?|restarts?)\b|\b(?:deploy|releas|promot|turn|flip|enabl|disabl|writ|appl|roll)\w*\b"
+        r"(?:[^.;:?!]|(?<=\d)\.(?=\d)){0,40}?\b(?:on|to|in|into) prod(?:uction)?\b", re.I)),
+    ("credential", re.compile(
+        r"\b(?:creat|rotat|revok|roll|mint|re-?mint|widen|issu|regenerat|chang|updat)\w*\s+(?:\S+\s+){0,3}?"
+        r"(?:credentials?|secrets?|api[- ]keys?|tokens?|passwords?)\b"
+        r"|\b(?:credential|secret|key|token|password) rotation\b", re.I)),
+    ("member-copy", re.compile(
+        r"\bcopy word\b|member[- ](?:facing|visible)|\b(?:copy|wording|text) (?:that )?members see|release[- ]notes?"
+        r"|menu label|how this page works|explainer video|blog posts?"
+        r"|\bpublish\w*\s+(?:\S+\s+){0,2}?(?:videos?|posts?|articles?)\b", re.I)),
+    ("destructive", re.compile(
+        r"destructive (?:operations?|actions?|changes?|steps?)|force[- ]push|never-pushed"
+        r"|\b(?:delet(?:e|es|ed|ing)|discard\w*|drop(?:s|ped|ping)?|purg(?:e|es|ed|ing)|wip(?:e|es|ed|ing)|trash\w*)"
+        r"\s+(?:the|a|an|this|that|these|those|its|all|every|named|unpushed|unlanded|\d+)\b", re.I)),
+]
+# A reserved phrase a negator directly governs ("no production change", "nothing touches billing", "does not touch
+# billing", "isn't a production deploy") names no ask; "can't deploy to production without Lee's go" still does.
+RESERVED_NEGATION_RE = re.compile(
+    r"(?:\b(?:no|nothing|none|neither|nor)\b|(?:\bnot|n't)\s+(?:a|an|any|touch\w*|affect\w*|involv\w*|need\w*))"
+    r"(?:\s+[\w'-]+){0,3}?\s+$", re.I)
 URL_RE = re.compile(r"https?://\S+")
 CORR_RE = re.compile(r"\bcorr=[0-9a-f]+\s*")
 SSH_HOST_RE = re.compile(r"\bssh (?:-\w+ )*(?:[\w.-]+@)?([\w.-]+) '")
@@ -626,8 +697,12 @@ FIXES = {
         " agents ask only for the rest.",
         "Lee (fleet rules)", "S"),
 }
+# Asks with no recorded cause that no rule requires one on: a paused line, or a Captain's Log card no status line accounts for.
+# They are reported, never carded, so "Blocked steps carry no recorded cause" counts only blocked and needs-decision lines.
+UNLABELLED = ("other", "unlabelled")
+POLICY_APPROVAL = ("policy", "approval")
 # Groups reported in the digest but never carded: a product or design choice is Lee's to make.
-NOT_CARDED = {("decision", "decision")}
+NOT_CARDED = {("decision", "decision"), UNLABELLED}
 # Tools the fleet no longer uses: a miss is still counted, but never becomes an "install it" fix or card.
 # Retiring another tool is a one-line change here.
 RETIRED_TOOLS = {"railway"}
@@ -644,6 +719,9 @@ STANDING_START = {
 # The standing-work causes are the sources the rubric (docs/officers/friction-rubric.md) may let start.
 START_SOURCES = tuple(sorted({cause for cause, _ in STANDING_START}))
 RUBRIC_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "officers", "friction-rubric.md")
+# The fixes already shipped for a finding, keyed by finding id (docs/officers/friction-fixes.json): a finding with one
+# is never offered a fresh Start fix; it reads "fixed on <date> by <link>, still seen N times since".
+FIXES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "officers", "friction-fixes.json")
 TYPE_LABEL = "Improvement"
 # "agent" is the Source label of Lee's Linear setup (2026-10-13) for any worker filing on his behalf.
 SOURCE_LABEL = "agent"
@@ -1535,8 +1613,23 @@ def host_names(home):
 
 
 def waits_stated(ev):
-    """True when a blocked or needs-decision line states one of the known causes."""
-    return ev["state"] in ("needs-decision", "blocked") and ev.get("stated") in STATED_CAUSES
+    """True when a blocked, needs-decision or paused line states one of the known causes."""
+    return ev["state"] in ("needs-decision", "blocked", "paused") and ev.get("stated") in STATED_CAUSES
+
+
+def reserved_class(key, stated, text):
+    """The class of an ask the fleet rules reserve to Lee (RESERVED_RULES), or None when a standing yes could cover it.
+
+    The key is checked first (a reserved merge class), then the text, then the line's stated cause: credential
+    stays Lee's, and decision is a product or design choice, which is Lee's too.
+    """
+    if key and RESERVED_KEY_RE.search(key):
+        return "merge-class"
+    for name, pattern in RESERVED_RULES:
+        if any(not RESERVED_NEGATION_RE.search((text or "")[:m.start()])
+               for m in pattern.finditer(text or "")):
+            return name
+    return {"credential": "credential", "decision": "product-choice"}.get(stated)
 
 
 def self_clearing_external(ev):
@@ -1566,9 +1659,13 @@ def status_events(homes, date, channels):
                     continue
                 text = clean(ev["text"])
                 cause, sub, pos = classify(text)
-                if waits_stated(ev) and (cause, sub) == ("other", "other"):
-                    cause, sub = STATED_CAUSES[ev["stated"]]
                 names_lee = bool(LEE_RE.search(text))
+                if waits_stated(ev) and (cause, sub) == ("other", "other"):
+                    if ev["state"] == "paused" and ev["stated"] == "external":
+                        continue    # a declared wait on another owner, rechecked on a timer; it is not Lee's step
+                    cause, sub = STATED_CAUSES[ev["stated"]]
+                elif (cause, sub) == ("other", "other") and ev["state"] == "paused":
+                    cause, sub = UNLABELLED     # a paused line needs no cause tag, so its missing one is not a finding
                 waits = ev["state"] in ("needs-decision", "blocked") or (ev["state"] == "paused" and names_lee)
                 if not waits and cause != "environment":
                     continue
@@ -1596,6 +1693,7 @@ def status_events(homes, date, channels):
                     "measured_by": measured_by, "answered_by": answered_by,
                     "lee": names_lee or answered_by == "lee",
                     "cause": cause, "sub": sub, "stated": ev.get("stated") if waits else None,
+                    "reserved": reserved_class(ev["key"], ev.get("stated"), text) if (cause, sub) == POLICY_APPROVAL else None,
                     "service": service_of(text, pos, (cause, sub) == ("credential", "scope")), "tool": None,
                     "signature": scrub(text), "_chain": chain, "_own": own,
                 })
@@ -1653,24 +1751,35 @@ def load_captains_log(source):
     return [c for c in cards if isinstance(c, dict)]
 
 
+def _card_name(name):
+    """A card id or status key as it is compared with the other: a captain hold's wrapper, a trailing -card and every
+    dash dropped, so card pc5068-video-approval and key captain-hold-pc-5068-video-approval-1 are one ask."""
+    m = HOLD_KEY_RE.match(name or "")
+    return re.sub(r"[^a-z0-9]", "", re.sub(r"-card$", "", (m.group(1) if m else name or "").lower()))
+
+
 def card_events(cards, homes, date):
     """Cards asked on <date> that no status line in the homes accounts for: Lee steps seen only as cards."""
     start, end = day_bounds(date)
-    known = set()
+    known, named = set(), set()
     for home in homes:
         for task, stream in status_streams(home).items():
             known.add(card_id(task, None))
             known.update(card_id(task, e["key"]) for e in stream if e["key"])
+            named.update(_card_name(e["key"]) for e in stream if e["key"])
     out = []
     for card in cards:
         at = epoch_of(card.get("asked"))
-        if at is None or not start <= at < end or card.get("id") in known:
+        if at is None or not start <= at < end or card.get("id") in known or _card_name(card.get("id")) in named:
             continue
         text = clean("%s %s" % (card.get("question") or "", card.get("advice") or ""))
         cause, sub, pos = classify(text)
+        if (cause, sub) == ("other", "other"):
+            cause, sub = UNLABELLED     # a card carries no [cause=] tag, and no status line gives it one
         answer = card.get("answer") if isinstance(card.get("answer"), dict) else {}
         answered_at = epoch_of(answer.get("at"))
         out.append({"kind": "card-only", "at": at, "card": card.get("id"), "cause": cause, "sub": sub,
+                    "reserved": reserved_class(None, None, text) if (cause, sub) == POLICY_APPROVAL else None,
                     "lee": True, "service": service_of(text, pos, (cause, sub) == ("credential", "scope")), "tool": None,
                     "signature": scrub(card.get("question") or ""), "answered_at": answered_at,
                     "wait_s": max(0, answered_at - at) if answered_at is not None else None,
@@ -1763,7 +1872,13 @@ def place(home_or_machine):
     return os.path.basename((home_or_machine or "").rstrip("/")) or "unknown"
 
 
-def group_findings(events, model):
+def group_findings(events, model, reserved=()):
+    """One finding per (cause, sub, name) group of `events`; `reserved` (events the rules reserve to Lee) is only tallied.
+
+    A finding carries reserved_to_lee: how many events of its cause and sub the rules reserve to Lee, which are
+    not among its events and never count as friction.
+    """
+    reserved_by_group = _count((e["cause"], e["sub"]) for e in reserved)
     groups = {}
     for ev in events:
         if ev["cause"] == "repeat-ask":
@@ -1804,6 +1919,7 @@ def group_findings(events, model):
         finding = {
             "cause": cause, "sub": sub, "name": name or None, "lee_step": lee,
             "events": len(evs), "lee_events": sum(1 for e in evs if e["lee"]),
+            "reserved_to_lee": reserved_by_group.get((cause, sub), 0),
             "kinds": dict(sorted(_count(e["kind"] for e in evs).items())),
             "waits_measured": len(waits), "wait_total_s": total,
             "wait_median_s": waits[len(waits) // 2] if waits else None,
@@ -2055,7 +2171,49 @@ def github_merge_lookup(cache_path, gaps):
     return merged_at
 
 
-def finding_states(findings, homes, replies, date="1970-01-01", eligible=(), merged_at=lambda link: None):
+def load_recorded_fixes(path):
+    """{finding id: [{date, link, what}, ...] oldest first} from the fixes file; RuntimeError when it cannot be read."""
+    try:
+        with open(path, encoding="utf-8") as fh:
+            body = json.load(fh)
+        fixes = body["fixes"]
+        out = {}
+        for fid, rows in fixes.items():
+            out[fid] = sorted(({"date": r["date"], "link": r["link"], "what": str(r.get("what") or "")} for r in rows),
+                              key=lambda r: (r["date"], r["link"]))
+            for r in out[fid]:
+                datetime.date.fromisoformat(r["date"])
+                if not https_link(r["link"]):
+                    raise ValueError("link %r is not an https URL" % r["link"])
+        return out
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        raise RuntimeError("the recorded fixes (%s) are unreadable (%s)" % (os.path.basename(path), exc))
+
+
+def fix_epoch(date):
+    """The end of a fix's UTC date: a recorded fix names only a day, so an event is `since` it from the next day on."""
+    return epoch_of(date + "T00:00:00Z") + 86400
+
+
+def fix_note(recorded, since, date):
+    """'Fixed on <date> by <link>, still seen N time(s) since': one short line for a card's evidence."""
+    latest = recorded[-1]
+    seen = "still seen %d time(s) since (counted on %s)" % (since, date) if since else \
+        "not seen again since (counted on %s)" % date
+    return "Fixed on %s by %s, %s." % (latest["date"], latest["link"], seen)
+
+
+def fix_more(recorded, retaps):
+    """What else the record knows about a recorded fix: the earlier fixes, and Start fix taps made after the newest."""
+    parts = ["earlier: %s" % ", ".join("%s on %s%s" % (r["link"], r["date"], " (%s)" % r["what"] if r["what"] else "")
+                                       for r in reversed(recorded[:-1]))] \
+        if len(recorded) > 1 else []
+    if retaps:
+        parts.append("Start fix was tapped %d more time(s) after it, and no task or link names new work" % retaps)
+    return "; ".join(parts)
+
+
+def finding_states(findings, homes, replies, date="1970-01-01", eligible=(), merged_at=lambda link: None, recorded=None):
     """{finding id: state record}: what the velocity page draws for each finding, as of the run.
 
     A record holds state (one of STATES), link (a pull request or https URL), task (the task that holds the fix),
@@ -2076,6 +2234,12 @@ def finding_states(findings, homes, replies, date="1970-01-01", eligible=(), mer
                         started it (or it was reported again after a merged fix), and Lee did not Object;
       open              anything else.
 
+    A finding with a recorded fix (`recorded`: the fixes file) counts that fix as merged on its date. A Start fix tap
+    newer than it that names no task or link is a retap: it starts nothing the recorded fix does not already name, so
+    the finding is fixed, even when seen after the fix, with no action and never a bare Start fix; its record
+    carries fix_note ("Fixed on <date> by <link>, still seen N time(s) since"), link (the newest fix) and retaps. A start
+    that names a task or link is still real work and wins.
+
     A start whose link is a GitHub pull request also counts as merged when merged_at(link) gives a merge epoch, so a
     fix that merged outside the ledger is not current forever.
 
@@ -2086,6 +2250,7 @@ def finding_states(findings, homes, replies, date="1970-01-01", eligible=(), mer
     notes = [(t.lower(), note_at(t)) for h in homes for t in inbox_notes(h)]
     backlog = [(h, l) for h in homes for l in read_lines(os.path.join(h.root, "data", "backlog.md"))]
     by_pr, by_task = merge_index(homes)
+    recorded = recorded or {}
     out = {}
     for f in findings:
         rx = id_re(f["id"])
@@ -2128,7 +2293,12 @@ def finding_states(findings, homes, replies, date="1970-01-01", eligible=(), mer
             for task, meta in sorted(home.metas.items()):
                 if rx.search((meta.get("branch") or "").lower()):
                     hits.append({"link": task_link(home, task), "task": task, "at": None, "tracked": True})
+        shipped = recorded.get(f["id"]) or []
+        hits.extend({"link": fx["link"], "task": None, "at": None, "tracked": True, "recorded": True,
+                     "merged": fix_epoch(fx["date"])} for fx in shipped)
         for hit in hits:
+            if hit.get("recorded"):
+                continue
             hit["link"] = https_link(hit["link"])
             stamps = [by_pr[hit["link"]]] if hit["link"] in by_pr else []
             stamps += [by_task[hit["task"]]] if hit["task"] in by_task else []
@@ -2138,6 +2308,8 @@ def finding_states(findings, homes, replies, date="1970-01-01", eligible=(), mer
         latest = max((h["merged"] for h in hits if h["merged"]), default=None)
         current = [h for h in hits if not h["merged"]
                    and (h.get("tracked") or not (latest and (h["at"] is None or h["at"] <= latest)))]
+        retaps = [h for h in current if shipped and not h.get("tracked") and not h["link"]]
+        current = [h for h in current if h not in retaps]
         rec = {"state": "open", "link": None, "task": None, "reopen": False, "rule": None, "fixed": None,
                "generation": None}
         if current:
@@ -2145,11 +2317,20 @@ def finding_states(findings, homes, replies, date="1970-01-01", eligible=(), mer
                        task=next((h["task"] for h in current if h["task"]), None))
             rec["reopen"] = not rec["link"] and not rec["task"]
         elif latest:
-            merged = max((h for h in hits if h["merged"]), key=lambda h: h["merged"])
+            merged = [h for h in hits if h["merged"] == latest][-1]
             seen = f.get("last_seen_at") or day_start
             rec.update(state="reported-again" if seen > latest else "fixed",
                        fixed={"link": merged["link"], "merged_at": iso_utc(latest)},
                        task=merged["task"], generation=merged["link"] or merged["task"] or "merged")
+            if shipped:
+                # fleet-app draws a start only on open and reported-again, so a finding with a recorded fix stays
+                # "fixed" with its newest fix's link, and fix_note (carried into the card's evidence) says it was seen
+                # again. The newest fix may be a real merge that came after the recorded ones.
+                newest = {"date": iso_utc(latest)[:10], "what": "", "link": merged["link"] or "task %s" % merged["task"]}
+                chain = shipped if merged.get("recorded") else shipped + [newest]
+                since = sum(1 for at in f.get("event_ats", []) if at > latest)
+                rec.update(state="fixed", link=merged["link"], retaps=len(retaps),
+                           fix_note=fix_note(chain, since, date), fix_more=fix_more(chain, len(retaps)))
         if rec["state"] in ("open", "reported-again") and f["id"] in eligible and not objected:
             rec["state"] = "started-by-default"
         rec["actions"] = ["reopen"] if rec["reopen"] else STATE_ACTIONS[rec["state"]]
@@ -2170,6 +2351,8 @@ def bottleneck(f, date):
         parts.append("sessions " + ", ".join(s.split(":")[0] + ":" + s.split(":")[-1][:8]
                                              for s in ev["sessions"][:3]))
     parts.append("e.g. " + ev["example"])
+    if f["reserved_to_lee"]:
+        parts.append("reserved to Lee by the rules: %d" % f["reserved_to_lee"])
     if ev["asks"]:
         parts.append("asked " + "; ".join('%s "%s"' % (a["date"], clip(a["quote"], 60)) for a in ev["asks"][:4]))
     if ev["complaints"]:
@@ -2212,6 +2395,13 @@ def say_not_held(card, f, fixed, date):
                                    where, fixed["merged_at"][:10], f["fix"]), 400)
 
 
+def say_recorded_fix(card, f, rec):
+    """A card whose recorded fix did not end it says so up front; its state is fixed, so the page offers no start."""
+    card["evidence"] = clip("%s %s" % (rec["fix_note"], card["evidence"]), 400)
+    card["improvement"] = clip("A fix is already recorded (%s); a next start must first find why it did not stop this."
+                               " Earlier proposal: %s" % (rec["link"], f["fix"]), 400)
+
+
 def velocity_doc(doc, now, states=None):
     start, end = day_bounds(doc["date"])
     # findings are sorted carded first, so the cap drops the least important
@@ -2219,7 +2409,9 @@ def velocity_doc(doc, now, states=None):
     for f in card_findings(doc):
         card = bottleneck(f, doc["date"])
         rec = (states or {}).get(f["id"]) or {}
-        if rec.get("state") in ("reported-again", "started-by-default") and rec.get("fixed"):
+        if rec.get("fix_note"):
+            say_recorded_fix(card, f, rec)
+        elif rec.get("state") in ("reported-again", "started-by-default") and rec.get("fixed"):
             say_not_held(card, f, rec["fixed"], date=doc["date"])
         cards.append(card)
     for card in cards:
@@ -2593,7 +2785,11 @@ def summarise(scanned, homes, hosts, model, cards, log, channels, days=7):
     events = all_events(scanned, homes, scanned["date"], cards, channels)
     if log["state"] == "read":
         log = dict(log, cards=len(cards), card_only=sum(1 for e in events if e["kind"] == "card-only"))
-    findings = group_findings(events, model)
+    reserved = [e for e in events if e.get("reserved")]
+    events = [e for e in events if not e.get("reserved")]
+    for e in events:
+        e.pop("reserved", None)
+    findings = group_findings(events, model, reserved)
     for e in events:
         if e.get("home"):
             e["home"] = place(e["home"])
@@ -2604,6 +2800,8 @@ def summarise(scanned, homes, hosts, model, cards, log, channels, days=7):
         "date": scanned["date"],
         "coverage": coverage(scanned, homes, hosts, log),
         "events": events,
+        "reserved_to_lee": {"events": len(reserved), "lee_events": sum(1 for e in reserved if e["lee"]),
+                            "by_class": dict(sorted(_count(e["reserved"] for e in reserved).items()))},
         "findings": findings,
         "lee_steps_by_cause": {"days": days, "counts": lee_steps_by_cause(homes, scanned["date"], days, channels)},
         "actionable": sum(1 for f in findings if f["carded"]),
@@ -2616,6 +2814,10 @@ def render_md(doc):
         doc["actionable"], doc["scorer"]))
     lines.append("%d friction event(s), %d naming Lee." % (
         len(doc["events"]), sum(1 for e in doc["events"] if e["lee"])))
+    reserved = doc["reserved_to_lee"]
+    lines.append("Reserved to Lee by the rules, not counted as friction: %d event(s)%s." % (
+        reserved["events"], " (%s)" % ", ".join("%s %d" % kv for kv in reserved["by_class"].items())
+        if reserved["by_class"] else ""))
     steps = doc["lee_steps_by_cause"]
     lines.append("Lee steps by cause, last %d days: %s." % (steps["days"], ", ".join(
         "%s %d" % kv for kv in steps["counts"].items()) or "none"))
@@ -2676,7 +2878,12 @@ def render_md(doc):
         lines.append("- Waits: %d measured, total %s, median %s, longest %s; %d still open; %d re-ask(s)." % (
             f["waits_measured"], human_span(f["wait_total_s"]), human_span(f["wait_median_s"]),
             human_span(f["wait_max_s"]), f["open"], f["reasks"]))
+        if f["reserved_to_lee"]:
+            lines.append("- Reserved to Lee by the rules: %d (not counted above; a standing yes cannot cover them)." %
+                         f["reserved_to_lee"])
         st = f["state"]
+        if st.get("fix_note"):
+            lines.append("- Recorded fix: %s%s" % (st["fix_note"], " (%s)." % st["fix_more"] if st.get("fix_more") else ""))
         lines.append("- State: %s%s." % (st["state"], "".join(
             " (%s %s)" % (k, st[k]) for k in ("link", "task") if st.get(k)) + (
                 " (reopen: no task or link names it)" if st["reopen"] else "") + (
@@ -2717,6 +2924,7 @@ def main(argv):
     parser.add_argument("--days", type=int, default=7)
     parser.add_argument("--model", default="none")
     parser.add_argument("--bosun-hosts", default="")
+    parser.add_argument("--fixes", default=FIXES_FILE)
     if argv[:1] != ["scan"]:
         _lib().add_common_args(parser, RUBRIC_FILE)
     args = parser.parse_args(argv)
@@ -2783,8 +2991,13 @@ def main(argv):
     eligible = {f["id"] for f in card_findings(doc) if f["carded"] and (f["cause"], f["sub"]) in STANDING_START} \
         if target else set()
     gh_gaps = []
+    try:
+        shipped = load_recorded_fixes(args.fixes)
+    except RuntimeError as exc:
+        shipped = {}
+        doc["coverage"]["notes"].append("%s, so a finding with a shipped fix reads as if none was recorded." % exc)
     states = finding_states(doc["findings"], homes, replies, args.date, eligible,
-                            github_merge_lookup(os.path.join(args.out, "pr-merges.json"), gh_gaps))
+                            github_merge_lookup(os.path.join(args.out, "pr-merges.json"), gh_gaps), shipped)
     doc["coverage"]["notes"].extend(gh_gaps)
     # The end of the digest's day, not the clock: a re-run stays byte-identical, and an office delivers the start
     # requests only within 36 hours of it (bin/fm-office.sh), so a digest for a long-past day starts nothing.

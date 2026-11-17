@@ -392,9 +392,9 @@ needs-decision [at=$((T + 60))] [key=merge]: PR 2 needs Lee's merge word
 EOF
   printf -- '- m1 - remote mate (host: h1; root: /r; home: /r/m1; scope: fixture work; projects: alpha; added 2026-10-24)\n- m2 - remote mate (host: h2; root: /r; home: /r/m2; scope: fixture work; projects: alpha; added 2026-10-24)\n' \
     >> "$home/data/secondmates.md"
-  printf 'needs-decision [at=%s] [key=relayed-approval]: relayed: the destructive cleanup needs Lee'"'"'s word\n' "$T" \
+  printf 'needs-decision [at=%s] [key=relayed-approval]: relayed: the weekly digest layout needs Lee'"'"'s word\n' "$T" \
     > "$home/state/m1.status"
-  printf 'needs-decision [at=%s] [key=relayed-approval]: relayed: the destructive reset needs Lee'"'"'s word\n' "$((T + 90))" \
+  printf 'needs-decision [at=%s] [key=relayed-approval]: relayed: the weekly digest order needs Lee'"'"'s word\n' "$((T + 90))" \
     > "$home/state/m2.status"
   out=$(run_officer "$home") || fail "friction run must succeed: $out"
   assert_contains "$out" "DIGEST $DATE " "run prints the digest marker"
@@ -504,6 +504,104 @@ EOF
   assert_equals '{"external":1}' "$(finding "$json" environment external '.stated_causes | tojson')" \
     "a finding tallies its lines by stated cause"
   pass "fm-officer friction: blocked lines group by their stated cause, and lines without one stay unstated"
+}
+
+test_reserved_asks_are_not_friction() {
+  local home json md vel
+  home=$(make_world reserved)
+  # Asks the rules reserve to Lee by design (shapes from the 2026-11-16 digest), then one a standing yes could cover.
+  cat > "$home/state/task-rsv.status" <<EOF
+needs-decision [at=$T] [cause=policy] [key=admit-351-authority]: for main: the shared settings change needs the captain's word
+needs-decision [at=$T] [cause=policy] [key=captain-hold-ledger-relaunch-effort-admit-278-authority-1]: captain hold: the spawn script counts as authority; Lee's word needed
+needs-decision [at=$T] [cause=policy] [key=prod-flag]: Turn rightmove-search-inbox ON in production? Recommend WAIT
+needs-decision [at=$T] [cause=policy] [key=copy-word]: Copy word for refer-a-friend at flag-on only
+needs-decision [at=$T] [cause=policy] [key=acrpull]: Optional cleanup: delete the redundant AcrPull assignments
+needs-decision [at=$T] [cause=decision] [key=drain-class]: For PC-5120, which do you want? 1. Launch it under the lee-research drain class; Lee's word on it
+needs-decision [at=$T] [cause=policy] [key=billing-pr]: the billing change needs Lee's word
+needs-decision [at=$T] [cause=policy] [key=pr-412]: PR 412 can't change billing without Lee's word
+needs-decision [at=$T] [cause=policy] [key=release-go]: No staging check needed: deploy release 3.2.1 to production; needs Lee's go
+needs-decision [at=$T] [cause=policy] [key=no-billing]: needs Lee's word to rename the job; it does not touch billing
+needs-decision [at=$T] [cause=policy] [key=no-prod-data]: needs Lee's word to rename the helper; no change to production data
+needs-decision [at=$T] [cause=policy] [key=no-prod-affect]: needs Lee's word to rename the helper; it does not affect any production data
+needs-decision [at=$T] [cause=policy] [key=no-billing-here]: needs Lee's word to rename the helper; nothing here touches billing
+needs-decision [at=$T] [cause=policy] [key=rotate-key]: rotate the named Stripe API key; needs Lee's word
+needs-decision [at=$T] [cause=credential] [key=licence-cred]: needs Lee's word on the licence
+needs-decision [at=$T] [cause=policy] [key=routine-rename]: rename the helper script; needs Lee's word
+resolved [key=routine-rename] [at=$((T + 600))]: Lee said yes
+needs-decision [at=$T] [cause=policy] [key=restack-12]: outside my authority; needs Lee's word to restack PR 12
+needs-decision [at=$T] [cause=policy] [key=rename-helper]: needs Lee's word to rename the helper; nothing touches production
+EOF
+  run_officer "$home" >/dev/null || fail "a run with reserved asks must succeed"
+  json="$home/data/officers/friction/$DATE.json"
+  md="$home/data/officers/friction/$DATE.md"
+  vel="$home/data/officers/friction/$DATE.velocity-findings.json"
+  # A bare keyword (authority) or a denied one ("nothing touches production") is no reserved subject: still friction.
+  assert_equals "no-billing,no-billing-here,no-prod-affect,no-prod-data,rename-helper,restack-12,routine-rename" \
+    "$(finding "$json" policy approval '.evidence.status_keys | map(split("@")[0]) | sort | join(",")')" \
+    "only the asks a standing yes could cover are counted as friction"
+  assert_equals 11 "$(finding "$json" policy approval '.reserved_to_lee')" "the finding shows how many asks the rules reserve to Lee"
+  assert_equals '{"credential":2,"destructive":1,"member-copy":1,"merge-class":4,"product-choice":1,"production":2}' \
+    "$(jq -c '.reserved_to_lee.by_class' "$json")" "each reserved ask is counted under its class: key, text or stated cause"
+  assert_equals 0 "$(jq '[.events[] | select(.key == "admit-351-authority" or .key == "prod-flag")] | length' "$json")" \
+    "a reserved ask is not among the friction events"
+  assert_grep "Reserved to Lee by the rules, not counted as friction: 11 event(s)" "$md" "the digest states the reserved total"
+  assert_grep "Reserved to Lee by the rules: 11 (not counted above" "$md" "the finding states its reserved count"
+  assert_contains "$(jq -r '[.bottlenecks[] | select(.id == "policy-approval")][0].evidence' "$vel")" "reserved to Lee by the rules: 11" \
+    "the card's evidence carries the reserved count, not a Start fix reason"
+  # A day on which every approval ask is reserved leaves no finding to start, only the count.
+  cat > "$home/state/task-rsv.status" <<EOF
+needs-decision [at=$T] [cause=policy] [key=prod-flag]: Turn rightmove-search-inbox ON in production? Recommend WAIT
+EOF
+  run_officer "$home" >/dev/null || fail "a run with only reserved asks must succeed"
+  assert_equals 0 "$(jq '[.findings[] | select(.cause == "policy" and .sub == "approval")] | length' "$json")" \
+    "a day of only reserved asks has no routine-approval finding"
+  assert_equals 1 "$(jq '.reserved_to_lee.events' "$json")" "the reserved ask is still counted"
+  pass "fm-officer friction: asks the rules reserve to Lee are shown as reserved, never as friction"
+}
+
+test_cards_and_paused_lines_are_not_blocked_steps_without_a_cause() {
+  local home fakebin json md
+  home=$(make_world nocause)
+  fakebin=$(fm_fakebin "$TMP_ROOT/nocause")
+  cat > "$home/state/task-nc.status" <<EOF
+paused [at=$T] [cause=external] [key=nc-ext]: waiting on the rerun for Lee's pass rule
+paused [at=$T] [cause=credential] [key=nc-cred]: waiting on Lee's licence answer
+paused [at=$T] [key=nc-paused]: draft held for the captain's call
+blocked [at=$T] [key=nc-blocked]: Lee, the build cache needs a look
+needs-decision [at=$T] [key=nc-misplaced]: [cause=policy] cannot place it on that host; Lee's choice
+needs-decision [at=$T] [cause=decision] [key=captain-hold-pc-5068-video-approval-1]: Lee, a small thing for you
+EOF
+  jq -n --arg t "2026-10-23T10:01:00.000Z" '{name: "captains-log", value: {cards: [
+      {id: "pc5068-video-approval", band: "now", question: "A small thing for you", advice: "a", replies: ["ok"], asked: $t, state: "asked"},
+      {id: "chs-limits-card", band: "now", question: "Accept the proposed limits?", advice: "a", replies: ["yes"], asked: $t, state: "asked"}]}}' \
+    > "$TMP_ROOT/nocause/state.json"
+  printf '#!/usr/bin/env bash\ncat "%s"\n' "$TMP_ROOT/nocause/state.json" > "$fakebin/curl"
+  chmod +x "$fakebin/curl"
+  printf -- '- friction - Finds friction (role: friction; cadence: daily 06:15; archive: %s; captains-log: https://fleet.test/api/captains-log; model: none; added 2026-10-24)\n' \
+    "$TMP_ROOT/nocause/archive" > "$home/data/officers.md"
+  PATH="$fakebin:$PATH" run_officer "$home" >/dev/null || fail "run with cards and paused lines must succeed"
+  json="$home/data/officers/friction/$DATE.json"
+  md="$home/data/officers/friction/$DATE.md"
+  assert_equals "0" "$(jq '[.events[] | select(.key == "nc-ext")] | length' "$json")" \
+    "a paused line that states external waits on another owner, so it is not Lee's step"
+  assert_equals "credential missing credential" "$(status_event "$json" task-nc nc-cred '"\(.cause) \(.sub) \(.stated)"')" \
+    "a paused line's stated cause groups it, as a blocked line's does"
+  assert_equals "other unlabelled" "$(status_event "$json" task-nc nc-paused '"\(.cause) \(.sub)"')" \
+    "a paused line needs no cause tag, so it is not a blocked step without one"
+  assert_equals "other other" "$(status_event "$json" task-nc nc-blocked '"\(.cause) \(.sub)"')" \
+    "a genuinely untagged blocked line stays in blocked steps with no recorded cause"
+  assert_equals "other other" "$(status_event "$json" task-nc nc-misplaced '"\(.cause) \(.sub)"')" \
+    "a cause tag written after the colon is not a tag (bin/fm-classify-lib.sh reads only the head)"
+  assert_equals "chs-limits-card other unlabelled" \
+    "$(jq -r '[.events[] | select(.kind == "card-only")] | map("\(.card) \(.cause) \(.sub)") | join(";")' "$json")" \
+    "a card with no status line is left out of the no-cause group, and a card a status key already names is not counted twice"
+  assert_equals "0" "$(jq '[.events[] | select(.cause == "other" and .sub == "other" and .kind == "card-only")] | length' "$json")" \
+    "no Captain's Log card is counted as a blocked step without a cause"
+  assert_equals "false" "$(finding "$json" other unlabelled '.carded')" "unlabelled asks are reported and never carded"
+  assert_equals "0" "$(jq '[.bottlenecks[] | select(.id | startswith("other-unlabelled"))] | length' \
+    "$home/data/officers/friction/$DATE.velocity-findings.json")" "unlabelled asks never reach the velocity page"
+  assert_grep "other / unlabelled (no rule names a fix)" "$md" "the digest still lists them"
+  pass "fm-officer friction: cards and paused lines are kept out of the blocked-steps-without-a-cause finding"
 }
 
 test_lee_steps_are_counted_by_cause() {
@@ -1702,6 +1800,109 @@ test_fixed_reported_again_and_settled_states() {
   pass "fm-officer friction: fixed, reported-again and settled findings carry their link, merge, rule and actions"
 }
 
+write_recorded_fixes() {  # <file>: a fixes file in the documented schema; other-other's two newest fixes share a date
+  cat > "$1" <<'EOF'
+{"schema_version": 1, "fixes": {
+  "other-other": [
+    {"date": "2026-10-31", "link": "https://github.com/o/fm/commit/aaa1", "what": "workers state a cause"},
+    {"date": "2026-11-02", "link": "https://github.com/o/fm/commit/ccc3", "what": "captain steps state a cause"},
+    {"date": "2026-11-02", "link": "https://github.com/o/fm/commit/bbb2", "what": "cards state a cause"}],
+  "policy-approval": [
+    {"date": "2026-11-11", "link": "https://github.com/o/skills/pull/291", "what": "a named standing-yes list"},
+    {"date": "2026-11-02", "link": "https://github.com/o/skills/pull/94", "what": "standing yes for routine choices"}]}}
+EOF
+}
+
+test_a_recorded_fix_is_shown_and_never_restarted() {
+  local home json vel fixes out
+  home="$TMP_ROOT/recordedfix/home"
+  fixes="$TMP_ROOT/recordedfix/fixes.json"
+  mkdir -p "$home/state/inbox" "$home/data"
+  write_recorded_fixes "$fixes"
+  # Lee tapped Start fix on 3 and 4 Nov and again on 13 Nov; no tap names a task or a pull request.
+  for day in 03 04 13; do
+    printf "Captain's Log reply [friction-%s]: Start fix: Routine steps wait on Lee's explicit word\nat=2026-11-%sT08:00:00Z\n" \
+      policy-approval "$day" > "$home/state/inbox/$day.note"
+    printf "Captain's Log reply [friction-%s]: Start fix: Blocked steps carry no recorded cause\nat=2026-11-%sT08:00:00Z\n" \
+      other-other "$day" > "$home/state/inbox/o$day.note"
+  done
+  python3 -I - "$ROOT/bin/fm-officer-friction.py" "$fixes" "$home" "$ROOT/docs/officers/friction-fixes.json" <<'PY' || fail "a recorded fix must be shown, not restarted"
+import calendar, importlib.util, sys
+spec = importlib.util.spec_from_file_location("fm_officer_friction", sys.argv[1])
+friction = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(friction)
+home = friction.triage.Home(sys.argv[3])
+at = lambda stamp: calendar.timegm(__import__("time").strptime(stamp, "%Y-%m-%dT%H:%M:%SZ"))
+shipped = friction.load_recorded_fixes(sys.argv[2])
+assert [r["date"] for r in shipped["policy-approval"]] == ["2026-11-02", "2026-11-11"], shipped
+assert [r["date"] for r in shipped["other-other"]] == ["2026-10-31", "2026-11-02", "2026-11-02"], shipped
+# The fleet's own record parses in the same schema.
+real = friction.load_recorded_fixes(sys.argv[4])
+assert real and all(rows for rows in real.values()), real
+
+def finding(fid, seen):
+    return {"id": fid, "title": "t", "fix": "f", "event_ats": [at(x) for x in seen],
+            "last_seen_at": max(at(x) for x in seen)}
+seen = ["2026-11-16T08:00:00Z", "2026-11-16T09:00:00Z"]
+findings = [finding("policy-approval", seen), finding("other-other", seen)]
+# Without the record, a tap that names nothing reads as started with no task or link: the card Lee kept tapping.
+bare = friction.finding_states(findings, [home], [], "2026-11-16")
+assert (bare["policy-approval"]["state"], bare["policy-approval"]["reopen"]) == ("started", True), bare
+states = friction.finding_states(findings, [home], [], "2026-11-16", {"other-other"}, recorded=shipped)
+pol, oth = states["policy-approval"], states["other-other"]
+assert pol["state"] == "fixed" and pol["actions"] == [] and not pol["reopen"], pol
+assert pol["link"] == "https://github.com/o/skills/pull/291", pol
+assert pol["fix_note"] == "Fixed on 2026-11-11 by https://github.com/o/skills/pull/291, still seen 2 time(s) since (counted on 2026-11-16).", pol
+assert pol["retaps"] == 1 and "earlier: https://github.com/o/skills/pull/94 on 2026-11-02" in pol["fix_more"], pol
+# A standing-work finding with a recorded fix is not started by default again.
+assert oth["state"] == "fixed" and oth["actions"] == [] and oth["retaps"] == 3, oth
+# Two fixes on the newest date: the card's link, the fixed record and the note all name the same one.
+assert oth["link"] == oth["fixed"]["link"] == "https://github.com/o/fm/commit/ccc3", oth
+assert oth["fix_note"].startswith("Fixed on 2026-11-02 by https://github.com/o/fm/commit/ccc3,"), oth
+assert "https://github.com/o/fm/commit/bbb2 on 2026-11-02" in oth["fix_more"], oth
+# Not seen again since the fix: it says so.
+quiet = friction.finding_states([finding("policy-approval", ["2026-11-10T08:00:00Z"])], [home], [], "2026-11-16", recorded=shipped)
+assert "not seen again since" in quiet["policy-approval"]["fix_note"], quiet
+# A start that names a pull request is real new work and wins over the record.
+with open(sys.argv[3] + "/data/backlog.md", "w") as fh:
+    fh.write("- [ ] fix-pa - fix policy-approval https://github.com/o/r/pull/99\n")
+work = friction.finding_states(findings, [home], [], "2026-11-16", recorded=shipped)["policy-approval"]
+assert (work["state"], work["link"], work["task"]) == ("started", "https://github.com/o/r/pull/99", "fix-pa"), work
+# A fix that merged after the recorded ones is the newest fix: still fixed with its link, never a fresh Start fix.
+with open(sys.argv[3] + "/state/fleet-ledger.jsonl", "w") as fh:
+    fh.write('{"v":1,"ts":%d,"event":"task.merged","task":"fix-pa","via":"pr","pr":"https://github.com/o/r/pull/99"}\n'
+             % at("2026-11-14T10:00:00Z"))
+home = friction.triage.Home(sys.argv[3])
+later = friction.finding_states(findings, [home], [], "2026-11-16", {"policy-approval"}, recorded=shipped)["policy-approval"]
+assert (later["state"], later["actions"], later["link"]) == ("fixed", [], "https://github.com/o/r/pull/99"), later
+assert later["fix_note"] == "Fixed on 2026-11-14 by https://github.com/o/r/pull/99, still seen 2 time(s) since (counted on 2026-11-16).", later
+assert "https://github.com/o/skills/pull/291 on 2026-11-11" in later["fix_more"], later
+# An unreadable record is an error the run reports, never a silent empty one.
+try:
+    friction.load_recorded_fixes(sys.argv[3] + "/missing.json")
+except RuntimeError:
+    pass
+else:
+    raise AssertionError("a missing fixes file must raise")
+PY
+  # End to end, a card with a recorded fix reads fixed, links the fix, offers no action and leads with the note.
+  home=$(make_world recordedcard)
+  printf 'blocked [at=%s] [key=nc-blocked]: Lee, the build cache needs a look\n' "$T" > "$home/state/task-nc.status"
+  out="$TMP_ROOT/recordedcard/out"
+  mkdir -p "$out"
+  python3 -I "$ROOT/bin/fm-officer-friction.py" run --archive "$TMP_ROOT/recordedcard/archive" --date "$DATE" --out "$out" \
+    --home "$home" --now "$NOW" --fixes "$fixes" >/dev/null || fail "run with a recorded fix must succeed"
+  vel="$out/$DATE.velocity-findings.json"
+  assert_equals "fixed [] https://github.com/o/fm/commit/ccc3 true" \
+    "$(jq -r '[.bottlenecks[] | select(.id == "other-other")][0] | "\(.state) \(.actions | tojson) \(.link) \(.evidence | startswith("Fixed on 2026-11-02 by https://github.com/o/fm/commit/ccc3,"))"' "$vel")" \
+    "the card shows the fix link it already has, leads its evidence with the note and offers no Start fix"
+  json="$out/$DATE.json"
+  assert_equals "fixed" "$(finding "$json" other other '.state.state')" "the digest records the recorded fix as the finding's state"
+  assert_grep "Recorded fix: Fixed on 2026-11-02 by https://github.com/o/fm/commit/ccc3" \
+    "$out/$DATE.md" "the digest quotes the recorded fix"
+  pass "fm-officer friction: a recorded fix is shown on the card and never offered as a fresh Start fix"
+}
+
 count_lines() {  # <pattern> <file>: how many lines match; 0 when the file does not exist
   local n
   n=$(grep -c -- "$1" "$2" 2>/dev/null || true)
@@ -1904,6 +2105,8 @@ test_merge_word_is_not_a_missing_tool
 test_token_scope_needs_a_token_permission_failure
 test_status_waits_and_root_causes
 test_stated_causes_group_blocked_lines
+test_reserved_asks_are_not_friction
+test_cards_and_paused_lines_are_not_blocked_steps_without_a_cause
 test_lee_steps_are_counted_by_cause
 test_self_clearing_external_waits_are_not_friction
 test_transcript_lee_steps_and_refusals
@@ -1928,6 +2131,7 @@ test_registry_and_unharvested_day
 test_bosun_unsure_class
 test_standing_work_is_started_by_default_with_an_object_action
 test_fixed_reported_again_and_settled_states
+test_a_recorded_fix_is_shown_and_never_restarted
 test_pr_merged_outside_the_ledger_reads_reported_again
 test_a_standing_work_fix_that_merged_and_did_not_hold
 test_findings_are_filed_in_linear_under_the_contract
