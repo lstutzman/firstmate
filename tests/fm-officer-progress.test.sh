@@ -2119,6 +2119,34 @@ JSON
   pass 'progress: Top of Mind failure never reuses stale data or blocks other discovery'
 }
 
+test_top_of_mind_skips() {
+  make_world top-skips
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  cat > "$WORLD/top-of-mind.json" <<'JSON'
+{"rows":[{"id":"ign","words":"Ignore this, its not a big deal","status":"not-started","work":[]},
+{"id":"yes","words":"yes","status":"not-started","work":[]},
+{"id":"why","words":"Why are we worried about this?","status":"not-started","work":[]},
+{"id":"appr","words":"approve PR 5269 at 45c238aa51","status":"not-started","work":[]},
+{"id":"fix1","words":"Start fix: a tool agents need is missing: bc","status":"not-started","work":[]},
+{"id":"fix2","words":"Start fix: a tool agents need is missing: dig","status":"not-started","work":[]},
+{"id":"sur","words":"surgeon weaknesses start now","status":"not-started","work":[]},
+{"id":"sur2","words":"Surgeon weaknesses start now","status":"not-started","work":[]},
+{"id":"logs","words":"keep every local session log; do NOT let the Bosun trash archived local logs","status":"not-started","work":[]}]}
+JSON
+  run_progress >/dev/null || fail 'skip run failed'
+  assert_equals 'logs sur' "$(jq -r '[.start_requests[].id] | sort | join(" ")' "$file")" 'only real asks start, once each'
+  local reasons
+  reasons="$(jq -r '.excluded[] | .id + "=" + .reason' "$file")"
+  assert_contains "$reasons" 'ign=Not a work item: an answer or dismissal' 'a dismissal is skipped'
+  assert_contains "$reasons" 'yes=Not a work item: an answer or dismissal' 'a bare yes is skipped'
+  assert_contains "$reasons" 'why=Not a work item: a question' 'a question is skipped'
+  assert_contains "$reasons" 'appr=Not a new start: an approval or merge word for existing work' 'an unmatched approval is listed, not started'
+  assert_contains "$reasons" 'fix1=Routed to the friction lane' 'a Start fix row is routed to the friction lane'
+  assert_contains "$reasons" 'fix2=Routed to the friction lane' 'every Start fix row is routed'
+  assert_contains "$reasons" 'sur2=Duplicate of another Top of Mind ask' 'a same-run duplicate is skipped'
+  pass 'progress: Top of Mind skips answers, questions, approvals, friction asks and duplicates'
+}
+
 test_top_of_mind_kind() {
   make_world top-kind
   local file="$WORLD_HOME/data/officers/progress/$DATE.json"
@@ -2161,6 +2189,7 @@ test_start_home_routes_requests_by_project
 test_non_work_and_duplicates_are_dropped_and_reported
 test_top_of_mind_start
 test_top_of_mind_kind
+test_top_of_mind_skips
 test_top_of_mind_dispositions
 test_top_of_mind_matched_dispositions
 test_top_of_mind_failure
