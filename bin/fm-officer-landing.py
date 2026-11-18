@@ -86,7 +86,7 @@ import time
 
 FACT_FIELDS = ("repo", "pr", "merged_sha", "merged_at", "on_staging", "staging_deployed",
                "on_main", "main_promoted_at", "in_production", "production_release", "landed_via")
-NOT_STARTED = {"Triage", "Backlog", "Todo", "In Progress"}
+NOT_STARTED = {"Triage", "Backlog", "In Progress"}
 CLOSED = {"Done", "Released", "Canceled", "Cancelled", "Duplicate"}
 VIEWS_PER_CORRECTION = 5
 TOP_KEYS = {"schema_version", "generated_at", "staging_sha", "production_sha", "records", "items"}

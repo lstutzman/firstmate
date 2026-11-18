@@ -80,7 +80,7 @@ case "\$1 \$2" in
       PC-2) echo '{"ok":true,"data":{"issue":{"identifier":"PC-2","state":"Done"},"subIssues":[]}}' ;;
       PC-1) echo '{"ok":true,"data":{"issue":{"identifier":"PC-1","state":"In Staging"},"subIssues":[]}}' ;;
       PC-5) echo '{"ok":true,"data":{"issue":{"identifier":"PC-5","state":"In Progress"},"subIssues":[{"identifier":"PC-6"}]}}' ;;
-      *) echo '{"ok":true,"data":{"issue":{"identifier":"'"\$3"'","state":"Todo"},"subIssues":[]}}' ;;
+      *) echo '{"ok":true,"data":{"issue":{"identifier":"'"\$3"'","state":"Backlog"},"subIssues":[]}}' ;;
     esac ;;
   *) echo '{"ok":true,"data":{}}' ;;
 esac
