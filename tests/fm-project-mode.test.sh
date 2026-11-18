@@ -85,8 +85,7 @@ err=$(FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" lead 2>&1 >/dev/null)
 pass "fm-project-mode: forge=forgejo binds in any token order and keeps +yolo"
 
 for flag in "" --forge; do
-  # shellcheck disable=SC2086 # An empty flag must expand to nothing.
-  out=$(FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" $flag kept 2>/dev/null)
+  out=$(FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" ${flag:+"$flag"} kept 2>/dev/null)
   status=$?
   [ "$status" -eq 3 ] || fail "local-only with forge=forgejo did not refuse${flag:+ under $flag} (status $status, got '$out')"
   [ -z "$out" ] || fail "a refused local-only forge still handed the caller a posture: '$out'"
@@ -98,8 +97,7 @@ pass "fm-project-mode: forge=forgejo on local-only is refused like every forge"
 pass "fm-project-mode: the colon spelling forge:forgejo is not a forge binding"
 
 for flag in "" --forge; do
-  # shellcheck disable=SC2086 # An empty flag must expand to nothing.
-  out=$(FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" $flag glabbed 2>/dev/null)
+  out=$(FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" ${flag:+"$flag"} glabbed 2>/dev/null)
   status=$?
   [ "$status" -eq 3 ] || fail "forge=gitlab did not refuse${flag:+ under $flag} (status $status, got '$out')"
   [ -z "$out" ] || fail "a refused forge=gitlab still handed the caller a posture: '$out'"
@@ -117,8 +115,7 @@ err=$(FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" reviewed 2>&1 >/dev/null)
 err=$(FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" reviewed-yolo 2>&1 >/dev/null)
 assert_contains "$err" "yolo is inactive for forge=external" "+yolo on forge=external was dropped without a refusal"
 for flag in "" --forge; do
-  # shellcheck disable=SC2086 # An empty flag must expand to nothing.
-  out=$(FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" $flag reviewed-local 2>/dev/null)
+  out=$(FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" ${flag:+"$flag"} reviewed-local 2>/dev/null)
   status=$?
   [ "$status" -eq 3 ] || fail "local-only with forge=external did not refuse${flag:+ under $flag} (status $status, got '$out')"
   [ -z "$out" ] || fail "a refused local-only external forge still handed the caller a posture: '$out'"
@@ -261,8 +258,7 @@ pass "fm-project-mode: pr=manual is kept on a no-mistakes-prod-only project"
 
 for name in hand-direct hand-local hand-forgejo hand-empty hand-auto; do
   for flag in "" --pr; do
-    # shellcheck disable=SC2086 # An empty flag must expand to nothing.
-    out=$(FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" $flag "$name" 2>/dev/null)
+    out=$(FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" ${flag:+"$flag"} "$name" 2>/dev/null)
     status=$?
     [ "$status" -eq 3 ] || fail "$name did not refuse${flag:+ under $flag} (status $status, got '$out')"
     [ -z "$out" ] || fail "a refused $name still handed the caller a posture: '$out'"
