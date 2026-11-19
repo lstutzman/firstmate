@@ -146,9 +146,11 @@ if [ "$src" = run-step ]; then
   esac
 elif [ "$src" = status-log ] && [ "$verb" = "done" ] \
   && ! fm_dod_should_gate_ship_done ship no-mistakes "$last"; then
-  # bin/fm-crew-state.sh leads with this marker when the daemon still reports a
-  # live run its run-step route could not attribute: reattach, never restart.
+  # bin/fm-crew-state.sh leads with "validation run not finished" when the
+  # daemon still reports a live run its run-step route could not attribute:
+  # reattach, never restart. "validation not started" means no run exists.
   case "$detail" in
+    "pipeline handoff: validation not started"*) slip=start ;;
     "pipeline handoff:"*) slip=reattach ;;
     *) slip=start ;;
   esac

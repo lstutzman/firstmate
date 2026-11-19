@@ -2696,6 +2696,51 @@ setup_prevalidation_done_with_stale_run() {  # <case-dir> <run-fixture-fn>
   arm_idle_record "$d/state" handoff
 }
 
+# The worker's pre-validation done: names the pipeline it waits for. Before any
+# run exists for the branch the done is the handoff before validation starts,
+# marked apart from a live run, never a finished task.
+test_ready_for_no_mistakes_done_with_no_run_is_not_started() {
+  reset_fakes
+  local d out
+  d=$(new_case ready-no-run)
+  make_repo_on_branch "$d/wt" fm/preval
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/preval.meta" \
+    "window=fm:fm-preval" "worktree=$d/wt" "project=$d/wt" \
+    "kind=ship" "mode=no-mistakes" "harness=claude"
+  printf 'done [at=1000]: implementation complete, ready for /no-mistakes\n' > "$d/state/preval.status"
+  FM_FAKE_AXI_STATUS="current_branch: fm/preval
+runs_on_current_branch: 0"
+  FM_FAKE_RUNS_LIST=""
+  FM_FAKE_BUSY=0
+  arm_idle_record "$d/state" preval
+  out=$(run_crew_state "$d" preval)
+  assert_contains "$out" "state: done · source: status-log · pipeline handoff: validation not started · implementation complete, ready for /no-mistakes" \
+    "a ready-for-/no-mistakes done with no run yet carries the not-started marker: $out"
+  assert_not_contains "$out" "validation run not finished" "with no run, the done must not claim a live run: $out"
+  # A CLI that answers nothing proves no absence: the done stays plain.
+  FM_FAKE_AXI_STATUS=""
+  out=$(run_crew_state "$d" preval)
+  assert_contains "$out" "state: done · source: status-log · implementation complete, ready for /no-mistakes" \
+    "a ready-for-/no-mistakes done with an unanswered run lookup reads as a plain done: $out"
+  assert_not_contains "$out" "pipeline handoff" "an unanswered run lookup is not proof that no run exists: $out"
+  pass "a ready-for-/no-mistakes done with no run is a not-started handoff"
+}
+
+# A run that already ended answers the state: the phrase never overrides it.
+test_ready_for_no_mistakes_done_after_cancelled_run_is_not_marked() {
+  reset_fakes
+  local d out
+  d=$(new_case ready-cancelled)
+  setup_prevalidation_done_with_stale_run "$d" run_cancelled
+  printf 'done [at=1000]: implementation complete, ready for /no-mistakes\n' > "$d/state/handoff.status"
+  out=$(run_crew_state "$d" handoff)
+  assert_contains "$out" "state: done · source: status-log · implementation complete, ready for /no-mistakes" \
+    "a ready-for-/no-mistakes done after a cancelled run reads as a plain done: $out"
+  assert_not_contains "$out" "pipeline handoff" "a cancelled run is not a pipeline handoff, whatever the note says"
+  pass "a ready-for-/no-mistakes done after a cancelled run is not marked"
+}
+
 test_no_mistakes_handoff_done_with_live_run_is_marked() {
   reset_fakes
   local d out
@@ -6940,6 +6985,8 @@ test_unpushed_ship_done_is_blocked
 test_ready_evidence_state_read_only_reads_the_record
 test_merged_pr_reads_done_under_captured_meta
 test_no_mistakes_prevalidation_done_stays_done
+test_ready_for_no_mistakes_done_with_no_run_is_not_started
+test_ready_for_no_mistakes_done_after_cancelled_run_is_not_marked
 test_no_mistakes_handoff_done_with_live_run_is_marked
 test_no_mistakes_done_after_cancelled_run_is_not_marked
 test_moved_remote_branch_without_named_head_is_blocked

@@ -29,6 +29,7 @@ Missing, malformed, or stale home summaries from reachable homes produce an inve
 An unreachable home without usable cached inventory is recorded quietly as not collected, including an offline laptop.
 An incomplete child-liveness observation preserves the independently complete in-flight work count; other inventory contradictions still alert with their reason.
 An in-flight item whose child is done (`terminal_in_flight`) is complete, not a contradiction, when the second mate holds that same task id as a captain-hold row and its open-decision list is not truncated.
+A no-mistakes worker's pre-validation `done: ... ready for /no-mistakes` is a pipeline handoff, not a finished child, and does not count as `terminal_in_flight`, while the branch has a live run or the CLI reports no run for it.
 An inventory alert waits until the same finding appears in `persist_polls` consecutive polls of a channel (default 2), so an item that is missing on one poll and present on the next raises nothing.
 The timer's `needs-decision` line carries a `[cause=...]` tag, `decision` for quota pressure and `tool` for an unreadable reader or inventory, so the friction officer groups it with other blocked lines.
 A silent second mate is an external wait, not a question for the captain: the timer appends a `paused` line tagged `[cause=external]` that names the second mate, says it is expected back when it reports again, and carries an `until` recheck time `stale_minutes` ahead, so firstmate rechecks it then instead of holding the task.
