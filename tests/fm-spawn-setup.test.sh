@@ -94,3 +94,40 @@ touch "$setup/off"
 run_spawn setup-off
 [ ! -e "$setup_home/state/setup-off.setup" ] || fail 'project off switch still ran setup'
 pass 'project off switch skips all setup'
+# Model overlay (config/model-overlay-dir): the spawn adds the matching file to the launch brief.
+assert_not_grep() {  # <pattern> <file> <msg>
+  if grep -q -- "$1" "$2"; then fail "$3"; fi
+}
+rm -f "$setup/off"
+overlay_dir="$TMP_ROOT/overlays"
+mkdir -p "$overlay_dir"
+printf 'OVERLAY-HAIKU-MEDIUM-TEXT\n' > "$overlay_dir/claude-haiku-5-5-medium.md"
+overlay_spawn() {  # <id> [spawn flags...]
+  local id=$1
+  shift
+  fm_test_spawn_brief "$setup_home" "$id" 'overlay intent words'
+  fm_test_run_spawn "$setup_home" "$wt" "$fakebin" "$id" "$proj" --mode no-mistakes --yolo off "$@" > "$TMP_ROOT/$id.out" 2>&1 || fail "spawn failed: $(cat "$TMP_ROOT/$id.out")"
+}
+overlay_spawn overlay-noconfig --model claude-haiku-5-5 --effort medium
+assert_not_grep 'OVERLAY-HAIKU' "$setup_home/data/overlay-noconfig/launch-brief.md" 'no config must add nothing'
+printf '%s\n' "$overlay_dir" > "$setup_home/config/model-overlay-dir"
+overlay_spawn overlay-match --model claude-haiku-5-5 --effort medium
+brief=$setup_home/data/overlay-match/launch-brief.md
+assert_grep 'OVERLAY-HAIKU-MEDIUM-TEXT' "$brief" 'matching overlay not added'
+[ "$(grep -n '^# Model overlay$' "$brief" | cut -d: -f1)" -gt "$(grep -n '^## Firstmate spec$' "$brief" | head -n 1 | cut -d: -f1)" ] || fail 'overlay must follow the source brief'
+overlay_line=$(grep -n 'OVERLAY-HAIKU' "$brief" | cut -d: -f1)
+intent_line=$(grep -n '^## Captain intent authorized for --intent$' "$brief" | cut -d: -f1)
+[ "$overlay_line" -lt "$intent_line" ] || fail 'overlay must come before the intent block'
+sed -n "$intent_line,\$p" "$brief" > "$TMP_ROOT/intent-block.txt"
+assert_not_grep 'OVERLAY-HAIKU' "$TMP_ROOT/intent-block.txt" 'overlay text leaked into the intent block'
+overlay_spawn overlay-other-model --model claude-sonnet-5-5 --effort medium
+assert_not_grep 'OVERLAY-HAIKU' "$setup_home/data/overlay-other-model/launch-brief.md" 'non-matching model must add nothing'
+overlay_spawn overlay-other-effort --model claude-haiku-5-5 --effort high
+assert_not_grep 'OVERLAY-HAIKU' "$setup_home/data/overlay-other-effort/launch-brief.md" 'non-matching effort must add nothing'
+printf '%s\n' "$TMP_ROOT/no-such-overlays" > "$setup_home/config/model-overlay-dir"
+overlay_spawn overlay-missing-dir --model claude-haiku-5-5 --effort medium
+assert_grep 'spawned overlay-missing-dir' "$TMP_ROOT/overlay-missing-dir.out" 'missing overlay dir blocked the spawn'
+assert_grep 'warning: config/model-overlay-dir' "$TMP_ROOT/overlay-missing-dir.out" 'missing overlay dir not warned'
+assert_not_grep 'OVERLAY-HAIKU' "$setup_home/data/overlay-missing-dir/launch-brief.md" 'missing overlay dir must add nothing'
+rm -f "$setup_home/config/model-overlay-dir"
+pass 'model overlay is added for a matching model and effort, only before the intent block, and never blocks a spawn'
