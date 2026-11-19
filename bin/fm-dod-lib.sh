@@ -439,6 +439,38 @@ Carry that one reviewer note line, verbatim, in the body of your commit message 
 EOF
 }
 
+# fm_brief_model_overlay_section adds a per-model overlay to the launch brief.
+# The home's `config/model-overlay-dir` names a directory (absolute, or relative
+# to the config directory); when it holds `<model>-<effort>.md` for the spawn's
+# resolved --model and --effort, that file's text follows the source brief under
+# its own heading, in the position fm-spawn.sh emits the ownership section, so
+# it sits below every safety, approval and scope rule and never lands inside the
+# `--intent` text. No config, no named model or effort, or no matching file adds
+# nothing; an unusable directory warns on stderr and adds nothing.
+fm_brief_model_overlay_section() {  # <config-dir> <model> <effort>
+  local cfg=$1 model=${2:-} effort=${3:-} dir file
+  [ -f "$cfg/model-overlay-dir" ] || return 0
+  dir=$(awk '/^[[:space:]]*(#|$)/ { next } { sub(/^[[:space:]]+/, ""); sub(/[[:space:]]+$/, ""); print; exit }' "$cfg/model-overlay-dir" 2>/dev/null || true)
+  [ -n "$dir" ] || return 0
+  case "$dir" in /*) ;; *) dir="$cfg/$dir" ;; esac
+  if [ ! -d "$dir" ] || [ ! -r "$dir" ] || [ ! -x "$dir" ]; then
+    echo "warning: config/model-overlay-dir names $dir, which is not a readable directory; no model overlay added" >&2
+    return 0
+  fi
+  [ -n "$model" ] && [ -n "$effort" ] || return 0
+  case "$model$effort" in *[!A-Za-z0-9._-]*) return 0 ;; esac
+  file="$dir/$model-$effort.md"
+  [ -f "$file" ] || return 0
+  if [ ! -r "$file" ]; then
+    echo "warning: model overlay $file is not readable; no model overlay added" >&2
+    return 0
+  fi
+  [ -n "$(tr -d '[:space:]' <"$file")" ] || return 0
+  printf '\n# Model overlay\n'
+  printf 'This section sits below every safety, approval, credential and scope rule in this brief and never widens any of them.\n'
+  cat "$file"
+}
+
 # Accept the current two-subsection contract only when both bodies have content;
 # briefs predating that contract remain valid when their # Task body has content.
 fm_brief_task_content_valid() {  # <file>

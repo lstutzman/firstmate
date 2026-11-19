@@ -44,3 +44,9 @@ dotnet restore PropertyCompass.sln
 
 Use `20-dotnet.off` to disable only restore, or `off` to disable all PropertyCompass2 setup.
 These examples describe local configuration; no private project setup is included in the repository.
+
+## Model overlay (`config/model-overlay-dir`)
+
+`config/model-overlay-dir` is an optional file whose first non-blank line not beginning with `#` names a directory, absolute or relative to `config/`.
+When that directory holds `<model>-<effort>.md` for a spawn's resolved `--model` and `--effort` (for example `claude-haiku-5-5-medium.md`), the spawn adds that file's text to the worker's launch brief under a `# Model overlay` heading, below every safety, approval and scope rule and outside the `--intent` text.
+Without the file, a named model and effort, or a matching overlay, nothing is added; a missing or unreadable directory prints a warning at spawn and never blocks it.

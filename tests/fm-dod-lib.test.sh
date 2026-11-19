@@ -755,6 +755,34 @@ test_ownership_section_needs_fable_model_and_listed_class() {
   pass "ownership line needs a Fable 5.x model and a listed work class"
 }
 
+# The model overlay needs the config file, a named model and effort, and a
+# matching <model>-<effort>.md; anything else adds nothing.
+test_model_overlay_section_needs_config_and_matching_file() {
+  local cfg out
+  cfg="$TMP_ROOT/overlay-cfg"
+  mkdir -p "$cfg/ov"
+  printf 'OVERLAY-TEXT\n' > "$cfg/ov/claude-haiku-5-5-medium.md"
+  [ -z "$(fm_brief_model_overlay_section "$cfg" claude-haiku-5-5 medium 2>&1)" ] || fail "no config must add nothing"
+  printf '# comment\n\n%s\n' "$cfg/ov" > "$cfg/model-overlay-dir"
+  out=$(fm_brief_model_overlay_section "$cfg" claude-haiku-5-5 medium)
+  assert_contains "$out" '# Model overlay' "heading missing"
+  assert_contains "$out" 'never widens any of them' "the section must say it never widens a rule"
+  assert_contains "$out" 'OVERLAY-TEXT' "matching overlay text missing"
+  printf 'ov\n' > "$cfg/model-overlay-dir"
+  assert_contains "$(fm_brief_model_overlay_section "$cfg" claude-haiku-5-5 medium)" 'OVERLAY-TEXT' "a relative dir resolves against the config dir"
+  printf '%s\n' "$cfg/ov" > "$cfg/model-overlay-dir"
+  for m in claude-sonnet-5-5 "" '../x'; do
+    [ -z "$(fm_brief_model_overlay_section "$cfg" "$m" medium 2>&1)" ] || fail "model '$m' must add nothing"
+  done
+  [ -z "$(fm_brief_model_overlay_section "$cfg" claude-haiku-5-5 "" 2>&1)" ] || fail "no effort must add nothing"
+  out=$(fm_brief_model_overlay_section "$cfg" claude-haiku-5-5 medium 2>&1 >/dev/null)
+  [ -z "$out" ] || fail "a good directory must not warn"
+  printf '%s\n' "$cfg/missing" > "$cfg/model-overlay-dir"
+  [ -z "$(fm_brief_model_overlay_section "$cfg" claude-haiku-5-5 medium 2>/dev/null)" ] || fail "a missing dir must add nothing"
+  assert_contains "$(fm_brief_model_overlay_section "$cfg" claude-haiku-5-5 medium 2>&1 >/dev/null)" 'warning' "a missing dir must warn"
+  pass "model overlay needs config, a named model and effort, and a matching file"
+}
+
 # forge=external: a review tool uploads its own snapshot, so nothing is pushed.
 # The fixtures name an invented tool and an RFC 6761 reserved host only.
 EXT_CFG="$TMP_ROOT/external-config"
@@ -1051,5 +1079,6 @@ test_external_review_done_with_backup_needs_the_copy
 
 test_worker_role_names_skill_and_fallback_file
 test_ownership_section_needs_fable_model_and_listed_class
+test_model_overlay_section_needs_config_and_matching_file
 
 echo "all fm-dod-lib tests passed"
