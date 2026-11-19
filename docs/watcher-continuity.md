@@ -141,6 +141,7 @@ A session killed mid-cycle and relaunched with `claude --resume <id>` comes back
 Session start and every resume, reload, or fork record the session's endpoint, and a per-home user timer runs one `check` every five minutes.
 When the home needs supervision, no healthy watcher holds its lock, and the beacon is older than 15 minutes, the check rings that endpoint once per stale episode with a `watcher` operational input, so the next turn and its turn end restore supervision through the ordinary owner.
 It types only into an affirmatively empty idle composer and never starts, stops, or kills a session or watcher.
+When it cannot ring (a busy or half-typed composer, an unconfirmed submit, or a missing endpoint), it keeps retrying every poll and, after `FM_WATCH_BACKSTOP_ALERT_AFTER` such polls (default 2) in one episode, raises one wedge-alarm alert through [`config/wedge-alarm`](wedge-alarm.md) so the outage is never silent.
 Its header owns the record gate, the episode key, and the ring guards, and [configuration](configuration/supervision.md#watcher-backstop-timer) owns installation.
 
 ## Actionable wake ordering

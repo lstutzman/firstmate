@@ -4,6 +4,8 @@ The away-mode sub-supervisor (`bin/fm-supervise-daemon.sh`) buffers escalations 
 When injection cannot confirm a submit past `FM_MAX_DEFER_SECS`, `inject_wedge_alarm` raises a loud, rate-limited alarm so the stall never stays invisible.
 The active alert is pane-independent because a tmux status-line flash has no cross-backend equivalent and cannot reach an unattended captain reliably.
 The durable marker and tmux flash remain as additional signals.
+The watcher backstop (`bin/fm-watch-backstop.sh`) reuses the same channels: when supervision is down and it cannot ring the session, it raises one alert per stale episode after `FM_WATCH_BACKSTOP_ALERT_AFTER` undeliverable polls (default 2; 0 disables), titled `firstmate: supervision DOWN`, and records it in `state/.watch-backstop-alert` once a channel delivers it; an alert that no channel delivered (log-only or failed) is retried on the next poll.
+The channel code lives in `bin/fm-wedge-alarm-lib.sh`, sourced by both scripts.
 
 ## Channels
 
@@ -13,7 +15,7 @@ It lists channel directives, one per non-empty, non-comment line, and every list
 
 - `off` disables every active alert while retaining the durable marker and tmux flash.
 - `auto` or `default` resolves to `osascript` on macOS.
-  Other platforms have no built-in OS channel, so configure `command:` when a durable marker alone is insufficient.
+  Other platforms have no built-in OS channel, so configure `command:` when a durable marker alone is insufficient; on Linux an absent config means both the daemon alarm and the backstop alert only log.
 - `osascript` posts a macOS Notification Center banner outside the terminal pane.
 - `herdr` calls `herdr notification show` outside the supervised pane.
 - `rex` writes a blocked `id=fm-wedge` program-status record plus a desktop notification on Firstmate's own Rex pane, and removes the record after the next delivered digest; it needs a Rex supervisor pane, and `auto` never selects it.
