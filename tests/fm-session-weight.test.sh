@@ -42,13 +42,70 @@ rows.append(("r0", now - 60, "x@example.com", "claude-opus-4-8", 10000, 1, 0, 50
 con.executemany("insert into usage values (?,?,?,?,?,?,?,?,?,?,?)", rows)
 con.commit()
 PY
+  make_fake_herdr "$w"
   printf '%s\n' "$w"
 }
 
 weight() {  # <world> [args...]
   local w=$1
   shift
-  bash "$WEIGHT" --ps "$w/ps.txt" --proc-root "$w/proc" --db "$w/usage.db" --now "$NOW" "$@"
+  PATH="$w/herdrbin:$PATH" bash "$WEIGHT" --ps "$w/ps.txt" --proc-root "$w/proc" --db "$w/usage.db" --now "$NOW" --homes-root "$w/homes" "$@"
+}
+
+# A fake herdr that answers `workspace list`, `pane list` and `pane process-info --pane P` for `--session S`
+# from fixture files in <world>/herdr (S.workspaces.json, S.panes.json, S.proc.<pane with : as _>.json)
+# and fails when a fixture is absent, so no test ever reaches the real Herdr.
+make_fake_herdr() {  # <world>
+  mkdir -p "$1/herdrbin" "$1/herdr"
+  cat > "$1/herdrbin/herdr" <<'SH'
+#!/usr/bin/env bash
+d=$(dirname "$0")/../herdr
+s="" p="" words=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --session) s=$2; shift 2 ;;
+    --pane) p=${2//:/_}; shift 2 ;;
+    *) words+=("$1"); shift ;;
+  esac
+done
+[ -n "$s" ] || exit 1
+case "${words[*]}" in
+  "workspace list") f=$d/$s.workspaces.json ;;
+  "pane list") f=$d/$s.panes.json ;;
+  "pane process-info") f=$d/$s.proc.$p.json ;;
+  *) exit 1 ;;
+esac
+[ -f "$f" ] && cat "$f"
+SH
+  chmod +x "$1/herdrbin/herdr"
+}
+
+# fake_pane_pids <world> <session> <pane> <pid>: the pane's foreground process is <pid>.
+fake_pane_pids() {
+  printf '{"result":{"process_info":{"shell_pid":1,"foreground_process_group_id":%s,"foreground_processes":[{"pid":%s}]}}}\n' "$4" "$4" \
+    > "$1/herdr/$2.proc.${3//:/_}.json"
+}
+
+# lock_holder <world> <home> <ps-line-model-flags>: start a real process named claude, record its pid
+# as <home>'s session lock, list it in the fake process table with the given age, and set LAST_HOLDER to its pid.
+lock_holder() {  # <world> <home> <age-seconds> <model>
+  local w=$1 home=$2 age=$3 model=$4 pid
+  mkdir -p "$w/homes/$home/state" "$w/bin"
+  [ -x "$w/bin/claude" ] || cp "$(command -v bash)" "$w/bin/claude"
+  mkfifo "$w/fifo" 2>/dev/null
+  # shellcheck disable=SC2016 # the script text is for the child shell
+  "$w/bin/claude" -c 'read -r -t 60 _ <> "$1"' _ "$w/fifo" >/dev/null 2>&1 &
+  pid=$!
+  HOLDER_PIDS="${HOLDER_PIDS:-} $pid"
+  printf '%s\n' "$pid" > "$w/homes/$home/state/.lock"
+  printf '  %s %s claude --model %s\n' "$pid" "$age" "$model" >> "$w/ps.txt"
+  LAST_HOLDER=$pid
+}
+
+stop_holders() {
+  local p
+  for p in ${HOLDER_PIDS:-}; do kill "$p" 2>/dev/null; wait "$p" 2>/dev/null; done
+  HOLDER_PIDS=
 }
 
 test_flags_old_and_retired_sessions_only() {
@@ -146,6 +203,105 @@ test_note_and_wake_line_once_per_day() {
   pass 'one note and one wake line per UTC day'
 }
 
+test_lock_holders_are_not_flagged_for_age() {
+  local w out holder
+  w=$(make_world holders)
+  lock_holder "$w" navigator 200000 claude-opus-5-5; holder=$LAST_HOLDER
+  out=$(weight "$w")
+  stop_holders
+  assert_not_contains "$out" "pid=$holder " "a home's lock-holding session over 24h is not flagged for age"
+  assert_contains "$out" "pid=200 claude home=quartermaster" "a non-holder over 24h is still flagged"
+  assert_equals 4 "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "only the holder is dropped from the list"
+  pass 'a session holding a home lock is not flagged for age alone'
+}
+
+test_lock_holder_on_retired_model_is_still_flagged() {
+  local w out holder
+  w=$(make_world holderret)
+  lock_holder "$w" slarti 200000 claude-opus-4-8; holder=$LAST_HOLDER
+  out=$(weight "$w")
+  stop_holders
+  assert_contains "$out" "pid=$holder claude home=unknown age=55.6h model=claude-opus-4-8 [retired-model]" "a lock holder on a retired model is flagged for the model only"
+  pass 'a lock holder on a retired model is still flagged'
+}
+
+test_parent_home_lock_holder_is_not_flagged() {
+  local w out holder
+  w=$(make_world parent)
+  mkdir -p "$w/homes/navigator" "$w/main/state"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$w/main" > "$w/homes/navigator/.fm-secondmate-parent"
+  lock_holder "$w" navigator 200000 claude-opus-5-5; holder=$LAST_HOLDER
+  rm -f "$w/homes/navigator/state/.lock"
+  printf '%s\n' "$holder" > "$w/main/state/.lock"
+  out=$(weight "$w")
+  stop_holders
+  assert_not_contains "$out" "pid=$holder " "the main home's lock holder, named by a mate's parent binding, is not flagged for age"
+  pass 'the main home lock holder is skipped through the parent binding'
+}
+
+test_recorded_task_session_is_not_flagged_for_age() {
+  local w out
+  w=$(make_world task)
+  printf '  450 200000 claude --model claude-opus-4-8\n' >> "$w/ps.txt"
+  mkdir -p "$w/homes/slarti/state"
+  printf 'window=fm-remote:w9:p2\nbackend=herdr\n' > "$w/homes/slarti/state/a-task.meta"
+  printf 'window=default:w8:p1\nbackend=herdr\n' > "$w/homes/slarti/state/local-task.meta"
+  printf 'window=sess:w7:p3\nbackend=tmux\n' > "$w/homes/slarti/state/tmux-task.meta"
+  printf 'window=w6:p4\nbackend=herdr\n' > "$w/homes/slarti/state/short-task.meta"
+  fake_pane_pids "$w" fm-remote w9:p2 200
+  fake_pane_pids "$w" default w8:p1 450
+  fake_pane_pids "$w" sess w7:p3 300
+  fake_pane_pids "$w" w6 p4 300
+  out=$(weight "$w")
+  assert_not_contains "$out" "pid=200 " "a session in a home's recorded task window is not flagged for age"
+  assert_contains "$out" "pid=450 claude home=unknown age=55.6h model=claude-opus-4-8 [retired-model]" "a recorded-task session on a retired model is flagged for the model only"
+  assert_contains "$out" "pid=300 codex" "a tmux meta or a window that is not session:workspace:pane protects nothing"
+  pass 'a recorded task session is not flagged for age alone'
+}
+
+test_agent_outside_the_foreground_group_is_not_flagged() {
+  local w out
+  w=$(make_world descend)
+  printf '  450 200000 claude --model claude-opus-5-5\n  460 200000 claude --model claude-opus-5-5\n' >> "$w/ps.txt"
+  mkdir -p "$w/proc/450" "$w/proc/460" "$w/proc/470" "$w/homes/slarti/state"
+  printf '450 (claude) S 470 450 450\n' > "$w/proc/450/stat"
+  printf '470 (zsh) S 900 470 470\n' > "$w/proc/470/stat"
+  printf '460 (claude) S 1 460 460\n' > "$w/proc/460/stat"
+  printf 'window=default:w8:p1\nbackend=herdr\n' > "$w/homes/slarti/state/land.meta"
+  printf '{"result":{"process_info":{"shell_pid":900,"foreground_process_group_id":950,"foreground_processes":[{"pid":950}]}}}\n' \
+    > "$w/herdr/default.proc.w8_p1.json"
+  out=$(weight "$w")
+  assert_not_contains "$out" "pid=450 " "an agent under the pane shell, while a tool holds the foreground, is not flagged for age"
+  assert_contains "$out" "pid=460 claude" "a session that does not descend from the pane shell is still flagged"
+  pass 'a recorded task agent outside the foreground group is not flagged for age alone'
+}
+
+test_named_workspace_session_is_not_flagged_for_age() {
+  local w out
+  w=$(make_world named)
+  printf '  450 200000 claude --model claude-opus-4-8\n' >> "$w/ps.txt"
+  printf '{"result":{"workspaces":[{"label":"Lee steps","workspace_id":"w10F"},{"label":"Skipper","workspace_id":"w17C"}]}}\n' > "$w/herdr/default.workspaces.json"
+  printf '{"result":{"panes":[{"pane_id":"w10F:p1","workspace_id":"w10F"},{"pane_id":"w10F:p2","workspace_id":"w10F"},{"pane_id":"w17C:p1","workspace_id":"w17C"}]}}\n' > "$w/herdr/default.panes.json"
+  fake_pane_pids "$w" default w10F:p1 300
+  fake_pane_pids "$w" default w10F:p2 450
+  fake_pane_pids "$w" default w17C:p1 200
+  out=$(weight "$w")
+  assert_not_contains "$out" "pid=300 " "a session in the Lee steps workspace is not flagged for age"
+  assert_contains "$out" "pid=450 claude home=unknown age=55.6h model=claude-opus-4-8 [retired-model]" "a named-workspace session on a retired model is flagged for the model only"
+  assert_contains "$out" "pid=200 claude" "a session in another workspace is still flagged"
+  pass 'a named workspace session is not flagged for age alone'
+}
+
+test_dead_lock_pid_protects_nothing() {
+  local w out
+  w=$(make_world deadlock)
+  mkdir -p "$w/homes/navigator/state"
+  printf '200\n' > "$w/homes/navigator/state/.lock"
+  out=$(weight "$w")
+  assert_contains "$out" "pid=200 claude" "a lock naming a process that is not a live harness does not exempt a session"
+  pass 'a stale lock exempts nothing'
+}
+
 test_never_signals_a_process() {
   local w sleeper
   w=$(make_world nosignal)
@@ -168,4 +324,11 @@ fm_test_run \
   test_missing_database_still_lists_sessions \
   test_quiet_when_nothing_qualifies \
   test_note_and_wake_line_once_per_day \
+  test_lock_holders_are_not_flagged_for_age \
+  test_lock_holder_on_retired_model_is_still_flagged \
+  test_parent_home_lock_holder_is_not_flagged \
+  test_recorded_task_session_is_not_flagged_for_age \
+  test_agent_outside_the_foreground_group_is_not_flagged \
+  test_named_workspace_session_is_not_flagged_for_age \
+  test_dead_lock_pid_protects_nothing \
   test_never_signals_a_process
