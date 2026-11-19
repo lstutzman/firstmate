@@ -454,6 +454,41 @@ set_mate_backlog_hold 0 1
 assert_contains "$(run_alarm check)" 'holding work silent' 'a parked child beside a queued backlog hold still counts'
 mate 0 0 0
 run_alarm check >/dev/null
+# The holds array is capped below counts.holds. Truncated backlog rows are not held work, but a
+# child-state hold past the cap still is; counts.child_holds carries the untruncated child count.
+set_mate_truncated_holds() { # child_holds [omit_child_holds]
+  python3 - "$TMP_ROOT/mate/state/home-summary.json" "$@" <<'PY_TH'
+from pathlib import Path
+import json,sys
+path=Path(sys.argv[1])
+child=int(sys.argv[2])
+value=json.loads(path.read_text())
+rows=[dict(id=f'queued-{n}',source='backlog') for n in range(20)]
+value['counts'].update(in_flight=0,active_children=0,decisions_open=0,holds=20+23+child,child_holds=child)
+if len(sys.argv) > 3:
+    value['counts'].pop('child_holds')
+value['counts'].pop('held_in_flight',None)
+value['decisions_open']=[]
+value['holds']=rows
+value['queued']=[]
+path.write_text(json.dumps(value))
+PY_TH
+}
+mate 0 0 3601
+set_mate_truncated_holds 0
+[ -z "$(run_alarm check)" ] || fail 'more backlog holds than the row cap and no child hold is idle, not silent'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 3601
+set_mate_truncated_holds 1
+assert_contains "$(run_alarm check)" 'holding work silent' 'a child-state hold past the row cap still counts'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 3601
+set_mate_truncated_holds 0 legacy
+assert_contains "$(run_alarm check)" 'holding work silent' 'an older summary without child_holds keeps the conservative truncated-row rule'
+mate 0 0 0
+run_alarm check >/dev/null
 edit_mate_summary() { # python statements over value
   python3 - "$TMP_ROOT/mate/state/home-summary.json" "$1" <<'PY_EDIT'
 from pathlib import Path

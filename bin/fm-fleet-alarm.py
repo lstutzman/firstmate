@@ -337,7 +337,12 @@ def held_terminal_complete(summary, counts):
 def held_work(summary, counts):
     # Held work is a parked, paused or blocked child (a child-state hold row). A queued backlog item
     # that is merely held (time, load, external, parked) is nothing under way, and an in-flight item is
-    # already counted by in_flight. Rows the summary truncated cannot be classified, so they count.
+    # already counted by in_flight. The summary's untruncated counts.child_holds is the held work, so a
+    # holds array capped below counts.holds cannot hide a child hold or turn backlog rows into one.
+    # An older summary without it falls back: rows the summary truncated cannot be classified, so they count.
+    child = counts.get('child_holds')
+    if type(child) is int and 0 <= child <= counts['holds']:
+        return child
     rows = summary.get('holds', [])
     if not isinstance(rows, list):
         return counts['holds']

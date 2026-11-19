@@ -89,7 +89,9 @@
 #     own observation is, never when a worker emitted the event.
 #     Each structured-home record carries active_children, decisions_open, holds,
 #     queued, landed, endpoints, counts, and omitted. counts.held_in_flight is the
-#     untruncated number of in-flight items waiting on a live captain hold. A
+#     untruncated number of in-flight items waiting on a live captain hold, and
+#     counts.child_holds is the untruncated number of child-state holds rows (the
+#     holds array is capped, so backlog rows can push child rows out of it). A
 #     child-state holds row also carries the child's state (parked, paused or blocked).
 #     provenance.summary_source
 #     distinguishes "local-ledger", "remote-ledger", and "remote-ledger-cache";
@@ -1251,6 +1253,7 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
           active_children:($active_all | length),
           decisions_open:($decisions_all | length),
           holds:($holds_all | length),
+          child_holds:([ $holds_all[] | select(.source == "child-state") ] | length),
           waiting_on_merge:($waiting_on_merge | length),
           queued:($queued_all | length),
           landed:($landed_all | length),
