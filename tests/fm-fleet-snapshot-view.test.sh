@@ -1369,6 +1369,58 @@ EOF
   pass "home-summary treats a parked handed-off item as consistent"
 }
 
+# A done lane whose own backlog row carries a current external dispatch hold is a
+# declared wait (listed in waiting_on_merge), not terminal_in_flight.
+test_home_summary_external_hold_done_is_declared_wait() {
+  local home fakebin out
+  home=$(make_home summary-external-hold)
+  mkdir -p "$home/projects/held"
+  fakebin=$(make_fakebin "$home")
+  write_held_backlog() {
+    cat > "$home/data/backlog.md" <<EOF
+## In flight
+- [ ] held-ship - Held ship (repo: alpha) (kind: ship) (since 2026-07-11)$1
+
+## Queued
+
+## Done
+EOF
+  }
+  assert_held() {
+    out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
+    printf '%s' "$out" | jq -e "$1" >/dev/null || fail "$2: $out"
+  }
+  fm_write_meta "$home/state/held-ship.meta" \
+    "window=firstmate:fm-held-ship" "worktree=$home/projects/held" \
+    "project=alpha" "harness=claude" "kind=ship" "mode=no-mistakes"
+  record_claude_idle "$home/state" held-ship
+  printf 'done [at=1000]: complete\n' > "$home/state/held-ship.status"
+  local flagged='.valid == false and .invalidity == {kind:"terminal_in_flight",ids:["held-ship"]}'
+
+  write_held_backlog ""
+  assert_held "$flagged" "done with no hold must still flag"
+
+  write_held_backlog " (hold: waits on PC-1 landing) (hold-kind: external)"
+  assert_held '.valid == true and .invalidity.kind == null and .counts.waiting_on_merge == 1
+    and .waiting_on_merge == [{id:"held-ship",pr:null,hold_kind:"external"}]' \
+    "done with an external hold must be a declared wait"
+
+  write_held_backlog " (hold: waits on PC-1 landing) (hold-kind: external) (hold-until: 2999-01-01)"
+  assert_held '.valid == true and .counts.waiting_on_merge == 1' "a future hold-until must still exempt"
+
+  write_held_backlog " (hold: waits on PC-1 landing) (hold-kind: external) (hold-until: 2020-01-01)"
+  assert_held "$flagged"' and .counts.waiting_on_merge == 0' "an expired hold-until must still flag"
+
+  write_held_backlog " (hold: choose a route) (hold-kind: captain)"
+  assert_held "$flagged" "a captain hold must not exempt"
+
+  write_held_backlog " (hold: waits on PC-1 landing) (hold-kind: external)"
+  printf 'failed [at=1000]: stopped\n' > "$home/state/held-ship.status"
+  assert_held "$flagged" "a failed lane with an external hold must still flag"
+  unset -f write_held_backlog assert_held
+  pass "home-summary exempts a done lane with a current external hold as a declared wait"
+}
+
 # A no-mistakes done: written while the daemon still reports the branch's run
 # unfinished is a pipeline handoff, not finished work; without that live run,
 # or with only a worker note that mentions a handoff, it still flags.
@@ -1485,6 +1537,7 @@ fm_test_run \
   test_home_summary_excludes_secondmate_from_child_inventory \
   test_home_summary_done_child_with_pr_is_waiting_on_merge \
   test_home_summary_parked_handoff_is_consistent \
+  test_home_summary_external_hold_done_is_declared_wait \
   test_home_summary_pipeline_handoff_done_is_live_work \
   test_undated_captain_hold_phrasing_and_aging \
   test_hold_buckets_are_total_and_text_blind \
