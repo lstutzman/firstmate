@@ -1522,6 +1522,39 @@ SH
   pass "home-summary reads a no-mistakes done as live work only while the branch's run is unfinished"
 }
 
+# The exact worker line from the 2026-11-07 false alarms: the pre-validation done
+# names the pipeline it waits for, so it is a handoff even before any run exists.
+test_home_summary_ready_for_no_mistakes_done_is_not_terminal() {
+  local home fakebin wt out
+  home=$(make_home summary-ready-for-nm)
+  fakebin=$(make_fakebin "$home")
+  wt=$home/projects/readynm
+  mkdir -p "$wt"
+  git -C "$wt" init -q
+  git -C "$wt" commit -q --allow-empty -m init
+  git -C "$wt" checkout -q -b fm/readynm
+  git -C "$wt" update-ref refs/remotes/origin/main "$(git -C "$wt" rev-parse HEAD)"
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+- [ ] readynm-ship - Waiting for validation (repo: alpha) (kind: ship) (since 2026-07-11)
+
+## Queued
+
+## Done
+EOF
+  fm_write_meta "$home/state/readynm-ship.meta" \
+    "window=firstmate:fm-readynm-ship" "worktree=$wt" "project=$wt" \
+    "harness=claude" "kind=ship" "mode=no-mistakes"
+  record_claude_idle "$home/state" readynm-ship
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$fakebin/no-mistakes"
+  chmod +x "$fakebin/no-mistakes"
+  printf 'done [at=1000]: implementation complete, ready for /no-mistakes\n' > "$home/state/readynm-ship.status"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
+  printf '%s' "$out" | jq -e '.valid == true and .invalidity.kind == null' >/dev/null \
+    || fail "a ready-for-/no-mistakes done must not produce terminal_in_flight: $out"
+  pass "home-summary reads a ready-for-/no-mistakes done as live work with no run yet"
+}
+
 test_snapshot_handles_large_status_fields() {
   local home mate fakebin out
   home=$(make_home large-status)
@@ -1577,6 +1610,7 @@ fm_test_run \
   test_home_summary_external_hold_done_is_declared_wait \
   test_home_summary_child_holds_count_survives_truncation \
   test_home_summary_pipeline_handoff_done_is_live_work \
+  test_home_summary_ready_for_no_mistakes_done_is_not_terminal \
   test_undated_captain_hold_phrasing_and_aging \
   test_hold_buckets_are_total_and_text_blind \
   test_main_inventory_orphan_and_unstructured_disclosure \

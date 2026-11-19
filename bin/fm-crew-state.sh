@@ -355,6 +355,17 @@ fi
 # which runs when a ready report is registered, and on each watcher sweep when
 # config/pr-register-scan is on, refreshes the same copy before it refuses, so
 # a read after it sees the fetched head.
+# A no-mistakes worker's pre-validation done: names the pipeline it waits for
+# ("... ready for /no-mistakes"). Before firstmate starts that run no run exists
+# to read, yet the task is not finished: it is the same handoff, so the marker
+# applies without a live run.
+note_says_ready_for_no_mistakes() {  # <status-line>
+  case "$(status_line_note "$1")" in
+    *"ready for /no-mistakes"*|*"ready for no-mistakes"*) return 0 ;;
+  esac
+  return 1
+}
+
 emit_ship_status_done() {  # [extra-detail]
   local extra=${1:-} reason
   if reason=$(fm_dod_accept_ship_done "$KIND" "$(meta_value mode)" "$WT" "$(meta_value project)" "$LOG_LINE" "$STATE" "$ID" "$META"); then
@@ -363,7 +374,7 @@ emit_ship_status_done() {  # [extra-detail]
     # branch: lead with the marker so inventory checks read it as live work.
     if [ "$KIND" = ship ] && case "$(meta_value mode)" in no-mistakes|'') true ;; *) false ;; esac \
       && ! fm_dod_should_gate_ship_done "$KIND" "$(meta_value mode)" "$LOG_LINE" \
-      && nm_branch_reports_live_run; then
+      && { nm_branch_reports_live_run || note_says_ready_for_no_mistakes "$LOG_LINE"; }; then
       emit "done" status-log "pipeline handoff: validation run not finished${SEP}$(status_line_note "$LOG_LINE")${extra:+${SEP}$extra}"
     fi
     emit "done" status-log "$(status_line_note "$LOG_LINE")${extra:+${SEP}$extra}"

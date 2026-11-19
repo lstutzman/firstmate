@@ -2696,6 +2696,48 @@ setup_prevalidation_done_with_stale_run() {  # <case-dir> <run-fixture-fn>
   arm_idle_record "$d/state" handoff
 }
 
+run_pending() {  # <branch>
+  cat <<EOF
+run:
+  id: "01RUN"
+  branch: $1
+  status: pending
+  head: "${FM_FAKE_RUN_HEAD:-abc1234}"
+  pr: ""
+  findings: none
+EOF
+}
+
+# The worker's pre-validation done: names the pipeline it waits for. A run
+# that is pending or running reads working; before any run exists the done is
+# still the handoff, never a finished task.
+test_ready_for_no_mistakes_done_is_not_finished() {
+  reset_fakes
+  local d out fn
+  for fn in run_pending run_running; do
+    d=$(new_case "ready-$fn")
+    setup_prevalidation_done_with_stale_run "$d" "$fn"
+    printf 'done [at=1000]: implementation complete, ready for /no-mistakes\n' > "$d/state/handoff.status"
+    out=$(run_crew_state "$d" handoff)
+    assert_contains "$out" "state: working" "a ready-for-/no-mistakes done with a $fn run reads working: $out"
+  done
+  d=$(new_case ready-no-run)
+  make_repo_on_branch "$d/wt" fm/preval
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/preval.meta" \
+    "window=fm:fm-preval" "worktree=$d/wt" "project=$d/wt" \
+    "kind=ship" "mode=no-mistakes" "harness=claude"
+  printf 'done [at=1000]: implementation complete, ready for /no-mistakes\n' > "$d/state/preval.status"
+  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_RUNS_LIST=""
+  FM_FAKE_BUSY=0
+  arm_idle_record "$d/state" preval
+  out=$(run_crew_state "$d" preval)
+  assert_contains "$out" "pipeline handoff: validation run not finished" \
+    "a ready-for-/no-mistakes done with no run yet carries the handoff marker: $out"
+  pass "a ready-for-/no-mistakes done is a handoff, not finished work"
+}
+
 test_no_mistakes_handoff_done_with_live_run_is_marked() {
   reset_fakes
   local d out
@@ -6940,6 +6982,7 @@ test_unpushed_ship_done_is_blocked
 test_ready_evidence_state_read_only_reads_the_record
 test_merged_pr_reads_done_under_captured_meta
 test_no_mistakes_prevalidation_done_stays_done
+test_ready_for_no_mistakes_done_is_not_finished
 test_no_mistakes_handoff_done_with_live_run_is_marked
 test_no_mistakes_done_after_cancelled_run_is_not_marked
 test_moved_remote_branch_without_named_head_is_blocked
