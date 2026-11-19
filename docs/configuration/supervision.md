@@ -21,6 +21,7 @@ Creating the file is a captain-class change to what a supervisor skips, so main 
 ## Watcher backstop timer
 
 `bin/fm-watch-backstop.sh` rings a home's own session when its supervision stays down with nothing inside the session to re-arm it, such as an idle resumed Claude session ([watcher continuity](../watcher-continuity.md#out-of-session-backstop)).
+When it cannot ring the session, it raises one wedge-alarm alert per stale episode ([wedge alarm](../wedge-alarm.md)).
 Install one user timer per home; no command needs sudo.
 The session records its endpoint at session start and on resume, so the timer needs no endpoint configuration.
 Run this once from the home's stable code directory, with `FM_HOME` set to the home:

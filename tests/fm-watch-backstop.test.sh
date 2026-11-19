@@ -17,6 +17,8 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 BACKSTOP="$ROOT/bin/fm-watch-backstop.sh"
+# No test may post a real notification; alert cases swap in a recorder.
+export FM_WEDGE_ALARM_EXEC=discard
 TMP_ROOT=$(fm_test_tmproot fm-watch-backstop)
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-operational-input.sh"
@@ -485,6 +487,78 @@ test_ring_typed_input_for_other_harnesses() {
   pass "backstop: a primary that keeps invisible characters gets the typed watcher input"
 }
 
+# FM_WEDGE_ALARM_EXEC recorder: one "<channel> <summary>" line per alert.
+ALERTS="$TMP_ROOT/alerts.log"
+alert_recorder() {
+  local rec="$TMP_ROOT/alert-recorder.sh"
+  # shellcheck disable=SC2016
+  printf '#!/usr/bin/env bash\nprintf "%%s %%s\\n" "$1" "$2" >> %q\n' "$ALERTS" > "$rec"
+  chmod +x "$rec"
+  : > "$ALERTS"
+  printf '%s\n' "$rec"
+}
+
+alert_check() {  # <home> <recorder>
+  FM_WEDGE_ALARM_CHANNEL=herdr FM_WEDGE_ALARM_EXEC=$2 ring_check "$1" 2>&1
+}
+
+test_deferred_ring_alerts_once_per_episode() {
+  local home rec out
+  [ -n "$REAL_TMUX" ] || { pass "backstop: alert skipped (tmux not installed)"; return; }
+  rec=$(alert_recorder)
+  home=$(make_down_home "$TMP_ROOT/down-alert" 3600)
+  record_pane "$home" claude
+  "$REAL_TMUX" -L "$SOCKET" send-keys -t "$PANE" -l 'half typed'
+  sleep 0.3
+  alert_check "$home" "$rec" >/dev/null
+  [ ! -s "$ALERTS" ] || fail "the first deferred poll must stay inside the grace"
+  alert_check "$home" "$rec" >/dev/null
+  [ "$(grep -c . "$ALERTS")" -eq 1 ] || fail "the second deferred poll must alert once: $(cat "$ALERTS")"
+  assert_contains "$(cat "$ALERTS")" 'composer' "the alert must say why the ring failed"
+  assert_contains "$(cat "$ALERTS")" "$home" "the alert must name the home"
+  alert_check "$home" "$rec" >/dev/null
+  alert_check "$home" "$rec" >/dev/null
+  [ "$(grep -c . "$ALERTS")" -eq 1 ] || fail "one episode must alert only once: $(cat "$ALERTS")"
+  # A moved beacon is a new episode and can alert again.
+  fm_touch_epoch "$(( $(date +%s) - 3000 ))" "$home/state/.last-watcher-beat"
+  alert_check "$home" "$rec" >/dev/null
+  alert_check "$home" "$rec" >/dev/null
+  [ "$(grep -c . "$ALERTS")" -eq 2 ] || fail "a new episode must alert again: $(cat "$ALERTS")"
+  # Once the composer is idle the same episode still rings, with no further alert.
+  "$REAL_TMUX" -L "$SOCKET" send-keys -t "$PANE" C-h C-h C-h C-h C-h C-h C-h C-h C-h C-h
+  sleep 0.3
+  out=$(alert_check "$home" "$rec")
+  assert_contains "$out" 'rang' "an idle composer must still be rung after an alert: $out"
+  [ "$(grep -c . "$ALERTS")" -eq 2 ] || fail "a successful ring must not alert"
+  pass "backstop: a deferred ring alerts once per episode and still rings later"
+}
+
+test_successful_ring_does_not_alert() {
+  local home rec
+  [ -n "$REAL_TMUX" ] || { pass "backstop: alert skipped (tmux not installed)"; return; }
+  rec=$(alert_recorder)
+  home=$(make_down_home "$TMP_ROOT/down-noalert" 3600)
+  record_pane "$home" claude
+  alert_check "$home" "$rec" | grep -q rang || fail "the idle composer must be rung"
+  alert_check "$home" "$rec" >/dev/null
+  [ ! -s "$ALERTS" ] || fail "a ringable home must never alert: $(cat "$ALERTS")"
+  pass "backstop: a successful ring raises no alert"
+}
+
+test_vanished_endpoint_alerts_and_zero_disables() {
+  local home rec
+  rec=$(alert_recorder)
+  home=$(make_down_home "$TMP_ROOT/down-gone" 3600)
+  printf 'backend=tmux\ntarget=%%999\nharness=claude\n' > "$home/state/.watch-backstop-endpoint"
+  FM_WATCH_BACKSTOP_ALERT_AFTER=0 alert_check "$home" "$rec" >/dev/null
+  FM_WATCH_BACKSTOP_ALERT_AFTER=0 alert_check "$home" "$rec" >/dev/null
+  [ ! -s "$ALERTS" ] || fail "an alert-after of 0 must disable the alert"
+  alert_check "$home" "$rec" >/dev/null
+  alert_check "$home" "$rec" >/dev/null
+  assert_contains "$(cat "$ALERTS")" 'does not exist' "a vanished endpoint must alert with its reason"
+  pass "backstop: a vanished endpoint alerts, and alert-after 0 disables it"
+}
+
 test_ring_defers_on_pending_composer_and_dead_target() {
   local home out before
   [ -n "$REAL_TMUX" ] || { pass "backstop: deferral skipped (tmux not installed)"; return; }
@@ -518,4 +592,7 @@ fm_test_run \
   test_ring_herdr_from_bare_unit_env \
   test_ring_once_per_stale_episode \
   test_ring_typed_input_for_other_harnesses \
-  test_ring_defers_on_pending_composer_and_dead_target
+  test_ring_defers_on_pending_composer_and_dead_target \
+  test_deferred_ring_alerts_once_per_episode \
+  test_successful_ring_does_not_alert \
+  test_vanished_endpoint_alerts_and_zero_disables

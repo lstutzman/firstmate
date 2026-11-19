@@ -56,6 +56,9 @@
 # FM_HOME selects the home; FM_STATE_OVERRIDE overrides its state directory.
 # FM_WATCH_BACKSTOP_STALE_SECS (default 900) is the beacon age at which a home
 # that needs supervision and has no healthy watcher is treated as down.
+# FM_WATCH_BACKSTOP_ALERT_AFTER (default 2) is the number of consecutive polls in
+# one stale episode that could not ring before the backstop raises the wedge
+# alarm once for that episode; 0 disables the alert.
 #
 # check, in order:
 #   1. A home that does not need supervision (bin/fm-supervision-lib.sh), a
@@ -71,6 +74,13 @@
 #      doorbell (fm_operational_record_write); any other gets the typed
 #      `watcher` operational input. Only a confirmed submit records the episode;
 #      a deferral or failure is retried on the next poll.
+#   4. A ring that cannot be delivered (busy or half-typed composer, unconfirmed
+#      submit, missing or vanished endpoint) is no longer silent: after
+#      FM_WATCH_BACKSTOP_ALERT_AFTER such polls in one episode the backstop
+#      raises one active alert through the wedge-alarm channels
+#      (bin/fm-wedge-alarm-lib.sh, config/wedge-alarm; docs/wedge-alarm.md),
+#      recorded in state/.watch-backstop-alert so it fires once per episode.
+#      The ring is still retried every poll, and a later success still rings.
 set -u
 
 usage() {
@@ -100,6 +110,9 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 ENDPOINT_FILE="$STATE/.watch-backstop-endpoint"
 EPISODE_FILE="$STATE/.watch-backstop-episode"
+ALERT_FILE="$STATE/.watch-backstop-alert"
+ALERT_AFTER=${FM_WATCH_BACKSTOP_ALERT_AFTER:-2}
+case "$ALERT_AFTER" in ''|*[!0-9]*) ALERT_AFTER=2 ;; esac
 STALE_SECS=${FM_WATCH_BACKSTOP_STALE_SECS:-900}
 case "$STALE_SECS" in ''|*[!0-9]*|0) STALE_SECS=900 ;; esac
 
@@ -198,6 +211,34 @@ ring_endpoint() {  # <body>
   return 1
 }
 
+# The wedge-alarm library logs through log(); the timer's stderr is the journal.
+log() { printf 'backstop: %s\n' "$*" >&2; }
+
+# Count one undeliverable poll for episode <key>; on the <ALERT_AFTER>th, raise
+# the wedge alarm once and record it so the episode never alerts again.
+alert_if_stuck() {  # <key> <outcome>
+  local key=$1 outcome=$2 n=0 alerted=
+  [ "$ALERT_AFTER" -gt 0 ] || return 0
+  if [ "$(field "$ALERT_FILE" episode)" = "$key" ]; then
+    n=$(field "$ALERT_FILE" deferred)
+    alerted=$(field "$ALERT_FILE" alerted_at)
+    case "$n" in ''|*[!0-9]*) n=0 ;; esac
+  fi
+  [ -z "$alerted" ] || return 0
+  n=$((n + 1))
+  if [ "$n" -ge "$ALERT_AFTER" ]; then
+    alerted=$(date +%s)
+    # shellcheck source=bin/fm-supervisor-target-lib.sh
+    . "$SCRIPT_DIR/fm-supervisor-target-lib.sh"
+    # shellcheck source=bin/fm-backend.sh
+    . "$SCRIPT_DIR/fm-backend.sh"
+    # shellcheck source=bin/fm-wedge-alarm-lib.sh
+    . "$SCRIPT_DIR/fm-wedge-alarm-lib.sh"
+    wedge_alarm_notify "firstmate home $FM_HOME has had no supervision (watcher beacon: $FM_SUP_BEACON_DESC). The watcher backstop could not wake its session: $outcome. Open the session and run bin/fm-session-start.sh." "$ALERT_FILE"
+  fi
+  write_atomic "$ALERT_FILE" "$(printf 'episode=%s\ndeferred=%s\nalerted_at=%s\n' "$key" "$n" "$alerted")" || true
+}
+
 check() {
   local grace beat age key need_desc body outcome
   [ -d "$STATE" ] || { printf 'backstop: no state directory at %s\n' "$STATE"; return 0; }
@@ -208,7 +249,7 @@ check() {
   if [ "$FM_SUP_NEEDED" != true ] \
     || fm_watcher_healthy "$STATE" "$SCRIPT_DIR/fm-watch.sh" "$grace" "$FM_HOME" \
     || [ "$age" -lt "$STALE_SECS" ]; then
-    rm -f "$EPISODE_FILE" 2>/dev/null || true
+    rm -f "$EPISODE_FILE" "$ALERT_FILE" 2>/dev/null || true
     printf 'backstop: supervised or not needed\n'
     return 0
   fi
@@ -239,6 +280,7 @@ check() {
     return 0
   fi
   printf 'backstop: supervision down (beacon %s) but not rung: %s\n' "$FM_SUP_BEACON_DESC" "$outcome"
+  alert_if_stuck "$key" "$outcome"
   return 0
 }
 
