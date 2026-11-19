@@ -2709,7 +2709,8 @@ test_ready_for_no_mistakes_done_with_no_run_is_not_started() {
     "window=fm:fm-preval" "worktree=$d/wt" "project=$d/wt" \
     "kind=ship" "mode=no-mistakes" "harness=claude"
   printf 'done [at=1000]: implementation complete, ready for /no-mistakes\n' > "$d/state/preval.status"
-  FM_FAKE_AXI_STATUS=""
+  FM_FAKE_AXI_STATUS="current_branch: fm/preval
+runs_on_current_branch: 0"
   FM_FAKE_RUNS_LIST=""
   FM_FAKE_BUSY=0
   arm_idle_record "$d/state" preval
@@ -2717,6 +2718,12 @@ test_ready_for_no_mistakes_done_with_no_run_is_not_started() {
   assert_contains "$out" "state: done · source: status-log · pipeline handoff: validation not started · implementation complete, ready for /no-mistakes" \
     "a ready-for-/no-mistakes done with no run yet carries the not-started marker: $out"
   assert_not_contains "$out" "validation run not finished" "with no run, the done must not claim a live run: $out"
+  # A CLI that answers nothing proves no absence: the done stays plain.
+  FM_FAKE_AXI_STATUS=""
+  out=$(run_crew_state "$d" preval)
+  assert_contains "$out" "state: done · source: status-log · implementation complete, ready for /no-mistakes" \
+    "a ready-for-/no-mistakes done with an unanswered run lookup reads as a plain done: $out"
+  assert_not_contains "$out" "pipeline handoff" "an unanswered run lookup is not proof that no run exists: $out"
   pass "a ready-for-/no-mistakes done with no run is a not-started handoff"
 }
 

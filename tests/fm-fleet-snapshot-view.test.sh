@@ -1546,7 +1546,13 @@ EOF
     "window=firstmate:fm-readynm-ship" "worktree=$wt" "project=$wt" \
     "harness=claude" "kind=ship" "mode=no-mistakes"
   record_claude_idle "$home/state" readynm-ship
-  printf '#!/usr/bin/env bash\nexit 0\n' > "$fakebin/no-mistakes"
+  cat > "$fakebin/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+if [ "$*" = "axi status" ]; then
+  printf 'current_branch: fm/readynm\nruns_on_current_branch: 0\n'
+fi
+exit 0
+SH
   chmod +x "$fakebin/no-mistakes"
   printf 'done [at=1000]: implementation complete, ready for /no-mistakes\n' > "$home/state/readynm-ship.status"
   out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)

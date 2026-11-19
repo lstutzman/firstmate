@@ -501,9 +501,9 @@ nm_branch_reports_live_run() {
   [ -n "${CREW_BRANCH:-}" ] && [ -n "${RUN_OUT:-}" ] || return 1
   [ "$(strip_quotes "$(nm_field branch)")" = "$CREW_BRANCH" ] && fm_nm_run_is_active "$RUN_OUT"
 }
-# 0 when the run lookup found no run of any status for this branch.
+# 0 when the CLI answered and its lookup found no run of any status for this branch.
 nm_branch_reports_no_run() {
-  [ -n "${CREW_BRANCH:-}" ] && [ "$HAVE_RUN" = 0 ] && [ -z "$SELECTED_RUN_ID" ] \
+  [ -n "${CREW_BRANCH:-}" ] && [ -n "${RUN_OUT:-}" ] && [ "$HAVE_RUN" = 0 ] && [ -z "$SELECTED_RUN_ID" ] \
     && [ "$(strip_quotes "$(nm_field branch)")" != "$CREW_BRANCH" ]
 }
 
