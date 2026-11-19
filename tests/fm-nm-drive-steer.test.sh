@@ -99,6 +99,22 @@ test_prepipeline_done_without_a_run_gets_one_start_steer() {
   pass "a pre-pipeline done with no run gets exactly one start steer per generation"
 }
 
+# The 2026-11-07 worker line with no run: crew-state marks it as a handoff whose
+# validation has not started, which is a start, never a reattach to a live run.
+test_ready_for_no_mistakes_done_with_no_run_gets_a_start_steer() {
+  local dir
+  dir=$(drive_case readynm 'done [at=1]: implementation complete, ready for /no-mistakes')
+  run_steer "$dir" readynm 'state: done · source: status-log · pipeline handoff: validation not started · implementation complete, ready for /no-mistakes' \
+    || fail "a ready-for-/no-mistakes done with no run was not steered"
+  [ "$(inbox_count "$dir" readynm)" = 1 ] || fail "the start steer was not one durable inbox record"
+  inbox_body "$dir" readynm | grep -F "no no-mistakes run exists for fm/readynm" >/dev/null \
+    || fail "a not-started handoff did not get the start steer: $(inbox_body "$dir" readynm)"
+  if inbox_body "$dir" readynm | grep -F "is still active" >/dev/null; then
+    fail "a not-started handoff was told its run is still active"
+  fi
+  pass "a ready-for-/no-mistakes done with no run gets the start steer, not a reattach"
+}
+
 test_active_run_without_a_drive_call_gets_one_reattach_steer() {
   local dir
   dir=$(drive_case reattach 'paused [at=1]: no-mistakes run queued; background reattach will wake me')
@@ -524,6 +540,7 @@ test_watcher_holds_a_start_quietly_while_the_head_settles() {
 
 fm_test_run \
   test_prepipeline_done_without_a_run_gets_one_start_steer \
+  test_ready_for_no_mistakes_done_with_no_run_gets_a_start_steer \
   test_active_run_without_a_drive_call_gets_one_reattach_steer \
   test_pending_run_steer_names_the_runs_holding_the_slots \
   test_parked_gate_the_worker_owes_is_a_reattach_but_a_human_gate_is_not \

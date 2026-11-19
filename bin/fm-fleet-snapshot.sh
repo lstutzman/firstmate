@@ -1130,7 +1130,9 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
          | select((.current_state.state == "done" and .pr.parked_handoff == true) | not)
          | select((.current_state.state == "done" and .current_state.source == "status-log"
              and ((.current_state.detail // "") | . == "pipeline handoff: validation run not finished"
-               or startswith("pipeline handoff: validation run not finished · "))) | not)
+               or startswith("pipeline handoff: validation run not finished · ")
+               or . == "pipeline handoff: validation not started"
+               or startswith("pipeline handoff: validation not started · "))) | not)
          | {id,state:.current_state.state} ]) as $terminal_in_flight
     | ([ $owned_in_flight[] as $work
          | $tasks[]

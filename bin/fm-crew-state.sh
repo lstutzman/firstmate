@@ -356,9 +356,9 @@ fi
 # config/pr-register-scan is on, refreshes the same copy before it refuses, so
 # a read after it sees the fetched head.
 # A no-mistakes worker's pre-validation done: names the pipeline it waits for
-# ("... ready for /no-mistakes"). Before firstmate starts that run no run exists
-# to read, yet the task is not finished: it is the same handoff, so the marker
-# applies without a live run.
+# ("... ready for /no-mistakes"). While no run exists for the branch the task is
+# not finished either: it is the handoff before validation starts, marked apart
+# from a live run so bin/fm-nm-drive-steer.sh steers a start, not a reattach.
 note_says_ready_for_no_mistakes() {  # <status-line>
   case "$(status_line_note "$1")" in
     *"ready for /no-mistakes"*|*"ready for no-mistakes"*) return 0 ;;
@@ -373,9 +373,12 @@ emit_ship_status_done() {  # [extra-detail]
     # not a finished task, while the daemon still reports a live run on this
     # branch: lead with the marker so inventory checks read it as live work.
     if [ "$KIND" = ship ] && case "$(meta_value mode)" in no-mistakes|'') true ;; *) false ;; esac \
-      && ! fm_dod_should_gate_ship_done "$KIND" "$(meta_value mode)" "$LOG_LINE" \
-      && { nm_branch_reports_live_run || note_says_ready_for_no_mistakes "$LOG_LINE"; }; then
-      emit "done" status-log "pipeline handoff: validation run not finished${SEP}$(status_line_note "$LOG_LINE")${extra:+${SEP}$extra}"
+      && ! fm_dod_should_gate_ship_done "$KIND" "$(meta_value mode)" "$LOG_LINE"; then
+      if nm_branch_reports_live_run; then
+        emit "done" status-log "pipeline handoff: validation run not finished${SEP}$(status_line_note "$LOG_LINE")${extra:+${SEP}$extra}"
+      elif nm_branch_reports_no_run && note_says_ready_for_no_mistakes "$LOG_LINE"; then
+        emit "done" status-log "pipeline handoff: validation not started${SEP}$(status_line_note "$LOG_LINE")${extra:+${SEP}$extra}"
+      fi
     fi
     emit "done" status-log "$(status_line_note "$LOG_LINE")${extra:+${SEP}$extra}"
   fi
@@ -497,6 +500,11 @@ nm_field() {  # <key>
 nm_branch_reports_live_run() {
   [ -n "${CREW_BRANCH:-}" ] && [ -n "${RUN_OUT:-}" ] || return 1
   [ "$(strip_quotes "$(nm_field branch)")" = "$CREW_BRANCH" ] && fm_nm_run_is_active "$RUN_OUT"
+}
+# 0 when the run lookup found no run of any status for this branch.
+nm_branch_reports_no_run() {
+  [ -n "${CREW_BRANCH:-}" ] && [ "$HAVE_RUN" = 0 ] && [ -z "$SELECTED_RUN_ID" ] \
+    && [ "$(strip_quotes "$(nm_field branch)")" != "$CREW_BRANCH" ]
 }
 
 pr_read_record_bounded() {  # <host> <owner> <repo> <number>
