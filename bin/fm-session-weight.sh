@@ -3,13 +3,18 @@
 #
 # Usage: fm-session-weight.sh [--ps FILE] [--proc-root DIR] [--db PATH] [--now EPOCH]
 #                             [--min-age-hours N] [--retired REGEX] [--window-hours N]
-#                             [--note-dir DIR] [--summary]
+#                             [--note-dir DIR] [--summary] [--homes-root DIR]
 #
 # Reads the process table (`ps -eo pid=,etimes=,args=`, or FILE in the same format) and keeps each
 # process whose command is `claude` or `codex`, except the long-running `codex app-server` daemons
 # (app-server as codex's first non-option argument), which are not agent sessions. A session is flagged when it is older than
 # --min-age-hours (default 24) or its --model flag matches --retired (default
 # $FM_SESSION_WEIGHT_RETIRED, else config/session-weight-retired in the home, else claude-opus-4).
+# A home's own supervising session holds that home's session lock (bin/fm-lock.sh) and is meant to
+# run for days, so a session whose pid holds a lock is skipped for age alone; it is still flagged when
+# its model matches --retired. Lock holders are read through fm_session_lock_inspect
+# (bin/fm-session-lock-lib.sh) for every home under --homes-root (default $HOME/fm-homes), for $FM_HOME
+# when set, and for each such home's local parent home (the main home, from .fm-secondmate-parent).
 # One line per flagged session names process id, home (an fm-homes path in its --add-dir or working
 # directory, else the last two directory components), age and model flag, then the account-level
 # context of recent requests for that model.
@@ -29,8 +34,10 @@
 # --proc-root DIR replaces /proc for the working-directory lookup (tests).
 set -u
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 PS_FILE="${FM_SESSION_WEIGHT_PS:-}" PROC_ROOT=/proc DB="${CPA_USAGE_DB:-$HOME/.local/share/cpa-usage/usage.db}" NOW=""
-MIN_AGE=24 WINDOW=6 NOTE_DIR="" SUMMARY=0 RETIRED=""
+MIN_AGE=24 WINDOW=6 NOTE_DIR="" SUMMARY=0 RETIRED="" HOMES_ROOT="$HOME/fm-homes"
 while [ $# -gt 0 ]; do
   case "$1" in
     --ps) PS_FILE=${2:-}; shift 2 ;;
@@ -42,6 +49,7 @@ while [ $# -gt 0 ]; do
     --retired) RETIRED=${2:-}; shift 2 ;;
     --note-dir) NOTE_DIR=${2:-}; shift 2 ;;
     --summary) SUMMARY=1; shift ;;
+    --homes-root) HOMES_ROOT=${2:-}; shift 2 ;;
     -h|--help) sed -n '2,/^set -u/p' "$0" | sed '$d'; exit 0 ;;
     *) printf 'fm-session-weight: unknown argument %s\n' "$1" >&2; exit 2 ;;
   esac
@@ -54,12 +62,35 @@ if [ -z "$RETIRED" ]; then
   [ -n "$RETIRED" ] || RETIRED='claude-opus-4'
 fi
 
+# Pids that hold a firstmate home's session lock: the homes' own supervising sessions.
+# shellcheck source=bin/fm-session-lock-lib.sh
+. "$SCRIPT_DIR/fm-session-lock-lib.sh"
+# shellcheck source=bin/fm-secondmate-parent-lib.sh
+. "$SCRIPT_DIR/fm-secondmate-parent-lib.sh"
+holders="" seen=" "
+for home in "$HOMES_ROOT"/*/ "${FM_HOME:-}"; do
+  home=${home%/}
+  [ -n "$home" ] || continue
+  parents=("$home")
+  if fm_secondmate_parent_record_parse "$home/.fm-secondmate-parent" 2>/dev/null \
+     && [ "$FM_SECONDMATE_PARENT_ROUTE" = local ] && [ -n "$FM_SECONDMATE_PARENT_HOME" ]; then
+    parents+=("$FM_SECONDMATE_PARENT_HOME")
+  fi
+  for h in "${parents[@]}"; do
+    case "$seen" in *" $h "*) continue ;; esac
+    seen="$seen$h "
+    fm_session_lock_inspect "$h/state" 2>/dev/null || continue
+    [ "$FM_LOCK_INSPECT_STATE" = held ] && holders="$holders,$FM_LOCK_INSPECT_PID"
+  done
+done
+
 if [ -n "$PS_FILE" ]; then table=$(cat "$PS_FILE" 2>/dev/null) || exit 0
 else table=$(ps -eo pid=,etimes=,args= 2>/dev/null) || exit 0; fi
 
 printf '%s\n' "$table" | python3 -I -c '
 import os, re, sqlite3, sys, datetime
-proc_root, db, now, min_age, window, retired, note_dir, summary = sys.argv[1:9]
+proc_root, db, now, min_age, window, retired, note_dir, summary, holders = sys.argv[1:10]
+holders = set(holders.split(","))
 now, min_age, window, summary = int(now), int(min_age), int(window), summary == "1"
 retired_re = re.compile(retired)
 rows = []
@@ -109,7 +140,7 @@ def k(v):
 
 out = []
 for pid, age, exe, model, home in rows:
-    old = age > min_age * 3600
+    old = age > min_age * 3600 and pid not in holders
     ret = model != "default" and bool(retired_re.search(model))
     if not (old or ret):
         continue
@@ -138,4 +169,4 @@ if summary:
           % (day, day, len(out), min_age, pids, path))
 else:
     print("\n".join(out))
-' "$PROC_ROOT" "$DB" "$NOW" "$MIN_AGE" "$WINDOW" "$RETIRED" "$NOTE_DIR" "$SUMMARY"
+' "$PROC_ROOT" "$DB" "$NOW" "$MIN_AGE" "$WINDOW" "$RETIRED" "$NOTE_DIR" "$SUMMARY" "$holders"

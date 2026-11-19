@@ -48,7 +48,28 @@ PY
 weight() {  # <world> [args...]
   local w=$1
   shift
-  bash "$WEIGHT" --ps "$w/ps.txt" --proc-root "$w/proc" --db "$w/usage.db" --now "$NOW" "$@"
+  bash "$WEIGHT" --ps "$w/ps.txt" --proc-root "$w/proc" --db "$w/usage.db" --now "$NOW" --homes-root "$w/homes" "$@"
+}
+
+# lock_holder <world> <home> <ps-line-model-flags>: start a real process named claude, record its pid
+# as <home>'s session lock, list it in the fake process table with the given age, and set LAST_HOLDER to its pid.
+lock_holder() {  # <world> <home> <age-seconds> <model>
+  local w=$1 home=$2 age=$3 model=$4 pid
+  mkdir -p "$w/homes/$home/state" "$w/bin"
+  [ -x "$w/bin/claude" ] || cp "$(command -v bash)" "$w/bin/claude"
+  mkfifo "$w/fifo" 2>/dev/null
+  "$w/bin/claude" -c 'read -r -t 60 _ <> "$1"' _ "$w/fifo" >/dev/null 2>&1 &
+  pid=$!
+  HOLDER_PIDS="${HOLDER_PIDS:-} $pid"
+  printf '%s\n' "$pid" > "$w/homes/$home/state/.lock"
+  printf '  %s %s claude --model %s\n' "$pid" "$age" "$model" >> "$w/ps.txt"
+  LAST_HOLDER=$pid
+}
+
+stop_holders() {
+  local p
+  for p in ${HOLDER_PIDS:-}; do kill "$p" 2>/dev/null; wait "$p" 2>/dev/null; done
+  HOLDER_PIDS=
 }
 
 test_flags_old_and_retired_sessions_only() {
@@ -146,6 +167,52 @@ test_note_and_wake_line_once_per_day() {
   pass 'one note and one wake line per UTC day'
 }
 
+test_lock_holders_are_not_flagged_for_age() {
+  local w out holder
+  w=$(make_world holders)
+  lock_holder "$w" navigator 200000 claude-opus-5-5; holder=$LAST_HOLDER
+  out=$(weight "$w")
+  stop_holders
+  assert_not_contains "$out" "pid=$holder " "a home's lock-holding session over 24h is not flagged for age"
+  assert_contains "$out" "pid=200 claude home=quartermaster" "a non-holder over 24h is still flagged"
+  assert_equals 4 "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "only the holder is dropped from the list"
+  pass 'a session holding a home lock is not flagged for age alone'
+}
+
+test_lock_holder_on_retired_model_is_still_flagged() {
+  local w out holder
+  w=$(make_world holderret)
+  lock_holder "$w" slarti 200000 claude-opus-4-8; holder=$LAST_HOLDER
+  out=$(weight "$w")
+  stop_holders
+  assert_contains "$out" "pid=$holder claude home=unknown age=55.6h model=claude-opus-4-8 [retired-model]" "a lock holder on a retired model is flagged for the model only"
+  pass 'a lock holder on a retired model is still flagged'
+}
+
+test_parent_home_lock_holder_is_not_flagged() {
+  local w out holder
+  w=$(make_world parent)
+  mkdir -p "$w/homes/navigator" "$w/main/state"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$w/main" > "$w/homes/navigator/.fm-secondmate-parent"
+  lock_holder "$w" navigator 200000 claude-opus-5-5; holder=$LAST_HOLDER
+  rm -f "$w/homes/navigator/state/.lock"
+  printf '%s\n' "$holder" > "$w/main/state/.lock"
+  out=$(weight "$w")
+  stop_holders
+  assert_not_contains "$out" "pid=$holder " "the main home's lock holder, named by a mate's parent binding, is not flagged for age"
+  pass 'the main home lock holder is skipped through the parent binding'
+}
+
+test_dead_lock_pid_protects_nothing() {
+  local w out
+  w=$(make_world deadlock)
+  mkdir -p "$w/homes/navigator/state"
+  printf '200\n' > "$w/homes/navigator/state/.lock"
+  out=$(weight "$w")
+  assert_contains "$out" "pid=200 claude" "a lock naming a process that is not a live harness does not exempt a session"
+  pass 'a stale lock exempts nothing'
+}
+
 test_never_signals_a_process() {
   local w sleeper
   w=$(make_world nosignal)
@@ -168,4 +235,8 @@ fm_test_run \
   test_missing_database_still_lists_sessions \
   test_quiet_when_nothing_qualifies \
   test_note_and_wake_line_once_per_day \
+  test_lock_holders_are_not_flagged_for_age \
+  test_lock_holder_on_retired_model_is_still_flagged \
+  test_parent_home_lock_holder_is_not_flagged \
+  test_dead_lock_pid_protects_nothing \
   test_never_signals_a_process
