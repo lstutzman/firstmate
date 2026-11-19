@@ -10,11 +10,13 @@
 # (app-server as codex's first non-option argument), which are not agent sessions. A session is flagged when it is older than
 # --min-age-hours (default 24) or its --model flag matches --retired (default
 # $FM_SESSION_WEIGHT_RETIRED, else config/session-weight-retired in the home, else claude-opus-4).
-# A home's own supervising session holds that home's session lock (bin/fm-lock.sh) and is meant to
-# run for days, so a session whose pid holds a lock is skipped for age alone; it is still flagged when
-# its model matches --retired. Lock holders are read through fm_session_lock_inspect
-# (bin/fm-session-lock-lib.sh) for every home under --homes-root (default $HOME/fm-homes), for $FM_HOME
-# when set, and for each such home's local parent home (the main home, from .fm-secondmate-parent).
+# Some sessions are meant to run for days, so they are skipped for age alone and still flagged when
+# their model matches --retired: a home's own supervising session (the pid holding that home's session
+# lock, bin/fm-lock.sh, read through fm_session_lock_inspect), a recorded task's agent (the pane named by
+# window= in state/<id>.meta, resolved with Herdr's `pane process-info`), and any pane in a Herdr
+# workspace labelled "Lee steps" or "Terminal" (FM_SESSION_WEIGHT_WORKSPACES replaces that regex).
+# Homes are every one under --homes-root (default $HOME/fm-homes), $FM_HOME when set, and each such
+# home's local parent home (the main home, from .fm-secondmate-parent).
 # One line per flagged session names process id, home (an fm-homes path in its --add-dir or working
 # directory, else the last two directory components), age and model flag, then the account-level
 # context of recent requests for that model.
@@ -62,27 +64,68 @@ if [ -z "$RETIRED" ]; then
   [ -n "$RETIRED" ] || RETIRED='claude-opus-4'
 fi
 
-# Pids that hold a firstmate home's session lock: the homes' own supervising sessions.
+# Pids that are expected to run for days, so they are never flagged for age alone: the sessions
+# holding a firstmate home's lock, the agent in each home's recorded task window (window= in
+# state/<id>.meta) and everything in a named workspace (Lee steps, Terminal). A pane's pids come from
+# Herdr's own `pane process-info`; an unreachable Herdr protects nothing.
 # shellcheck source=bin/fm-session-lock-lib.sh
 . "$SCRIPT_DIR/fm-session-lock-lib.sh"
 # shellcheck source=bin/fm-secondmate-parent-lib.sh
 . "$SCRIPT_DIR/fm-secondmate-parent-lib.sh"
-holders="" seen=" "
+homes=() seen=" "
 for home in "$HOMES_ROOT"/*/ "${FM_HOME:-}"; do
   home=${home%/}
   [ -n "$home" ] || continue
-  parents=("$home")
+  cands=("$home")
   if fm_secondmate_parent_record_parse "$home/.fm-secondmate-parent" 2>/dev/null \
      && [ "$FM_SECONDMATE_PARENT_ROUTE" = local ] && [ -n "$FM_SECONDMATE_PARENT_HOME" ]; then
-    parents+=("$FM_SECONDMATE_PARENT_HOME")
+    cands+=("$FM_SECONDMATE_PARENT_HOME")
   fi
-  for h in "${parents[@]}"; do
+  for h in "${cands[@]}"; do
     case "$seen" in *" $h "*) continue ;; esac
     seen="$seen$h "
-    fm_session_lock_inspect "$h/state" 2>/dev/null || continue
-    [ "$FM_LOCK_INSPECT_STATE" = held ] && holders="$holders,$FM_LOCK_INSPECT_PID"
+    homes+=("$h")
   done
 done
+
+holders=""
+for h in "${homes[@]}"; do
+  fm_session_lock_inspect "$h/state" 2>/dev/null || continue
+  [ "$FM_LOCK_INSPECT_STATE" = held ] && holders="$holders,$FM_LOCK_INSPECT_PID"
+done
+
+# pane_pids <session> <pane-id>: the pane's shell, foreground group and foreground process pids.
+pane_pids() {
+  herdr --session "$1" pane process-info --pane "$2" 2>/dev/null \
+    | jq -r '.result.process_info | [.shell_pid, .foreground_process_group_id, (.foreground_processes[]?.pid)] | .[] | select(type == "number")' 2>/dev/null
+}
+if command -v herdr >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+  sessions=" default "
+  for h in "${homes[@]}"; do
+    for meta in "$h"/state/*.meta; do
+      [ -f "$meta" ] || continue
+      win=$(grep '^window=' "$meta" 2>/dev/null | tail -n 1 | cut -d= -f2-)
+      case "$win" in
+        *:*:*) sess=${win%%:*} pane=${win#*:} ;;
+        *:*) sess=default pane=$win ;;
+        *) continue ;;
+      esac
+      sessions="$sessions$sess "
+      for pid in $(pane_pids "$sess" "$pane"); do holders="$holders,$pid"; done
+    done
+  done
+  named=${FM_SESSION_WEIGHT_WORKSPACES:-^(Lee steps|Terminal)$}
+  for sess in $sessions; do
+    wss=$(herdr --session "$sess" workspace list 2>/dev/null \
+      | jq -r --arg re "$named" '.result.workspaces[]? | select(.label | test($re)) | .workspace_id' 2>/dev/null)
+    [ -n "$wss" ] || continue
+    panes=$(herdr --session "$sess" pane list 2>/dev/null \
+      | jq -r --arg ws "$wss" '.result.panes[]? | select(.workspace_id as $w | ($ws | split("\n") | index($w))) | .pane_id' 2>/dev/null)
+    for pane in $panes; do
+      for pid in $(pane_pids "$sess" "$pane"); do holders="$holders,$pid"; done
+    done
+  done
+fi
 
 if [ -n "$PS_FILE" ]; then table=$(cat "$PS_FILE" 2>/dev/null) || exit 0
 else table=$(ps -eo pid=,etimes=,args= 2>/dev/null) || exit 0; fi
