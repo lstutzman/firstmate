@@ -52,7 +52,7 @@ weight() {  # <world> [args...]
   PATH="$w/herdrbin:$PATH" bash "$WEIGHT" --ps "$w/ps.txt" --proc-root "$w/proc" --db "$w/usage.db" --now "$NOW" --homes-root "$w/homes" "$@"
 }
 
-# A fake herdr that answers `--session S workspace list`, `pane list` and `pane process-info --pane P`
+# A fake herdr that answers `workspace list`, `pane list` and `pane process-info --pane P` for `--session S`
 # from fixture files in <world>/herdr (S.workspaces.json, S.panes.json, S.proc.<pane with : as _>.json)
 # and fails when a fixture is absent, so no test ever reaches the real Herdr.
 make_fake_herdr() {  # <world>
@@ -60,11 +60,19 @@ make_fake_herdr() {  # <world>
   cat > "$1/herdrbin/herdr" <<'SH'
 #!/usr/bin/env bash
 d=$(dirname "$0")/../herdr
-s=$2
-case "$3 $4" in
+s="" p="" words=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --session) s=$2; shift 2 ;;
+    --pane) p=${2//:/_}; shift 2 ;;
+    *) words+=("$1"); shift ;;
+  esac
+done
+[ -n "$s" ] || exit 1
+case "${words[*]}" in
   "workspace list") f=$d/$s.workspaces.json ;;
   "pane list") f=$d/$s.panes.json ;;
-  "pane process-info") p=${6//:/_}; f=$d/$s.proc.$p.json ;;
+  "pane process-info") f=$d/$s.proc.$p.json ;;
   *) exit 1 ;;
 esac
 [ -f "$f" ] && cat "$f"
@@ -237,14 +245,35 @@ test_recorded_task_session_is_not_flagged_for_age() {
   printf '  450 200000 claude --model claude-opus-4-8\n' >> "$w/ps.txt"
   mkdir -p "$w/homes/slarti/state"
   printf 'window=fm-remote:w9:p2\nbackend=herdr\n' > "$w/homes/slarti/state/a-task.meta"
-  printf 'window=w8:p1\n' > "$w/homes/slarti/state/local-task.meta"
+  printf 'window=default:w8:p1\nbackend=herdr\n' > "$w/homes/slarti/state/local-task.meta"
+  printf 'window=sess:w7:p3\nbackend=tmux\n' > "$w/homes/slarti/state/tmux-task.meta"
+  printf 'window=w6:p4\nbackend=herdr\n' > "$w/homes/slarti/state/short-task.meta"
   fake_pane_pids "$w" fm-remote w9:p2 200
   fake_pane_pids "$w" default w8:p1 450
+  fake_pane_pids "$w" sess w7:p3 300
+  fake_pane_pids "$w" w6 p4 300
   out=$(weight "$w")
   assert_not_contains "$out" "pid=200 " "a session in a home's recorded task window is not flagged for age"
   assert_contains "$out" "pid=450 claude home=unknown age=55.6h model=claude-opus-4-8 [retired-model]" "a recorded-task session on a retired model is flagged for the model only"
-  assert_contains "$out" "pid=300 codex" "a session in no recorded window is still flagged"
+  assert_contains "$out" "pid=300 codex" "a tmux meta or a window that is not session:workspace:pane protects nothing"
   pass 'a recorded task session is not flagged for age alone'
+}
+
+test_agent_outside_the_foreground_group_is_not_flagged() {
+  local w out
+  w=$(make_world descend)
+  printf '  450 200000 claude --model claude-opus-5-5\n  460 200000 claude --model claude-opus-5-5\n' >> "$w/ps.txt"
+  mkdir -p "$w/proc/450" "$w/proc/460" "$w/proc/470" "$w/homes/slarti/state"
+  printf '450 (claude) S 470 450 450\n' > "$w/proc/450/stat"
+  printf '470 (zsh) S 900 470 470\n' > "$w/proc/470/stat"
+  printf '460 (claude) S 1 460 460\n' > "$w/proc/460/stat"
+  printf 'window=default:w8:p1\nbackend=herdr\n' > "$w/homes/slarti/state/land.meta"
+  printf '{"result":{"process_info":{"shell_pid":900,"foreground_process_group_id":950,"foreground_processes":[{"pid":950}]}}}\n' \
+    > "$w/herdr/default.proc.w8_p1.json"
+  out=$(weight "$w")
+  assert_not_contains "$out" "pid=450 " "an agent under the pane shell, while a tool holds the foreground, is not flagged for age"
+  assert_contains "$out" "pid=460 claude" "a session that does not descend from the pane shell is still flagged"
+  pass 'a recorded task agent outside the foreground group is not flagged for age alone'
 }
 
 test_named_workspace_session_is_not_flagged_for_age() {
@@ -299,6 +328,7 @@ fm_test_run \
   test_lock_holder_on_retired_model_is_still_flagged \
   test_parent_home_lock_holder_is_not_flagged \
   test_recorded_task_session_is_not_flagged_for_age \
+  test_agent_outside_the_foreground_group_is_not_flagged \
   test_named_workspace_session_is_not_flagged_for_age \
   test_dead_lock_pid_protects_nothing \
   test_never_signals_a_process
