@@ -1547,7 +1547,7 @@ ROWS
   # landing would fast-forward local main with content the server never saw.
   printf '%s\n' '- fp [local-only forge=gerrit] - fixture (added 2026-01-01)' > "$home/data/projects.md"
   for flag in "" --forge; do
-    # shellcheck disable=SC2086 # An empty flag must expand to nothing.
+    # shellcheck disable=SC2086,SC2248 # An empty flag must expand to nothing.
     out=$(FM_HOME="$home" "$PROJECT_MODE" $flag fp 2>/dev/null)
     status=$?
     [ "$status" -eq 3 ] || fail "local-only with a forge did not refuse${flag:+ under $flag} (status $status, got '$out')"
@@ -1573,7 +1573,7 @@ test_project_mode_refuses_only_a_malformed_forge_binding() {
     [ -n "$label" ] || continue
     printf '%s\n' "$registry" > "$home/data/projects.md"
     for flag in "" --forge; do
-      # shellcheck disable=SC2086 # An empty flag must expand to nothing.
+      # shellcheck disable=SC2086,SC2248 # An empty flag must expand to nothing.
       out=$(FM_HOME="$home" "$PROJECT_MODE" $flag fp 2>/dev/null)
       status=$?
       [ "$status" -eq 3 ] || fail "$label: did not refuse${flag:+ under $flag} (status $status, got '$out')"
