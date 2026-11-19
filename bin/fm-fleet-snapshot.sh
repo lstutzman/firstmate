@@ -275,6 +275,12 @@ pre-validation done while its run on that branch is still live) is live work,
 not terminal_in_flight. A done ship parked on another home's merger (fm_office_task_landing in
 bin/fm-office-authority-lib.sh, shown as pr.parked_handoff) is consistent too,
 and is listed in waiting_on_merge and counted in counts.waiting_on_merge.
+A done child whose own backlog row carries a current external dispatch hold
+(hold_kind external with a hold_reason, and no hold_until or one not yet past) is
+a declared wait too: it is listed in waiting_on_merge with hold_kind "external"
+and counted in counts.waiting_on_merge, so a PR held for another item's landing
+is not handed to its merger early. An expired hold_until or a failed child does
+not exempt; captain holds are unchanged.
 A failed child, or any other done child without both a
 meta PR and an armed poll for it or a parked handoff, still invalidates the inventory.
 Its invalidity object names the normalized failure kind and affected ids.
@@ -1052,6 +1058,7 @@ main_inventory_json() {  # <backlog-json-file> <tasks-json-file>
 secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
   jq -n \
     --arg generated "$SNAPSHOT_NOW" \
+    --arg today "$SNAPSHOT_TODAY" \
     --argjson generated_epoch "$SNAPSHOT_EPOCH" \
     --arg home "$FM_HOME" \
     --argjson child_n "$FM_SNAPSHOT_SECONDMATE_CHILDREN" \
@@ -1108,10 +1115,15 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
          | select(.kind != "secondmate")
          | select(.id as $id | [$owned_in_flight[].id] | index($id) | not)
          | {id,state:.current_state.state} ]) as $unowned_children
+    | def external_held:
+        .hold_kind == "external" and .hold_reason != null
+        and (.hold_until == null or .hold_until > $today);
+      ([ $owned_in_flight[] | select(external_held) | .id ]) as $external_held_ids
     | ([ $owned_in_flight[] as $work
          | $tasks[]
          | select(.kind != "secondmate")
          | select(.id == $work.id and (.current_state.state == "done" or .current_state.state == "failed"))
+         | select((.current_state.state == "done" and ($external_held_ids | index($work.id) != null)) | not)
          | select((.current_state.state == "done" and .pr.source == "meta" and .pr.merge_check_armed == true) | not)
          | select((.current_state.state == "done" and .pr.parked_handoff == true) | not)
          | select((.current_state.state == "done" and .current_state.source == "status-log"
@@ -1122,8 +1134,12 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
          | $tasks[]
          | select(.kind != "secondmate")
          | select(.id == $work.id and .current_state.state == "done"
-             and ((.pr.source == "meta" and .pr.merge_check_armed == true) or .pr.parked_handoff == true))
-         | {id,pr:(.pr.url | trunc(500))} ]) as $waiting_on_merge
+             and (($external_held_ids | index($work.id) != null)
+               or (.pr.source == "meta" and .pr.merge_check_armed == true) or .pr.parked_handoff == true))
+         | if ($external_held_ids | index($work.id) != null)
+              and (((.pr.source == "meta" and .pr.merge_check_armed == true) or .pr.parked_handoff == true) | not)
+           then {id,pr:((.pr.url // null) | if . == null then null else trunc(500) end),hold_kind:"external"}
+           else {id,pr:(.pr.url | trunc(500))} end ]) as $waiting_on_merge
     | ([if $backlog.present != true then
           {kind:"missing_backlog",ids:[],reason:"missing structured backlog"}
         else empty end,
