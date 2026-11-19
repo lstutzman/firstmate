@@ -498,6 +498,10 @@ alert_recorder() {
   printf '%s\n' "$rec"
 }
 
+field_of() {  # <file> <key>
+  sed -n "s/^$2=//p" "$1" 2>/dev/null | head -n 1
+}
+
 alert_check() {  # <home> <recorder>
   FM_WEDGE_ALARM_CHANNEL=herdr FM_WEDGE_ALARM_EXEC=$2 ring_check "$1" 2>&1
 }
@@ -559,6 +563,34 @@ test_vanished_endpoint_alerts_and_zero_disables() {
   pass "backstop: a vanished endpoint alerts, and alert-after 0 disables it"
 }
 
+test_undelivered_alert_retries_until_a_channel_delivers() {
+  local home rec failing
+  rec=$(alert_recorder)
+  failing="$TMP_ROOT/alert-failing.sh"
+  printf '#!/usr/bin/env bash\nexit 1\n' > "$failing"
+  chmod +x "$failing"
+  home=$(make_down_home "$TMP_ROOT/down-undelivered" 3600)
+  printf 'backend=tmux\ntarget=%%999\nharness=claude\n' > "$home/state/.watch-backstop-endpoint"
+  alert_check "$home" "$failing" >/dev/null
+  alert_check "$home" "$failing" >/dev/null
+  alert_check "$home" "$failing" >/dev/null
+  [ -z "$(field_of "$home/state/.watch-backstop-alert" alerted_at)" ] \
+    || fail "a failed channel must not mark the episode alerted"
+  if [ "$(uname)" = Linux ]; then
+    FM_WEDGE_ALARM_CHANNEL=auto FM_WEDGE_ALARM_EXEC=$rec ring_check "$home" >/dev/null 2>&1
+    [ ! -s "$ALERTS" ] || fail "auto on Linux must not reach a channel: $(cat "$ALERTS")"
+    [ -z "$(field_of "$home/state/.watch-backstop-alert" alerted_at)" ] \
+      || fail "a log-only alert must not mark the episode alerted"
+  fi
+  alert_check "$home" "$rec" >/dev/null
+  alert_check "$home" "$rec" >/dev/null
+  alert_check "$home" "$rec" >/dev/null
+  [ "$(grep -c . "$ALERTS")" -eq 1 ] || fail "a working channel must alert the episode exactly once: $(cat "$ALERTS")"
+  [ -n "$(field_of "$home/state/.watch-backstop-alert" alerted_at)" ] \
+    || fail "a delivered alert must be recorded"
+  pass "backstop: an undelivered alert is retried until a channel delivers it, then fires once"
+}
+
 test_ring_defers_on_pending_composer_and_dead_target() {
   local home out before
   [ -n "$REAL_TMUX" ] || { pass "backstop: deferral skipped (tmux not installed)"; return; }
@@ -595,4 +627,5 @@ fm_test_run \
   test_ring_defers_on_pending_composer_and_dead_target \
   test_deferred_ring_alerts_once_per_episode \
   test_successful_ring_does_not_alert \
-  test_vanished_endpoint_alerts_and_zero_disables
+  test_vanished_endpoint_alerts_and_zero_disables \
+  test_undelivered_alert_retries_until_a_channel_delivers

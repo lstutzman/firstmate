@@ -7,6 +7,8 @@
 # Sourcing it does not change the FM_WEDGE_ALARM_EXEC default; see docs/wedge-alarm.md.
 
 WEDGE_ALARM_TIMEOUT_SECS_DEFAULT=10
+WEDGE_ALARM_TITLE_DEFAULT="firstmate: away-mode escalations WEDGED"
+WEDGE_ALARM_DELIVERED=0
 WEDGE_ALARM_NOTIFIER_PID=
 
 # --- backend-independent active wedge alert ---------------------------------
@@ -140,8 +142,8 @@ wedge_alarm_os_notifier_override() {  # <channel> <summary>
 # independent of any terminal pane or multiplexer status-line. The summary is
 # passed as an argv item (never interpolated into the AppleScript source) so its
 # text can never break the script. Best-effort: logs and returns 1 on failure.
-wedge_alarm_via_osascript() {  # <summary>
-  local summary=$1 rc
+wedge_alarm_via_osascript() {  # <summary> [title]
+  local summary=$1 title=${2:-$WEDGE_ALARM_TITLE_DEFAULT} rc
   wedge_alarm_os_notifier_override osascript "$summary"
   rc=$?
   case "$rc" in
@@ -151,16 +153,16 @@ wedge_alarm_via_osascript() {  # <summary>
   command -v osascript >/dev/null 2>&1 || {
     log "wedge alarm: osascript not found; cannot post a macOS notification"; return 1; }
   wedge_alarm_run_bounded osascript osascript -e 'on run argv' \
-    -e 'display notification (item 1 of argv) with title "firstmate: away-mode escalations WEDGED" sound name "Basso"' \
-    -e 'end run' "$summary" >/dev/null 2>&1 && return 0
+    -e 'display notification (item 1 of argv) with title (item 2 of argv) sound name "Basso"' \
+    -e 'end run' "$summary" "$title" >/dev/null 2>&1 && return 0
   log "wedge alarm: osascript notification failed"
   return 1
 }
 
 # Post a herdr UI notification - herdr's own surface, separate from the pane and
 # its status-line. Best-effort: logs and returns 1 on failure.
-wedge_alarm_via_herdr() {  # <summary>
-  local summary=$1 rc
+wedge_alarm_via_herdr() {  # <summary> [title]
+  local summary=$1 title=${2:-$WEDGE_ALARM_TITLE_DEFAULT} rc
   wedge_alarm_os_notifier_override herdr "$summary"
   rc=$?
   case "$rc" in
@@ -169,7 +171,7 @@ wedge_alarm_via_herdr() {  # <summary>
   esac
   command -v herdr >/dev/null 2>&1 || {
     log "wedge alarm: herdr not found; cannot post a herdr notification"; return 1; }
-  wedge_alarm_run_bounded herdr herdr notification show "firstmate: away-mode escalations WEDGED" \
+  wedge_alarm_run_bounded herdr herdr notification show "$title" \
     --body "$summary" --sound request >/dev/null 2>&1 && return 0
   log "wedge alarm: herdr notification failed"
   return 1
@@ -181,8 +183,8 @@ wedge_alarm_via_herdr() {  # <summary>
 # Used only when config/wedge-alarm names `rex`; `auto` never adds it. Needs the
 # supervisor backend to be rex. Best-effort: logs and returns 1 on failure.
 WEDGE_ALARM_REX_RAISED=0
-wedge_alarm_via_rex() {  # <summary>
-  local summary=$1 rc backend target
+wedge_alarm_via_rex() {  # <summary> [title]
+  local summary=$1 title=${2:-$WEDGE_ALARM_TITLE_DEFAULT} rc backend target
   wedge_alarm_os_notifier_override rex "$summary"
   rc=$?
   case "$rc" in
@@ -195,7 +197,7 @@ wedge_alarm_via_rex() {  # <summary>
     log "wedge alarm: rex channel needs a Rex supervisor pane (supervisor backend is ${backend:-unset})"; return 1; }
   fm_backend_source rex >/dev/null 2>&1 || {
     log "wedge alarm: the rex adapter could not be loaded"; return 1; }
-  if wedge_alarm_run_bounded rex fm_backend_rex_alert "$target" "firstmate: away-mode escalations WEDGED" "$summary" >/dev/null 2>&1; then
+  if wedge_alarm_run_bounded rex fm_backend_rex_alert "$target" "$title" "$summary" >/dev/null 2>&1; then
     WEDGE_ALARM_REX_RAISED=1
     return 0
   fi
@@ -229,8 +231,8 @@ wedge_alarm_via_command() {  # <cmd> <summary>
   return 1
 }
 
-wedge_alarm_emit() {  # <channel> <summary>
-  local channel=$1 summary=$2 cmd=${3:-} rc exec_override=${FM_WEDGE_ALARM_EXEC:-} WEDGE_ALARM_EMIT_ACTIVE=1
+wedge_alarm_emit() {  # <channel> <summary> [cmd] [title]
+  local channel=$1 summary=$2 cmd=${3:-} title=${4:-$WEDGE_ALARM_TITLE_DEFAULT} rc exec_override=${FM_WEDGE_ALARM_EXEC:-} WEDGE_ALARM_EMIT_ACTIVE=1
   case "$exec_override" in
     '') ;;
     discard) return 0 ;;
@@ -242,9 +244,9 @@ wedge_alarm_emit() {  # <channel> <summary>
       return 1 ;;
   esac
   case "$channel" in
-    osascript) wedge_alarm_via_osascript "$summary" ;;
-    herdr) wedge_alarm_via_herdr "$summary" ;;
-    rex) wedge_alarm_via_rex "$summary" ;;
+    osascript) wedge_alarm_via_osascript "$summary" "$title" ;;
+    herdr) wedge_alarm_via_herdr "$summary" "$title" ;;
+    rex) wedge_alarm_via_rex "$summary" "$title" ;;
     command) wedge_alarm_via_command "$cmd" "$summary" ;;
   esac
 }
@@ -254,9 +256,12 @@ wedge_alarm_emit() {  # <channel> <summary>
 # `off` directive disables the alert, regardless of position; an unresolvable
 # `auto` (no OS channel on this platform) logs that the durable marker is the
 # only signal. Every notifier routes through the test-forced recorder seam.
-wedge_alarm_notify() {  # <summary> <marker>
-  local summary=$1 marker=$2 ch
+# WEDGE_ALARM_DELIVERED is set to 1 when at least one channel reported success.
+# shellcheck disable=SC2034  # WEDGE_ALARM_DELIVERED is read by bin/fm-watch-backstop.sh
+wedge_alarm_notify() {  # <summary> <marker> [title]
+  local summary=$1 marker=$2 title=${3:-$WEDGE_ALARM_TITLE_DEFAULT} ch
   local -a channels=()
+  WEDGE_ALARM_DELIVERED=0
   while IFS= read -r ch; do
     [ -n "$ch" ] || continue
     channels+=("$ch")
@@ -268,8 +273,8 @@ wedge_alarm_notify() {  # <summary> <marker>
     case "$ch" in auto|default) ch=$(wedge_alarm_platform_default) ;; esac
     case "$ch" in
       '') log "wedge alarm: no OS-level alert channel on $(uname); durable marker $marker is the only signal - set config/wedge-alarm (e.g. a command: directive)" ;;
-      osascript|herdr|rex) wedge_alarm_emit "$ch" "$summary" || true ;;
-      command:*) wedge_alarm_emit command "$summary" "${ch#command:}" || true ;;
+      osascript|herdr|rex) wedge_alarm_emit "$ch" "$summary" "" "$title" && WEDGE_ALARM_DELIVERED=1 ;;
+      command:*) wedge_alarm_emit command "$summary" "${ch#command:}" && WEDGE_ALARM_DELIVERED=1 ;;
       *) log "wedge alarm: unrecognized active-alert channel directive (redacted); marker still written" ;;
     esac
   done

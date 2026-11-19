@@ -4,7 +4,7 @@ The away-mode sub-supervisor (`bin/fm-supervise-daemon.sh`) buffers escalations 
 When injection cannot confirm a submit past `FM_MAX_DEFER_SECS`, `inject_wedge_alarm` raises a loud, rate-limited alarm so the stall never stays invisible.
 The active alert is pane-independent because a tmux status-line flash has no cross-backend equivalent and cannot reach an unattended captain reliably.
 The durable marker and tmux flash remain as additional signals.
-The watcher backstop (`bin/fm-watch-backstop.sh`) reuses the same channels: when supervision is down and it cannot ring the session, it raises one alert per stale episode after `FM_WATCH_BACKSTOP_ALERT_AFTER` undeliverable polls (default 2; 0 disables) and records it in `state/.watch-backstop-alert`.
+The watcher backstop (`bin/fm-watch-backstop.sh`) reuses the same channels: when supervision is down and it cannot ring the session, it raises one alert per stale episode after `FM_WATCH_BACKSTOP_ALERT_AFTER` undeliverable polls (default 2; 0 disables), titled `firstmate: supervision DOWN`, and records it in `state/.watch-backstop-alert` once a channel delivers it; an alert that no channel delivered (log-only or failed) is retried on the next poll.
 The channel code lives in `bin/fm-wedge-alarm-lib.sh`, sourced by both scripts.
 
 ## Channels

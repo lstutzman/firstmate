@@ -80,6 +80,7 @@
 #      raises one active alert through the wedge-alarm channels
 #      (bin/fm-wedge-alarm-lib.sh, config/wedge-alarm; docs/wedge-alarm.md),
 #      recorded in state/.watch-backstop-alert so it fires once per episode.
+#      An alert no channel delivered (log-only or failed) is retried next poll.
 #      The ring is still retried every poll, and a later success still rings.
 set -u
 
@@ -214,8 +215,9 @@ ring_endpoint() {  # <body>
 # The wedge-alarm library logs through log(); the timer's stderr is the journal.
 log() { printf 'backstop: %s\n' "$*" >&2; }
 
-# Count one undeliverable poll for episode <key>; on the <ALERT_AFTER>th, raise
-# the wedge alarm once and record it so the episode never alerts again.
+# Count one undeliverable poll for episode <key>; from the <ALERT_AFTER>th on,
+# raise the wedge alarm until a channel delivers it, then record it so the
+# episode never alerts again.
 alert_if_stuck() {  # <key> <outcome>
   local key=$1 outcome=$2 n=0 alerted=
   [ "$ALERT_AFTER" -gt 0 ] || return 0
@@ -227,14 +229,14 @@ alert_if_stuck() {  # <key> <outcome>
   [ -z "$alerted" ] || return 0
   n=$((n + 1))
   if [ "$n" -ge "$ALERT_AFTER" ]; then
-    alerted=$(date +%s)
     # shellcheck source=bin/fm-supervisor-target-lib.sh
     . "$SCRIPT_DIR/fm-supervisor-target-lib.sh"
     # shellcheck source=bin/fm-backend.sh
     . "$SCRIPT_DIR/fm-backend.sh"
     # shellcheck source=bin/fm-wedge-alarm-lib.sh
     . "$SCRIPT_DIR/fm-wedge-alarm-lib.sh"
-    wedge_alarm_notify "firstmate home $FM_HOME has had no supervision (watcher beacon: $FM_SUP_BEACON_DESC). The watcher backstop could not wake its session: $outcome. Open the session and run bin/fm-session-start.sh." "$ALERT_FILE"
+    wedge_alarm_notify "firstmate home $FM_HOME has had no supervision (watcher beacon: $FM_SUP_BEACON_DESC). The watcher backstop could not wake its session: $outcome. Open the session and run bin/fm-session-start.sh." "$ALERT_FILE" "firstmate: supervision DOWN"
+    [ "$WEDGE_ALARM_DELIVERED" != 1 ] || alerted=$(date +%s)
   fi
   write_atomic "$ALERT_FILE" "$(printf 'episode=%s\ndeferred=%s\nalerted_at=%s\n' "$key" "$n" "$alerted")" || true
 }
