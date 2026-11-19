@@ -591,6 +591,25 @@ test_undelivered_alert_retries_until_a_channel_delivers() {
   pass "backstop: an undelivered alert is retried until a channel delivers it, then fires once"
 }
 
+test_alert_reaches_herdr_titled_supervision_down() {
+  local home fb argv
+  fb="$TMP_ROOT/herdr-notify-bin"
+  argv="$TMP_ROOT/herdr-notify.argv"
+  mkdir -p "$fb"
+  : > "$argv"
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$@" >> %q\n' "$argv" > "$fb/herdr"
+  chmod +x "$fb/herdr"
+  home=$(make_down_home "$TMP_ROOT/down-titled" 3600)
+  printf 'backend=tmux\ntarget=%%999\nharness=claude\n' > "$home/state/.watch-backstop-endpoint"
+  PATH="$fb:$PATH" FM_WEDGE_ALARM_CHANNEL=herdr FM_WEDGE_ALARM_EXEC='' ring_check "$home" >/dev/null 2>&1
+  PATH="$fb:$PATH" FM_WEDGE_ALARM_CHANNEL=herdr FM_WEDGE_ALARM_EXEC='' ring_check "$home" >/dev/null 2>&1
+  [ "$(sed -n 1,3p "$argv")" = "$(printf 'notification\nshow\nfirstmate: supervision DOWN')" ] \
+    || fail "the backstop alert must reach herdr titled 'firstmate: supervision DOWN': $(cat "$argv")"
+  [ -n "$(field_of "$home/state/.watch-backstop-alert" alerted_at)" ] \
+    || fail "a delivered herdr alert must be recorded"
+  pass "backstop: the alert reaches herdr titled supervision DOWN"
+}
+
 test_ring_defers_on_pending_composer_and_dead_target() {
   local home out before
   [ -n "$REAL_TMUX" ] || { pass "backstop: deferral skipped (tmux not installed)"; return; }
@@ -628,4 +647,5 @@ fm_test_run \
   test_deferred_ring_alerts_once_per_episode \
   test_successful_ring_does_not_alert \
   test_vanished_endpoint_alerts_and_zero_disables \
-  test_undelivered_alert_retries_until_a_channel_delivers
+  test_undelivered_alert_retries_until_a_channel_delivers \
+  test_alert_reaches_herdr_titled_supervision_down
