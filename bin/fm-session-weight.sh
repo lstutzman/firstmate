@@ -60,6 +60,8 @@ done
 [[ "$MIN_AGE" =~ ^[0-9]+$ && "$WINDOW" =~ ^[0-9]+$ ]] || { printf 'fm-session-weight: hours must be whole numbers\n' >&2; exit 2; }
 [ -n "$NOW" ] || NOW=$(date +%s)
 HERDR_TIMEOUT=${FM_SESSION_WEIGHT_HERDR_TIMEOUT:-10}
+[[ "$HERDR_TIMEOUT" =~ ^[1-9][0-9]*$ ]] || { printf 'fm-session-weight: FM_SESSION_WEIGHT_HERDR_TIMEOUT must be a positive whole number\n' >&2; exit 2; }
+HERDR_DEADLINE=$((SECONDS + HERDR_TIMEOUT))
 if [ -z "$RETIRED" ]; then
   RETIRED=${FM_SESSION_WEIGHT_RETIRED:-}
   [ -n "$RETIRED" ] || RETIRED=$(grep -Ev '^[[:space:]]*(#|$)' "${FM_HOME:-/nonexistent}/config/session-weight-retired" 2>/dev/null | head -n 1)
@@ -70,8 +72,11 @@ fi
 # holding a firstmate home's lock, the agent in each home's recorded task window (window= in
 # state/<id>.meta) and everything in a named workspace (Lee steps, Terminal). A pane's pids come from
 # Herdr's own `pane process-info` through fm_backend_herdr_cli; an unreachable Herdr protects nothing.
-# Every running Herdr session is scanned (herdr session list), not only those a task meta names. Each Herdr call
-# is bounded by FM_SESSION_WEIGHT_HERDR_TIMEOUT seconds (default 10); a timeout counts as unreachable.
+# Every running Herdr session is scanned (herdr session list), not only those a task meta names. All Herdr calls
+# together share one deadline of FM_SESSION_WEIGHT_HERDR_TIMEOUT seconds (default 10, under fm-office's 20s bound
+# on the whole check); a call that would start after it is skipped, and a timeout counts as unreachable.
+# shellcheck source=bin/fm-timeout-lib.sh
+. "$SCRIPT_DIR/fm-timeout-lib.sh"
 # shellcheck source=bin/fm-session-lock-lib.sh
 . "$SCRIPT_DIR/fm-session-lock-lib.sh"
 # shellcheck source=bin/fm-secondmate-parent-lib.sh
@@ -100,9 +105,14 @@ done
 
 # pane_pids <session> <pane-id>: the pane's shell pid (prefixed r, a root whose every descendant is
 # skipped) and its foreground group and foreground process pids.
-herdr_cli() {  # <session> <herdr-subcommand-and-args...>: fm_backend_herdr_cli bounded by $HERDR_TIMEOUT seconds
+herdr_timed() {  # <command> [args...]: run within what is left of the shared Herdr deadline
+  local left=$((HERDR_DEADLINE - SECONDS))
+  [ "$left" -gt 0 ] || return 124
+  fm_run_timed "$left" "$@"
+}
+herdr_cli() {  # <session> <herdr-subcommand-and-args...>: fm_backend_herdr_cli within the shared Herdr deadline
   # shellcheck disable=SC2016 # the script text is for the child shell
-  timeout "$HERDR_TIMEOUT" bash -c '. "$1/fm-backend.sh" && fm_backend_source herdr && shift && fm_backend_herdr_cli "$@"' _ "$SCRIPT_DIR" "$@"
+  herdr_timed bash -c '. "$1/fm-backend.sh" && fm_backend_source herdr && shift && fm_backend_herdr_cli "$@"' _ "$SCRIPT_DIR" "$@"
 }
 pane_pids() {
   herdr_cli "$1" pane process-info --pane "$2" 2>/dev/null \
@@ -120,7 +130,7 @@ add_pane() {  # <session> <pane-id>
 if command -v herdr >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 && . "$SCRIPT_DIR/fm-backend.sh" && fm_backend_source herdr; then
   sessions=" default "
   # Every running Herdr session, so a "Lee steps" or "Terminal" workspace is found even when no task meta names its session.
-  for sess in $(timeout "$HERDR_TIMEOUT" herdr session list --json 2>/dev/null | jq -r '.sessions[]? | select(.running == true) | .name' 2>/dev/null); do
+  for sess in $(herdr_timed herdr session list --json 2>/dev/null | jq -r '.sessions[]? | select(.running == true) | .name' 2>/dev/null); do
     case "$sessions" in *" $sess "*) ;; *) sessions="$sessions$sess " ;; esac
   done
   for h in "${homes[@]}"; do
