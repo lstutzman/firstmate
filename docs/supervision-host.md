@@ -321,6 +321,7 @@ Claude drops the exit 2 of a Stop hook it terminated at the hook timeout ([verif
 Cursor's `stop` hook carries the same tracked 28,800-second registration.
 A plain watcher park rarely lasts that long, because heartbeat closes wake main.
 But a host absorbs its own wakes, so it ends its park itself before that registration.
+A Claude home that opts out of the host gets the same bound from the auto-arm itself ([turn-end guard](turnend-guard.md)), so its park never reaches the timeout kill either.
 
 ### Setting the boundary
 

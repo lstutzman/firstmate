@@ -169,6 +169,12 @@ printf 'signal: task.status done: slow fixture\n'
 exit 0
 SH
       ;;
+    park)
+      cat >> "$dir/bin/fm-watch-arm.sh" <<'SH'
+printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+exec sleep 60
+SH
+      ;;
     blocking-actionable)
       cat >> "$dir/bin/fm-watch-arm.sh" <<'SH'
 sleep 6
@@ -2203,6 +2209,85 @@ SH
   chmod +x "$dir/bin/fm-supervision-host.sh"
 }
 
+test_host_off_park_deadline_renews_with_a_clean_rewake() {
+  local dir out status arm
+  dir=$(make_primary_dir "$TMP_ROOT/park-deadline")
+  : > "$dir/state/task.meta"
+  write_arm_fixture "$dir" park
+  out=$(FM_CLAUDE_AUTOARM_PARK_SECONDS=2 run_autoarm "$dir" 2>&1); status=$?
+  expect_code 2 "$status" "a host-off park that reaches its deadline must exit 2 so Claude delivers the rewake: $out"
+  assert_contains "$out" "park renewal" "the renewal line leads the model to drain and end its turn"
+  assert_not_contains "$out" "FAILED" "a routine renewal is not a failure"
+  assert_absent "$dir/state/.claude-autoarm-failure-notified" "renewal consumed the failure episode"
+  assert_absent "$dir/state/.claude-autoarm-failure-alarmed" "renewal raised the attended alarm"
+  [ "$(epoch_outcome "$dir")" = clean ] || fail "renewal outcome is not clean: $(sed -n '1p' "$dir/state/.claude-autoarm-epoch")"
+  arm=$(sed -n '1p' "$dir/state/arm-ran")
+  ! kill -0 "$arm" 2>/dev/null || fail "the arm outlived the deadline"
+  pass "auto-arm: a host-off park reaching its deadline ends the arm and renews with a clean exit-2 rewake"
+}
+
+test_park_deadline_follows_the_registered_hook_timeout() {
+  local dir out status
+  dir=$(make_primary_dir "$TMP_ROOT/park-derived")
+  : > "$dir/state/task.meta"
+  mkdir -p "$dir/.claude"
+  jq '.hooks.Stop[0].hooks[1].timeout = 1802' "$ROOT/.claude/settings.json" > "$dir/.claude/settings.json"
+  write_arm_fixture "$dir" park
+  out=$(run_autoarm "$dir" 2>&1); status=$?
+  expect_code 2 "$status" "the default deadline must come from the registered timeout: $out"
+  assert_contains "$out" "2s limit" "the deadline is the registered timeout minus 1800 s"
+  pass "auto-arm: the default park deadline is derived from the Stop hook timeout in .claude/settings.json"
+}
+
+test_wake_before_the_park_deadline_behaves_as_before() {
+  local dir out status
+  dir=$(make_primary_dir "$TMP_ROOT/park-wake-first")
+  : > "$dir/state/task.meta"
+  write_arm_fixture "$dir" actionable
+  out=$(FM_CLAUDE_AUTOARM_PARK_SECONDS=600 run_autoarm "$dir" 2>/dev/null); status=$?
+  expect_code 2 "$status" "a wake before the deadline still rewakes"
+  assert_contains "$out" "stale: fixture-win actionable" "the wake reason reaches the rewake"
+  assert_not_contains "$out" "park renewal" "no renewal when the arm closed on a wake"
+  pass "auto-arm: a wake before the park deadline behaves as before"
+}
+
+test_quiet_ack_rearms_count_against_the_park_deadline() {
+  local dir out status
+  dir=$(make_quiet_home "$TMP_ROOT/park-quiet-ack")
+  : > "$dir/config/wake-auto-ack"
+  cat > "$dir/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+[ -z "${FM_WATCH_PREDECESSOR_ARM_PID:-}" ] || { printf 'watcher: started pid=%s (beacon fresh)\n' "$$"; exit 0; }
+echo "$$" >> "$FM_HOME/state/arm-ran"
+sleep 1.5
+n=$(wc -l < "$FM_HOME/state/arm-ran" | tr -d ' ')
+FM_STATE_OVERRIDE="$FM_HOME/state" bash -c '. "$1"; fm_wake_append check "$2" "$3"' _ "$FM_HOME/bin/fm-wake-lib.sh" "merged-gone-$n" "check: merge landed: gone https://github.com/o/r/pull/5"
+printf 'watcher: started pid=%s (beacon fresh)\ncheck: merge landed: gone\n' "$$"
+SH
+  out=$(FM_CLAUDE_AUTOARM_PARK_SECONDS=3 run_autoarm "$dir" 2>&1); status=$?
+  expect_code 2 "$status" "the shared deadline must end quiet-ack re-arms with a renewal: $out"
+  assert_contains "$out" "park renewal" "the renewal line is delivered"
+  assert_not_contains "$out" "merge landed" "the quiet wake never reached the model"
+  [ "$(wc -l < "$dir/state/arm-ran" | tr -d ' ')" -le 3 ] || fail "quiet-ack re-arms ran past the deadline: $(cat "$dir/state/arm-ran")"
+  [ "$(epoch_outcome "$dir")" = clean ] || fail "renewal outcome is not clean"
+  assert_absent "$dir/state/.claude-autoarm-failure-notified" "renewal consumed the failure episode"
+  pass "auto-arm: quiet-ack re-arms count against the same park deadline"
+}
+
+test_host_on_ignores_the_park_deadline() {
+  local dir out status
+  dir=$(make_primary_dir "$TMP_ROOT/park-host-on")
+  rm -f "$dir/config/supervision-host-off"
+  : > "$dir/state/task.meta"
+  write_arm_fixture "$dir" actionable
+  write_host_fixture "$dir" boundary
+  out=$(FM_CLAUDE_AUTOARM_PARK_SECONDS=1 run_autoarm "$dir" 2>/dev/null); status=$?
+  expect_code 2 "$status" "the supervision host path still rewakes from the host"
+  assert_contains "$out" "supervision-host" "the host line is delivered"
+  assert_not_contains "$out" "park renewal" "the host path never renews through the arm deadline"
+  pass "auto-arm: the supervision host path ignores the arm park deadline"
+}
+
 test_host_off_flag_keeps_the_arm() {
   local dir out status
   dir=$(make_primary_dir "$TMP_ROOT/host-flag-off")
@@ -2525,6 +2610,11 @@ test_afk_mid_cycle_suppresses_rewake
 test_active_in_marked_secondmate_home
 test_long_poll_grace_reaches_arm_wrapper
 test_host_off_flag_keeps_the_arm
+test_host_off_park_deadline_renews_with_a_clean_rewake
+test_park_deadline_follows_the_registered_hook_timeout
+test_wake_before_the_park_deadline_behaves_as_before
+test_quiet_ack_rearms_count_against_the_park_deadline
+test_host_on_ignores_the_park_deadline
 test_host_absent_flag_runs_the_host
 test_host_boundary_rewakes_with_the_host_line
 test_host_handback_under_away_record_is_not_a_return
