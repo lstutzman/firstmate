@@ -52,9 +52,13 @@
 #     terminated at the configured timeout
 #     as a rewake (measured on Claude Code 2.1.278 and 2.1.281,
 #     docs/verification/supervision.md), so a park that outlives that timeout
-#     records the failure durably without waking an idle primary. Nothing
-#     shortens a quiet park, because no-change heartbeats are absorbed without
-#     closing the arm.
+#     records the failure durably without waking an idle primary. A home that
+#     runs no supervision host therefore bounds the whole process's park (the
+#     first arm and every quiet-ack re-arm) by FM_CLAUDE_AUTOARM_PARK_SECONDS
+#     (default: the Stop timeout in .claude/settings.json minus 1800 s, 27000 today): at the deadline it TERMs
+#     the arm, records clean and exits 2 with a renewal line, a routine
+#     renewal that raises no failure alarm. The model drains and ends its turn,
+#     and the next Stop re-arms.
 #   - Handling successor: Pi, omp, and OpenCode start the next arm before they
 #     deliver an actionable wake, so the fleet stays covered while the model
 #     handles it. After an actionable close, including an attached peer cycle
@@ -579,13 +583,41 @@ trap 'handle_autoarm_signal INT' INT
 # retried or translated into an operator-visible failure.
 ARM_PID=
 CLOSED_ARM_PID=
+# Default: 1800 s under this hook's own timeout in the tracked registration, so
+# the two cannot drift apart (28800 when that is unreadable).
+PARK_SECONDS=${FM_CLAUDE_AUTOARM_PARK_SECONDS:-}
+case "$PARK_SECONDS" in ''|*[!0-9]*|0)
+  PARK_SECONDS=$(jq -r '[.hooks.Stop[]?.hooks[]? | select((.command // "") | contains("fm-claude-stop-autoarm.sh")) | .timeout] | first // 28800' \
+    "$FM_ROOT/.claude/settings.json" 2>/dev/null || true)
+  case "$PARK_SECONDS" in ''|*[!0-9]*) PARK_SECONDS=28800 ;; esac
+  PARK_SECONDS=$((10#$PARK_SECONDS - 1800))
+  [ "$PARK_SECONDS" -gt 0 ] || PARK_SECONDS=27000
+  ;;
+esac
+PARK_SECONDS=$((10#$PARK_SECONDS))
+PARK_DEADLINE=$(( $(date +%s) + PARK_SECONDS ))
+PARK_EXPIRED=0
 run_arm() {  # <output file, or empty for none>
+  # The deadline spans every arm this process starts, so a quiet-ack re-arm
+  # after it starts no arm at all.
+  if [ "$(date +%s)" -ge "$PARK_DEADLINE" ]; then
+    PARK_EXPIRED=1
+    return 0
+  fi
   if [ -n "$1" ]; then
     FM_GUARD_GRACE="$GRACE" "$SCRIPT_DIR/fm-watch-arm.sh" >"$1" 2>&1 &
   else
     FM_GUARD_GRACE="$GRACE" "$SCRIPT_DIR/fm-watch-arm.sh" >/dev/null 2>&1 &
   fi
   ARM_PID=$!
+  while kill -0 "$ARM_PID" 2>/dev/null; do
+    if [ "$(date +%s)" -ge "$PARK_DEADLINE" ]; then
+      PARK_EXPIRED=1
+      kill -TERM "$ARM_PID" 2>/dev/null || true
+      break
+    fi
+    sleep 1
+  done
   wait "$ARM_PID" || true
   CLOSED_ARM_PID=$ARM_PID
   ARM_PID=
@@ -697,6 +729,19 @@ while [ "$attempt" -lt "$AUTOARM_ATTEMPTS" ]; do
       attempt=$((attempt - 1))
       continue
     fi
+  fi
+  if [ "$PARK_EXPIRED" -eq 1 ] && [ "$ACTIONABLE" -eq 0 ]; then
+    # Routine renewal, not a failure: end the turn-less park before Claude's
+    # timeout kill (whose exit 2 it drops) so this exit 2 is delivered.
+    [ -z "$OUT" ] || rm -f "$OUT" 2>/dev/null || true
+    OUT=
+    if ! need_supervision; then
+      autoarm_record clean
+      exit 0
+    fi
+    printf 'firstmate watcher park renewal - the Stop-owned park reached its %ss limit, under the Stop hook timeout. Run bin/fm-wake-drain.sh --summary, handle anything it reports, then end the turn: the next Stop arms the next cycle automatically - do NOT run bin/fm-watch-arm.sh.\n' "$PARK_SECONDS" >&2
+    autoarm_commit clean && exit 2
+    exit 0
   fi
   [ "$ACTIONABLE" -eq 1 ] && break
   if [ "$HOST_MODE" -eq 1 ]; then

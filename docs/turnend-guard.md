@@ -427,6 +427,9 @@ An interruption notice carries the producing session's lock-holder identity and 
 Before taking its first generation, a replacement that no longer matches that session clears the interrupted episode's notice, attended alarm, and block budget, so its first genuine failure can notify even if a process number and executable path are reused.
 Empty legacy markers and ordinary failure notices retain their existing behavior.
 Claude drops that exit 2 when it terminated the hook at the configured timeout itself, so a park that outlives the timeout ends without a rewake (`bin/fm-claude-stop-autoarm.sh` header).
+A home that opts out of the supervision host therefore bounds the auto-arm's whole park, the first arm and every quiet-ack re-arm, by `FM_CLAUDE_AUTOARM_PARK_SECONDS`, which defaults to 1800 seconds under the `Stop` timeout in `.claude/settings.json`.
+At that deadline the hook ends the arm and exits 2 with a one-line park renewal that leads the model to drain and end its turn, and the next `Stop` re-arms.
+This is a routine renewal: it records a clean outcome and raises no failure notice, attended alarm or interruption.
 
 The first fresh exhausted-failure epoch preserves its handoff without consuming a blocked-stop count.
 Later fresh failed epochs advance the same monotonic progression instead of resetting it.
