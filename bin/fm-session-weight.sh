@@ -59,6 +59,7 @@ while [ $# -gt 0 ]; do
 done
 [[ "$MIN_AGE" =~ ^[0-9]+$ && "$WINDOW" =~ ^[0-9]+$ ]] || { printf 'fm-session-weight: hours must be whole numbers\n' >&2; exit 2; }
 [ -n "$NOW" ] || NOW=$(date +%s)
+HERDR_TIMEOUT=${FM_SESSION_WEIGHT_HERDR_TIMEOUT:-10}
 if [ -z "$RETIRED" ]; then
   RETIRED=${FM_SESSION_WEIGHT_RETIRED:-}
   [ -n "$RETIRED" ] || RETIRED=$(grep -Ev '^[[:space:]]*(#|$)' "${FM_HOME:-/nonexistent}/config/session-weight-retired" 2>/dev/null | head -n 1)
@@ -69,6 +70,8 @@ fi
 # holding a firstmate home's lock, the agent in each home's recorded task window (window= in
 # state/<id>.meta) and everything in a named workspace (Lee steps, Terminal). A pane's pids come from
 # Herdr's own `pane process-info` through fm_backend_herdr_cli; an unreachable Herdr protects nothing.
+# Every running Herdr session is scanned (herdr session list), not only those a task meta names. Each Herdr call
+# is bounded by FM_SESSION_WEIGHT_HERDR_TIMEOUT seconds (default 10); a timeout counts as unreachable.
 # shellcheck source=bin/fm-session-lock-lib.sh
 . "$SCRIPT_DIR/fm-session-lock-lib.sh"
 # shellcheck source=bin/fm-secondmate-parent-lib.sh
@@ -97,8 +100,12 @@ done
 
 # pane_pids <session> <pane-id>: the pane's shell pid (prefixed r, a root whose every descendant is
 # skipped) and its foreground group and foreground process pids.
+herdr_cli() {  # <session> <herdr-subcommand-and-args...>: fm_backend_herdr_cli bounded by $HERDR_TIMEOUT seconds
+  # shellcheck disable=SC2016 # the script text is for the child shell
+  timeout "$HERDR_TIMEOUT" bash -c '. "$1/fm-backend.sh" && fm_backend_source herdr && shift && fm_backend_herdr_cli "$@"' _ "$SCRIPT_DIR" "$@"
+}
 pane_pids() {
-  fm_backend_herdr_cli "$1" pane process-info --pane "$2" 2>/dev/null \
+  herdr_cli "$1" pane process-info --pane "$2" 2>/dev/null \
     | jq -r '.result.process_info | ((.shell_pid | select(type == "number") | "r\(.)"),
         ([.foreground_process_group_id, (.foreground_processes[]?.pid)] | .[] | select(type == "number") | tostring))' 2>/dev/null
 }
@@ -112,6 +119,10 @@ add_pane() {  # <session> <pane-id>
 # shellcheck source=bin/fm-backend.sh
 if command -v herdr >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 && . "$SCRIPT_DIR/fm-backend.sh" && fm_backend_source herdr; then
   sessions=" default "
+  # Every running Herdr session, so a "Lee steps" or "Terminal" workspace is found even when no task meta names its session.
+  for sess in $(timeout "$HERDR_TIMEOUT" herdr session list --json 2>/dev/null | jq -r '.sessions[]? | select(.running == true) | .name' 2>/dev/null); do
+    case "$sessions" in *" $sess "*) ;; *) sessions="$sessions$sess " ;; esac
+  done
   for h in "${homes[@]}"; do
     for meta in "$h"/state/*.meta; do
       [ -f "$meta" ] || continue
@@ -124,10 +135,10 @@ if command -v herdr >/dev/null 2>&1 && command -v jq >/dev/null 2>&1 && . "$SCRI
     done
   done
   for sess in $sessions; do
-    wss=$(fm_backend_herdr_cli "$sess" workspace list 2>/dev/null \
+    wss=$(herdr_cli "$sess" workspace list 2>/dev/null \
       | jq -r '.result.workspaces[]? | select(.label | test("^(Lee steps|Terminal)$")) | .workspace_id' 2>/dev/null)
     [ -n "$wss" ] || continue
-    panes=$(fm_backend_herdr_cli "$sess" pane list 2>/dev/null \
+    panes=$(herdr_cli "$sess" pane list 2>/dev/null \
       | jq -r --arg ws "$wss" '.result.panes[]? | select(.workspace_id as $w | ($ws | split("\n") | index($w))) | .pane_id' 2>/dev/null)
     for pane in $panes; do add_pane "$sess" "$pane"; done
   done

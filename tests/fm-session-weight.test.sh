@@ -68,7 +68,12 @@ while [ $# -gt 0 ]; do
     *) words+=("$1"); shift ;;
   esac
 done
+if [ "${words[*]}" = "session list --json" ]; then
+  [ -f "$d/sessions.json" ] && cat "$d/sessions.json"
+  exit 0
+fi
 [ -n "$s" ] || exit 1
+[ -f "$d/hang" ] && exec sleep 30
 case "${words[*]}" in
   "workspace list") f=$d/$s.workspaces.json ;;
   "pane list") f=$d/$s.panes.json ;;
@@ -292,6 +297,31 @@ test_named_workspace_session_is_not_flagged_for_age() {
   pass 'a named workspace session is not flagged for age alone'
 }
 
+test_terminal_workspace_in_unnamed_session_is_not_flagged_for_age() {
+  local w out
+  w=$(make_world terminal)
+  printf '{"sessions":[{"name":"default","running":true},{"name":"fm-remote","running":true},{"name":"gone","running":false}]}\n' > "$w/herdr/sessions.json"
+  printf '{"result":{"workspaces":[{"label":"Terminal","workspace_id":"w1"},{"label":"Lee steps","workspace_id":"w2"}]}}\n' > "$w/herdr/fm-remote.workspaces.json"
+  printf '{"result":{"panes":[{"pane_id":"w1:p1","workspace_id":"w1"},{"pane_id":"w2:p1","workspace_id":"w2"}]}}\n' > "$w/herdr/fm-remote.panes.json"
+  fake_pane_pids "$w" fm-remote w1:p1 300
+  fake_pane_pids "$w" fm-remote w2:p1 450
+  printf '  450 200000 claude --model claude-opus-5-5\n' >> "$w/ps.txt"
+  out=$(weight "$w")
+  assert_not_contains "$out" "pid=300 " "a Terminal workspace pane is not flagged for age"
+  assert_not_contains "$out" "pid=450 " "a Lee steps pane in a session no task meta names is not flagged for age"
+  assert_contains "$out" "pid=200 claude" "an unrelated session is still flagged"
+  pass 'Terminal and Lee steps workspaces in any running session are exempt'
+}
+
+test_hung_herdr_times_out_and_check_completes() {
+  local w out
+  w=$(make_world hung)
+  : > "$w/herdr/hang"
+  out=$(FM_SESSION_WEIGHT_HERDR_TIMEOUT=1 weight "$w")
+  assert_contains "$out" "pid=200 claude" "a hung Herdr protects nothing and the check still completes"
+  pass 'a hung Herdr call times out like an unreachable one'
+}
+
 test_dead_lock_pid_protects_nothing() {
   local w out
   w=$(make_world deadlock)
@@ -330,5 +360,7 @@ fm_test_run \
   test_recorded_task_session_is_not_flagged_for_age \
   test_agent_outside_the_foreground_group_is_not_flagged \
   test_named_workspace_session_is_not_flagged_for_age \
+  test_terminal_workspace_in_unnamed_session_is_not_flagged_for_age \
+  test_hung_herdr_times_out_and_check_completes \
   test_dead_lock_pid_protects_nothing \
   test_never_signals_a_process
