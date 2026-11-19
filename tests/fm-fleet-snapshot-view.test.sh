@@ -1427,17 +1427,34 @@ test_home_summary_child_holds_count_survives_truncation() {
   local home fakebin out n
   home=$(make_home summary-child-holds)
   fakebin=$(make_fakebin "$home")
-  {
-    printf '## In flight\n\n## Queued\n'
-    for n in 1 2 3; do
-      printf -- '- [ ] held-%s - Held %s (repo: alpha) (kind: ship) (hold: waits on PC-1) (hold-kind: external)\n' "$n" "$n"
-    done
-    printf '\n## Done\n'
-  } > "$home/data/backlog.md"
+  write_child_holds_backlog() {
+    {
+      printf '## In flight\n%s\n## Queued\n' "$1"
+      for n in 1 2 3; do
+        printf -- '- [ ] held-%s - Held %s (repo: alpha) (kind: ship) (hold: waits on PC-1) (hold-kind: external)\n' "$n" "$n"
+      done
+      printf '\n## Done\n'
+    } > "$home/data/backlog.md"
+  }
+  write_child_holds_backlog ""
   out=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_SECONDMATE_QUEUED=2 "$SNAPSHOT" --secondmate-home-summary)
   printf '%s' "$out" | jq -e '.counts.holds == 3 and (.holds | length) == 2
     and all(.holds[]; .source == "backlog") and .counts.child_holds == 0' >/dev/null \
     || fail "truncated backlog-only holds must report child_holds 0: $out"
+
+  mkdir -p "$home/projects/parked"
+  write_child_holds_backlog '- [ ] parked-ship - Parked child (repo: alpha) (kind: ship) (since 2026-07-11)
+'
+  fm_write_meta "$home/state/parked-ship.meta" \
+    "window=firstmate:fm-parked-ship" "worktree=$home/projects/parked" \
+    "project=alpha" "harness=claude" "kind=ship" "mode=no-mistakes"
+  record_claude_idle "$home/state" parked-ship
+  printf 'needs-decision [key=route]: choose a route\n' > "$home/state/parked-ship.status"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_SECONDMATE_QUEUED=2 "$SNAPSHOT" --secondmate-home-summary)
+  printf '%s' "$out" | jq -e '.counts.holds == 4 and (.holds | length) == 2
+    and all(.holds[]; .source == "backlog") and .counts.child_holds == 1' >/dev/null \
+    || fail "a child-state hold truncated out of the holds array must still count in child_holds: $out"
+  unset -f write_child_holds_backlog
   pass "home-summary counts child-state holds separately from truncated backlog holds"
 }
 
