@@ -41,6 +41,13 @@ export FM_BACKEND_CMUX_BUNDLE_BIN="$TMP_ROOT/no-bundled-cmux"
 unset TMUX TMUX_PANE HERDR_ENV HERDR_PANE_ID HERDR_SESSION HERDR_SOCKET_PATH PASEO_AGENT_ID __CFBundleIdentifier \
   CMUX_WORKSPACE_ID CMUX_SURFACE_ID CMUX_SOCKET_PATH CMUX_TAB_ID CMUX_PANEL_ID 2>/dev/null || true
 
+# Hermetic typed-resolver opt-in. Bootstrap turns resolver-field validation on
+# when TYPESAFE_API_KEY (or its private copy) or TYPESAFE_BASE_URL is in the
+# environment, so a runner that exports one would flip every case that expects
+# the no-key behaviour. Every case gets its home from a temporary FM_HOME with
+# no .env unless it writes one, and passes the key explicitly when it wants it.
+unset TYPESAFE_API_KEY TYPESAFE_API_KEY_PRIVATE TYPESAFE_BASE_URL 2>/dev/null || true
+
 # A case that simulates a tool as absent removes it from the fake bin directory,
 # which is not enough on its own: bootstrap keeps searching the fallback
 # BASE_PATH, so on a host where that tool is really installed in one of those
