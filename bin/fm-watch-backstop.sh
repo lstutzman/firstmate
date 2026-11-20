@@ -29,13 +29,17 @@
 #       One poll, normally from the timer. Prints one outcome line and exits 0.
 #   fm-watch-backstop.sh timer-files <linux|darwin> <dir>
 #       Writes this home's scheduler files into <dir> and prints their names.
-#       Never loads or starts a scheduler. A file that already exists is kept
-#       as it is, so a second run changes nothing.
+#       Never loads or starts a scheduler. A file whose content already matches
+#       is left alone, so a second run changes nothing; a file that differs
+#       (the code dir or captured PATH moved) is rewritten.
 #   fm-watch-backstop.sh install
 #       The one per-home install command: writes this host's scheduler files
 #       (systemd user units on Linux, a launchd agent on macOS) into the user's
 #       scheduler directory and enables the timer. Idempotent: on an installed
-#       home it keeps the files and re-enables the same timer.
+#       home with unchanged content it keeps the files and re-enables the same
+#       timer; when the code dir or PATH moved it rewrites them and reloads.
+#       It also reloads a scheduler that still holds an older copy, so a rerun
+#       after a failed reload finishes the job.
 #   fm-watch-backstop.sh verify
 #       Prints one WATCH_BACKSTOP diagnostic naming the install command when
 #       this home has a recorded endpoint and the scheduler reports its timer
@@ -318,6 +322,14 @@ scheduler_dir() {  # <linux|darwin>
   esac
 }
 
+# Write <content> to <file> only when it differs from what is there; a rewrite
+# sets TIMER_REWRITTEN so install knows to restart the scheduler's timer.
+put_file() {  # <file> <content>
+  if [ -f "$1" ] && [ "$(cat "$1")" = "$2" ]; then return 0; fi
+  printf '%s\n' "$2" > "$1" || return 1
+  TIMER_REWRITTEN=1
+}
+
 timer_files() {  # <linux|darwin> <dir>
   local platform=$1 dir=$2 home name env_path self
   home=$(home_path) || { echo "error: FM_HOME $FM_HOME is not a directory" >&2; return 1; }
@@ -327,16 +339,14 @@ timer_files() {  # <linux|darwin> <dir>
   mkdir -p "$dir" || return 1
   case "$platform" in
     linux)
-      [ -e "$dir/$name.service" ] \
-        || printf '[Unit]\nDescription=Firstmate watcher backstop for %s\n[Service]\nType=oneshot\nEnvironment=%s\nEnvironment=%s\nExecStart=%s check\n' \
-          "$home" "$(quote "FM_HOME=$home")" "$(quote "PATH=$env_path")" "$(quote "$self")" > "$dir/$name.service" || return 1
-      [ -e "$dir/$name.timer" ] \
-        || printf '[Unit]\nDescription=Firstmate watcher backstop for %s\n[Timer]\nOnBootSec=2min\nOnUnitActiveSec=5min\n[Install]\nWantedBy=timers.target\n' \
-          "$home" > "$dir/$name.timer" || return 1
+      put_file "$dir/$name.service" "$(printf '[Unit]\nDescription=Firstmate watcher backstop for %s\n[Service]\nType=oneshot\nEnvironment=%s\nEnvironment=%s\nExecStart=%s check\n' \
+        "$home" "$(quote "FM_HOME=$home")" "$(quote "PATH=$env_path")" "$(quote "$self")")" || return 1
+      put_file "$dir/$name.timer" "$(printf '[Unit]\nDescription=Firstmate watcher backstop for %s\n[Timer]\nOnBootSec=2min\nOnUnitActiveSec=5min\n[Install]\nWantedBy=timers.target\n' \
+        "$home")" || return 1
       printf '%s\n%s\n' "$name.service" "$name.timer"
       ;;
     darwin)
-      [ -e "$dir/$name.plist" ] || cat > "$dir/$name.plist" <<EOF || return 1
+      put_file "$dir/$name.plist" "$(cat <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -352,25 +362,49 @@ timer_files() {  # <linux|darwin> <dir>
 </dict>
 </plist>
 EOF
+)" || return 1
       printf '%s\n' "$name.plist"
       ;;
   esac
 }
 
+# The loaded agent runs this home's current script with its current PATH.
+launchd_current() {  # <launchctl print output>
+  local loaded
+  loaded=$(printf '%s\n' "$1" | sed 's/^[[:space:]]*//')
+  printf '%s\n' "$loaded" | grep -qxF "program = $SCRIPT_DIR/fm-watch-backstop.sh" \
+    && printf '%s\n' "$loaded" | awk '$0 == "environment = {" { e = 1; next } e && $0 == "}" { e = 0 } e' \
+      | grep -qxF "PATH => ${PATH:-/usr/bin:/bin}"
+}
+
 install_timer() {
-  local platform dir name
+  local platform dir name target loaded stale i
+  TIMER_REWRITTEN=
   platform=$(host_platform) || { echo "error: no systemd user timer or launchd agent on $(uname -s 2>/dev/null)" >&2; return 2; }
   dir=$(scheduler_dir "$platform")
   timer_files "$platform" "$dir" >/dev/null || return 1
   name=$(unit_name "$platform") || return 1
   case "$platform" in
     linux)
+      stale=$TIMER_REWRITTEN
+      systemctl --user show -p NeedDaemonReload --value "$name.service" "$name.timer" 2>/dev/null | grep -qx yes && stale=1
       systemctl --user daemon-reload || return 1
       systemctl --user enable --now "$name.timer" || return 1
+      if [ -n "$stale" ]; then systemctl --user restart "$name.timer" || return 1; fi
       printf 'installed: %s/%s.timer\n' "$dir" "$name"
       ;;
     darwin)
-      launchctl print "gui/$(id -u)/$name" >/dev/null 2>&1 \
+      target="gui/$(id -u)/$name"
+      if loaded=$(launchctl print "$target" 2>/dev/null) \
+        && { [ -n "$TIMER_REWRITTEN" ] || ! launchd_current "$loaded"; }; then
+        launchctl bootout "$target" || return 1
+        for i in $(seq 50); do
+          launchctl print "$target" >/dev/null 2>&1 || break
+          [ "$i" -lt 50 ] || { echo "error: $target is still loaded after bootout" >&2; return 1; }
+          sleep 0.1
+        done
+      fi
+      launchctl print "$target" >/dev/null 2>&1 \
         || launchctl bootstrap "gui/$(id -u)" "$dir/$name.plist" || return 1
       printf 'installed: %s/%s.plist\n' "$dir" "$name"
       ;;
