@@ -150,6 +150,31 @@ mate 0 0 0
 run_alarm check >/dev/null
 pass 'done children waiting on merge are healthy waiting'
 
+# A held in-flight item that declares an external wait is waiting, not silent work.
+mate 0 0 9000
+edit_mate_summary() { # python statements over value
+  python3 - "$TMP_ROOT/mate/state/home-summary.json" "$1" <<'PY_EDIT0'
+from pathlib import Path
+import json,sys
+path=Path(sys.argv[1]); value=json.loads(path.read_text())
+exec(sys.argv[2])
+path.write_text(json.dumps(value))
+PY_EDIT0
+}
+edit_mate_summary "value['counts'].update(in_flight=1, external_wait_in_flight=1)"
+out=$(run_alarm check)
+[ -z "$out" ] || fail "a held in-flight item with a declared external wait must not alarm: $out"
+edit_mate_summary "value['counts'].update(in_flight=2, external_wait_in_flight=1)"
+assert_contains "$(run_alarm check)" 'holding work silent' 'other in-flight work beside an external wait still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 9000
+edit_mate_summary "value['counts'].update(in_flight=1); value['counts'].pop('external_wait_in_flight', None)"
+assert_contains "$(run_alarm check)" 'holding work silent' 'in-flight work with no declared wait still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+pass 'a declared external wait is not silent held work'
+
 # An offline laptop has no collected inventory, rather than a broken document.
 printf -- '- gilligan - laptop (host: macbook.invalid; root: /remote/code; home: /remote/gilligan; scope: test; projects: alpha; added 2026-10-26)\n' \
   > "$HOME_FIX/data/secondmates.md"
@@ -812,6 +837,13 @@ run_alarm check >/dev/null
 open_ask_mate 'needs-decision [at=@AT@] [key=unrelated]: card' 'blocked [at=@AT@] [key=x]: stuck'
 edit_mate_summary "value['counts'].update(in_flight=1, waiting_on_merge=1, holds=1)"
 assert_contains "$(run_alarm check)" 'holding work silent' 'an ask covering nothing never exempts when every in-flight item is waiting on merge'
+mate 0 0 0
+run_alarm check >/dev/null
+open_ask_mate 'needs-decision [at=@AT@] [key=item-a]: card a' 'needs-decision [at=@AT@] [key=item-b]: card b'
+edit_mate_summary "value['counts'].update(endpoints=2, external_wait_in_flight=1); value['endpoints']=value['endpoints'][:2]"
+[ -z "$(run_alarm check)" ] || fail 'asks covering every child item beside a declared external wait are waiting, not silent'
+edit_mate_summary "value['counts'].pop('external_wait_in_flight')"
+assert_contains "$(run_alarm check)" 'holding work silent' 'an in-flight item with no child, no ask and no declared wait still alarms'
 mate 0 0 0
 run_alarm check >/dev/null
 open_ask_mate 'needs-decision [at=@AT@] [key=item-a]: card a' 'blocked [at=@AT@] [key=item-b]: stuck b' 'blocked [at=@AT@] [key=item-c]: stuck c'

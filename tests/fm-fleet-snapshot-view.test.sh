@@ -1421,6 +1421,48 @@ EOF
   pass "home-summary exempts a done lane with a current external hold as a declared wait"
 }
 
+# A held in-flight item with no child that declares an external wait is counted in
+# counts.external_wait_in_flight so the silent-mate alarm does not treat it as silent work.
+test_home_summary_external_wait_in_flight_is_counted() {
+  local home fakebin out
+  home=$(make_home summary-external-wait)
+  fakebin=$(make_fakebin "$home")
+  write_wait_backlog() {
+    cat > "$home/data/backlog.md" <<EOF
+## In flight
+- [ ] wait-item - Wait item (repo: alpha) (kind: ship) (since 2026-07-11)$1
+
+## Queued
+
+## Done
+EOF
+  }
+  assert_wait() {
+    out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
+    printf '%s' "$out" | jq -e "$1" >/dev/null || fail "$2: $out"
+  }
+  write_wait_backlog " (hold: open part 1 when a place frees) (hold-kind: external)"
+  assert_wait '.counts.in_flight == 1 and .counts.external_wait_in_flight == 1' "an undated external hold is a declared wait"
+  write_wait_backlog " (hold: open part 1) (hold-kind: external) (hold-until: 2999-01-01)"
+  assert_wait '.counts.external_wait_in_flight == 1' "a future hold-until is a declared wait"
+  write_wait_backlog " (hold: open part 1) (hold-kind: external) (hold-until: 2020-01-01)"
+  assert_wait '.counts.external_wait_in_flight == 0' "an expired hold-until is not a wait"
+  write_wait_backlog " (hold: choose a route) (hold-kind: captain)"
+  assert_wait '.counts.external_wait_in_flight == 0' "a captain hold is not an external wait"
+  write_wait_backlog ""
+  assert_wait '.counts.external_wait_in_flight == 0' "an unheld item is not a wait"
+  mkdir -p "$home/projects/wait"
+  fm_write_meta "$home/state/wait-item.meta" \
+    "window=firstmate:fm-wait-item" "worktree=$home/projects/wait" \
+    "project=alpha" "harness=claude" "kind=ship" "mode=no-mistakes"
+  printf 'working [at=1000]: building\n' > "$home/state/wait-item.status"
+  write_wait_backlog " (hold: open part 1 when a place frees) (hold-kind: external)"
+  assert_wait '.counts.in_flight == 1 and .counts.external_wait_in_flight == 0
+    and any(.endpoints[]; .id == "wait-item")' "an external hold with a child is live work, not a wait"
+  unset -f write_wait_backlog assert_wait
+  pass "home-summary counts held in-flight external waits"
+}
+
 # The holds array is capped (FM_SNAPSHOT_SECONDMATE_QUEUED) while counts.holds is not, so
 # counts.child_holds carries the untruncated child-state hold count the alarm reads.
 test_home_summary_child_holds_count_survives_truncation() {
@@ -1614,6 +1656,7 @@ fm_test_run \
   test_home_summary_done_child_with_pr_is_waiting_on_merge \
   test_home_summary_parked_handoff_is_consistent \
   test_home_summary_external_hold_done_is_declared_wait \
+  test_home_summary_external_wait_in_flight_is_counted \
   test_home_summary_child_holds_count_survives_truncation \
   test_home_summary_pipeline_handoff_done_is_live_work \
   test_home_summary_ready_for_no_mistakes_done_is_not_terminal \

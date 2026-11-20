@@ -283,6 +283,8 @@ a declared wait too: it is listed in waiting_on_merge with hold_kind "external"
 and counted in counts.waiting_on_merge, so a PR held for another item's landing
 is not handed to its merger early. An expired hold_until or a failed child does
 not exempt; captain holds are unchanged.
+A held in-flight item with the same external hold and no child at all is counted in
+counts.external_wait_in_flight, which the silent-mate alarm treats as waiting rather than silent work.
 A failed child, or any other done child without both a
 meta PR and an armed poll for it or a parked handoff, still invalidates the inventory.
 Its invalidity object names the normalized failure kind and affected ids.
@@ -1134,6 +1136,10 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
                or . == "pipeline handoff: validation not started"
                or startswith("pipeline handoff: validation not started · "))) | not)
          | {id,state:.current_state.state} ]) as $terminal_in_flight
+    | ([ $owned_in_flight[]
+         | select(.current_role == "held" and external_held)
+         | select(.id as $id | [$tasks[].id] | index($id) | not)
+         | .id ]) as $external_wait_ids
     | ([ $owned_in_flight[] as $work
          | $tasks[]
          | select(.kind != "secondmate")
@@ -1257,6 +1263,7 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
           holds:($holds_all | length),
           child_holds:([ $holds_all[] | select(.source == "child-state") ] | length),
           waiting_on_merge:($waiting_on_merge | length),
+          external_wait_in_flight:($external_wait_ids | length),
           queued:($queued_all | length),
           landed:($landed_all | length),
           endpoints:($tasks | length)
