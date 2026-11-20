@@ -47,7 +47,14 @@
 # named head is the worker copy's HEAD, except that a done naming the task's
 # recorded pr= passes when the forge holds that head: a forge-reported
 # pr_head= in no-mistakes mode, or a recorded merge
-# (state/<id>.pr-poll-merge-notified). A push to Gerrit's refs/for/ leaves no
+# (state/<id>.pr-poll-merge-notified); and except that a copy whose checked-out
+# branch is no longer the task's recorded branch= (the worker moved on to its
+# next task) names the PR's own head instead, the forge-reported one
+# bin/fm-pr-check.sh reads at registration or the recorded pr_head=, which must
+# still be on a ref outside the copy (fm_dod_copy_moved_on), as must the local
+# tip of the task's branch, so commits left unpushed there are still refused. A
+# copy still on its branch keeps its HEAD as the named head, so a later unpushed
+# commit is still refused. A push to Gerrit's refs/for/ leaves no
 # ref a fetch can see, so a done naming a Gerrit change skips the remote-tracking
 # reachability test entirely: it passes when that change is already the task's
 # recorded pr=, which bin/fm-pr-check.sh writes only after this gate accepted it
@@ -1249,7 +1256,7 @@ fm_dod_accept_ship_done() {  # <kind> <mode> <worktree> <project> <line> [<state
   if [ -n "$url" ] && [ -n "$meta" ] && [ "$(fm_dod_meta_value "$meta" pr)" = "$url" ]; then
     pr_head=$(fm_dod_meta_value "$meta" pr_head)
   fi
-  fm_dod_ready_evidence_read "$4" "$url" "$(fm_dod_ready_evidence_head "$mode" "$wt" "$pr_head")" "$meta"
+  fm_dod_ready_evidence_read "$4" "$url" "$(fm_dod_ready_evidence_head "$mode" "$wt" "$pr_head" "$meta")" "$meta"
 }
 
 # The URL ready evidence is checked against: the done's PR or review URL, or empty.
@@ -1261,9 +1268,12 @@ fm_dod_ready_evidence_url() {  # <line>
 }
 
 # The head ready evidence is checked against: the forge's <pr-head> in
-# no-mistakes mode when known, otherwise the worker copy's HEAD, or empty.
-fm_dod_ready_evidence_head() {  # <mode> <worktree> [<pr-head>]
-  if [ -n "${3:-}" ] && fm_dod_forge_head_is_named_head "$1"; then
+# no-mistakes mode when known, or in any mode when the copy moved on to another
+# branch (fm_dod_copy_moved_on, given <meta>), otherwise the worker copy's HEAD,
+# or empty.
+fm_dod_ready_evidence_head() {  # <mode> <worktree> [<pr-head>] [<meta>]
+  if [ -n "${3:-}" ] && { fm_dod_forge_head_is_named_head "$1" \
+    || { [ -d "$2" ] && fm_dod_copy_moved_on "$2" "${4:-}"; }; }; then
     printf '%s\n' "$3"
   elif [ -n "$2" ] && [ -d "$2" ]; then
     git -C "$2" rev-parse --verify HEAD 2>/dev/null || true
@@ -1347,7 +1357,7 @@ fm_dod_ready_evidence_register() {  # <meta> <mode> <worktree> <project> <url> [
     return 1
   fi
   [ -n "$name" ] || return 0
-  head=$(fm_dod_ready_evidence_head "$2" "$3" "${6:-}")
+  head=$(fm_dod_ready_evidence_head "$2" "$3" "${6:-}" "$1")
   reason=$(fm_dod_ready_evidence_run "$name" "$4" "$5" "$head") || verdict=fail
   if ! fm_dod_ready_evidence_record "$1" "$verdict" "$5" "$head" "$reason"; then
     printf '%s\n' "ready evidence $name ran but its result could not be recorded in the task metadata"
@@ -1385,9 +1395,22 @@ EOF
   return 1
 }
 
+# 0 when <worktree> is checked out on a branch other than the task's recorded
+# <meta> branch=, so its HEAD no longer says anything about the task's PR. A
+# detached HEAD, a record with no branch=, or a copy that is not git is not
+# moved on, and keeps the worker copy's HEAD as the named head.
+fm_dod_copy_moved_on() {  # <worktree> <meta>
+  local wt=$1 meta=$2 branch current
+  [ -n "$meta" ] && [ -f "$meta" ] || return 1
+  branch=$(fm_dod_meta_value "$meta" branch)
+  [ -n "$branch" ] || return 1
+  current=$(git -C "$wt" symbolic-ref -q --short HEAD 2>/dev/null) || return 1
+  [ -n "$current" ] && [ "$current" != "$branch" ]
+}
+
 # The named-head half of fm_dod_accept_ship_done, for a done it gates.
-fm_dod_accept_named_head() {  # <kind> <mode> <worktree> <project> <line> [<state> <id> <meta> [meta-locked]]
-  local mode=$2 wt=$3 project=$4 line=$5 state=${6:-} id=${7:-} meta=${8:-} url sha gerrit captured=''
+fm_dod_accept_named_head() {  # <kind> <mode> <worktree> <project> <line> [<state> <id> <meta> [meta-locked] [<pr-head>]]
+  local mode=$2 wt=$3 project=$4 line=$5 state=${6:-} id=${7:-} meta=${8:-} url sha tip gerrit pr_head=${10:-} captured=''
   if [ "$mode" = local-only ] && [ -n "$meta" ]; then
     captured=$(cat "$meta") || return 1
     if [ "$(fm_dod_meta_value "$meta" worktree)" != "$wt" ] \
@@ -1412,12 +1435,31 @@ fm_dod_accept_named_head() {  # <kind> <mode> <worktree> <project> <line> [<stat
     printf '%s\n' "named head cannot be verified: worktree is not a git copy"
     return 1
   fi
-  sha=$(git -C "$wt" rev-parse --verify HEAD 2>/dev/null) || {
-    printf '%s\n' "named head could not be resolved"
-    return 1
-  }
   gerrit=0
   [ -n "$url" ] && fm_pr_url_parse "$url" && [ "$FM_PR_PROVIDER" = gerrit ] && gerrit=1
+  # A copy that moved on to another branch names the PR's own head: the caller's
+  # forge-reported <pr-head>, else the pr_head= recorded for this same PR.
+  sha=
+  if [ "$gerrit" = 0 ] && [ -n "$url" ] && fm_dod_copy_moved_on "$wt" "$meta"; then
+    [ -n "$pr_head" ] || [ "$(fm_dod_meta_value "$meta" pr)" != "$url" ] \
+      || pr_head=$(fm_dod_meta_value "$meta" pr_head)
+    ! fm_pr_head_valid "$pr_head" || sha=$pr_head
+    # Moving to another branch must not hide work left on the task's own branch:
+    # a local branch tip that no ref outside the copy holds is the named head.
+    if [ -n "$sha" ]; then
+      tip=$(git -C "$wt" rev-parse --verify -q "refs/heads/$(fm_dod_meta_value "$meta" branch)" 2>/dev/null) || tip=
+      if [ -n "$tip" ] && [ "$tip" != "$sha" ] \
+        && ! fm_dod_named_head_on_surviving_ref "$wt" "$project" "$mode" "$tip"; then
+        sha=$tip
+      fi
+    fi
+  fi
+  if [ -z "$sha" ]; then
+    sha=$(git -C "$wt" rev-parse --verify HEAD 2>/dev/null) || {
+      printf '%s\n' "named head could not be resolved"
+      return 1
+    }
+  fi
   if [ "$gerrit" = 0 ] && fm_dod_note_reports_published_change "$(status_line_note "$line")"; then
     printf '%s\n' "the published-for-review report does not name a Gerrit change in the canonical https://<host>/c/<project>/+/<number> form"
     return 1

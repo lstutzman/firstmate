@@ -939,6 +939,65 @@ test_direct_pr_unpushed_commit_refuses_registration() {
   pass "fm-pr-check refuses a direct-PR registration while a later commit is only in the copy"
 }
 
+# A worker that moved on to its next task's branch before its PR was registered
+# leaves the copy's HEAD on an unrelated commit. The ready done names the PR, so
+# the PR's own head (the forge-reported one) is judged instead, and it must still
+# be on a ref outside the copy. Both publishing modes.
+setup_moved_on_copy() {  # <dir> <mode>
+  local dir=$1 mode=$2 origin="$1/origin.git"
+  fm_write_meta "$dir/home/state/task-a.meta" \
+    "window=firstmate:fm-task-a" "endpoint_task_id=task-a" "worktree=$dir/wt" \
+    "project=$dir/project" "kind=ship" "mode=$mode" "branch=fm/task-a"
+  git init -q --bare "$origin"
+  git -C "$dir/wt" remote add origin "file://$origin"
+  git -C "$dir/wt" checkout -q -b fm/task-a
+  git -C "$dir/wt" commit -q --allow-empty -m 'the PR head'
+  MOVED_PR_HEAD=$(git -C "$dir/wt" rev-parse HEAD)
+  git -C "$dir/wt" push -q origin fm/task-a
+  git -C "$dir/wt" checkout -q -b fm/next-task "$(git -C "$dir/wt" rev-parse HEAD~1)"
+  git -C "$dir/wt" commit -q --allow-empty -m 'the next task, unpushed'
+  MOVED_LOCAL_HEAD=$(git -C "$dir/wt" rev-parse HEAD)
+}
+
+test_moved_on_worker_registers_against_the_pr_head() {
+  local dir mode
+  for mode in no-mistakes direct-PR; do
+    dir=$(make_case "moved-on-$mode")
+    setup_moved_on_copy "$dir" "$mode"
+    FM_TEST_GH_HEAD=$MOVED_PR_HEAD run_check_entry "$dir" task-a https://github.com/o/r/pull/4 \
+      > "$dir/stdout" 2> "$dir/stderr" \
+      || fail "$mode: a ready PR was refused because the worker moved to another branch: $(cat "$dir/stderr")"
+    grep -qxF "pr=https://github.com/o/r/pull/4" "$dir/home/state/task-a.meta" || fail "$mode: pr= not recorded"
+    grep -qxF "pr_head=$MOVED_PR_HEAD" "$dir/home/state/task-a.meta" || fail "$mode: pr_head= not recorded"
+    [ -e "$dir/home/state/task-a.check.sh" ] || fail "$mode: the poll was not armed"
+  done
+  pass "fm-pr-check judges a moved-on worker's ready PR against the PR head, in both publishing modes"
+}
+
+# A direct-PR head the forge reports must itself be pushed: a moved-on worker
+# whose PR head is on no ref outside the copy is still refused (a no-mistakes
+# forge head is the named head by contract and is not tested). An unreadable
+# forge head leaves the copy's own HEAD as the named head in both modes.
+test_moved_on_worker_pr_head_not_on_the_forge_refuses() {
+  local dir mode
+  dir=$(make_case moved-on-unpushed-direct-PR)
+  setup_moved_on_copy "$dir" direct-PR
+  FM_TEST_GH_HEAD=0123456789abcdef0123456789abcdef01234567 run_check_entry "$dir" task-a https://github.com/o/r/pull/4 \
+    > "$dir/stdout" 2> "$dir/stderr" && fail "direct-PR: a PR head no ref holds was registered"
+  grep -Fq "named head 0123456789abcdef0123456789abcdef01234567 is unreachable outside the worker copy" "$dir/stderr" \
+    || fail "direct-PR: the refusal did not name the PR head: $(cat "$dir/stderr")"
+  ! grep -q '^pr=' "$dir/home/state/task-a.meta" || fail "direct-PR: refused PR still recorded pr="
+  for mode in no-mistakes direct-PR; do
+    dir=$(make_case "moved-on-unreadable-$mode")
+    setup_moved_on_copy "$dir" "$mode"
+    FM_TEST_GH_HEAD=unavailable run_check_entry "$dir" task-a https://github.com/o/r/pull/4 \
+      > "$dir/stdout" 2> "$dir/stderr" && fail "$mode: a PR with no readable head was registered from the moved copy"
+    grep -Fq "named head $MOVED_LOCAL_HEAD is unreachable outside the worker copy" "$dir/stderr" \
+      || fail "$mode: the unreadable-head refusal changed: $(cat "$dir/stderr")"
+  done
+  pass "fm-pr-check still refuses a moved-on worker's PR whose head is not pushed or not readable"
+}
+
 # bin/fm-pr-merge.sh re-records through fm-pr-check.sh (FM_PR_CHECK_MERGE=1).
 # A GitLab merge request records no pr_head, so that re-record's gate reads the
 # copy's own refs: it refreshes them first, accepting a head origin holds
@@ -6029,6 +6088,8 @@ test_secondmate_record_refuses_a_pr_watch
 test_unpushed_named_head_refuses_registration
 test_ready_evidence_gates_registration_on_the_forge_head
 test_direct_pr_unpushed_commit_refuses_registration
+test_moved_on_worker_registers_against_the_pr_head
+test_moved_on_worker_pr_head_not_on_the_forge_refuses
 test_merge_rerecord_refreshes_before_refusing
 test_scan_records_a_pr_reported_in_a_done_line
 test_scan_reports_a_refusal_once_and_retries

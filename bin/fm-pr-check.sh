@@ -444,10 +444,12 @@ case "$PROVIDER:$MODE" in
   *) DONE_LINE="done: PR $URL" ;;
 esac
 FM_DOD_REFRESH_REMOTES=1
-# A forge-reported no-mistakes head is the named head and skips that gate.
+# A forge-reported no-mistakes head is the named head and skips that gate. Any
+# other mode is given the forge head too, because a copy that moved on to another
+# branch is judged against the PR's head rather than its own HEAD.
 if { [ -z "$PR_HEAD" ] || ! fm_dod_forge_head_is_named_head "$MODE"; } \
   && fm_dod_should_gate_ship_done "${KIND:-ship}" "$MODE" "$DONE_LINE" \
-  && ! GATE_REASON=$(fm_dod_accept_named_head "${KIND:-ship}" "$MODE" "$WT" "$PROJECT" "$DONE_LINE" "$STATE" "$ID" "$META"); then
+  && ! GATE_REASON=$(fm_dod_accept_named_head "${KIND:-ship}" "$MODE" "$WT" "$PROJECT" "$DONE_LINE" "$STATE" "$ID" "$META" "" "$PR_HEAD"); then
   echo "error: $GATE_REASON" >&2
   exit 1
 fi
