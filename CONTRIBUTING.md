@@ -62,6 +62,7 @@ Bind the checks to the GitHub Actions app already producing them, rather than ac
 No new app installation or manual runner setup is needed for that setting.
 
 The listed contexts are the actual job contexts: `Full suite`, the `Lint`, `Behavior portable` and other lane jobs, and `PR must be raised via no-mistakes`.
+`tests/fm-ci-workflow.test.sh` fails when the list and the job contexts that `ci.yml` and `no-mistakes-required.yml` produce differ in either direction, so keep the two in step.
 The last listed name is the compliance job context, not its workflow title; its existing automation exceptions remain unchanged.
 The timing aggregate is not a substitute for individual jobs because it can succeed while collecting evidence from a failed run.
 The individual lanes skip on an outside pull request until it has the `full-ci` label, and a skipped job satisfies a required check, so `Full suite` must be listed too: it fails until the label is on and whenever a lane failed or was cancelled.
