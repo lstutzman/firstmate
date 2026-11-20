@@ -373,7 +373,8 @@ launchd_current() {  # <launchctl print output>
   local loaded
   loaded=$(printf '%s\n' "$1" | sed 's/^[[:space:]]*//')
   printf '%s\n' "$loaded" | grep -qxF "program = $SCRIPT_DIR/fm-watch-backstop.sh" \
-    && printf '%s\n' "$loaded" | grep -qxF "PATH => ${PATH:-/usr/bin:/bin}"
+    && printf '%s\n' "$loaded" | awk '$0 == "environment = {" { e = 1; next } e && $0 == "}" { e = 0 } e' \
+      | grep -qxF "PATH => ${PATH:-/usr/bin:/bin}"
 }
 
 install_timer() {

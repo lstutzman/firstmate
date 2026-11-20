@@ -172,7 +172,8 @@ test_timer_files() {
 # systemctl keeps the units it last loaded in <dir>/loaded and reports
 # NeedDaemonReload when the files on disk differ; launchctl keeps the plist it
 # bootstrapped and prints its program and PATH. <dir>/bootout-fails makes
-# bootout fail, and <dir>/slow-bootout leaves the job visible for one more print.
+# bootout fail, <dir>/slow-bootout leaves the job visible for one more print,
+# and <dir>/default-path sets the PATH in launchd's default environment block.
 make_scheduler_fakes() {  # <dir> <Linux|Darwin>
   local fb="$1/bin" st="$1"
   mkdir -p "$fb"
@@ -201,8 +202,11 @@ case "$1" in
   print)
     if [ -e "$ST/lingering" ]; then rm -f "$ST/lingering"; exit 0; fi
     [ -e "$ST/enabled" ] || exit 1
-    sed -n -e 's#.*<key>ProgramArguments</key><array><string>\([^<]*\)</string>.*#\tprogram = \1#p' \
-      -e 's#.*<key>PATH</key><string>\([^<]*\)</string>.*#\t\tPATH => \1#p' "$ST/loaded.plist" ;;
+    printf '%s = {\n' "gui/$UID/x"
+    sed -n 's#.*<key>ProgramArguments</key><array><string>\([^<]*\)</string>.*#\tprogram = \1#p' "$ST/loaded.plist"
+    printf '\tenvironment = {\n'
+    sed -n 's#.*<key>PATH</key><string>\([^<]*\)</string>.*#\t\tPATH => \1#p' "$ST/loaded.plist"
+    printf '\t}\n\n\tdefault environment = {\n\t\tPATH => %s\n\t}\n}\n' "$(cat "$ST/default-path" 2>/dev/null || echo /usr/bin:/bin:/usr/sbin:/sbin)" ;;
   bootstrap) [ -f "$3" ] && cp "$3" "$ST/loaded.plist" && touch "$ST/enabled" ;;
   bootout)
     [ ! -e "$ST/bootout-fails" ] || exit 1
@@ -284,6 +288,7 @@ test_install_is_idempotent_and_verify_reports_a_missing_timer() {
   PATH="/elsewhere/bin:$fb:$PATH" HOME="$user" run_backstop "$home" install >/dev/null 2>&1 \
     && fail "macOS install must fail when the agent cannot be booted out"
   rm -f "$st/bootout-fails"
+  printf '%s\n' "/elsewhere/bin:$fb:$PATH" > "$st/default-path"
   touch "$st/slow-bootout"
   PATH="/elsewhere/bin:$fb:$PATH" HOME="$user" run_backstop "$home" install >/dev/null || fail "macOS install rerun after a failed bootout failed"
   assert_contains "$(cat "$st/loaded.plist")" '/elsewhere/bin' "a rerun after a failed bootout must load the rewritten agent"
