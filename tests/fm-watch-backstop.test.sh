@@ -169,6 +169,10 @@ test_timer_files() {
 
 # Stateful systemctl, launchctl, and uname stand-ins: <dir>/enabled marks the
 # timer enabled, <dir>/unreachable models a user bus that cannot be reached.
+# systemctl keeps the units it last loaded in <dir>/loaded and reports
+# NeedDaemonReload when the files on disk differ; launchctl keeps the plist it
+# bootstrapped and prints its program and PATH. <dir>/bootout-fails makes
+# bootout fail, and <dir>/slow-bootout leaves the job visible for one more print.
 make_scheduler_fakes() {  # <dir> <Linux|Darwin>
   local fb="$1/bin" st="$1"
   mkdir -p "$fb"
@@ -179,8 +183,10 @@ make_scheduler_fakes() {  # <dir> <Linux|Darwin>
     cat <<'SH'
 printf '%s\n' "$*" >> "$ST/calls.log"
 [ ! -e "$ST/unreachable" ] || { echo "Failed to connect to user scope bus" >&2; exit 1; }
+UNITS="$HOME/.config/systemd/user"
 case "$2" in
-  daemon-reload) exit 0 ;;
+  daemon-reload) rm -rf "$ST/loaded"; cp -r "$UNITS" "$ST/loaded" ;;
+  show) for u in "${@:6}"; do if cmp -s "$UNITS/$u" "$ST/loaded/$u"; then echo no; else echo yes; fi; done ;;
   enable) [ "$3" = --now ] && touch "$ST/enabled" ;;
   disable) [ "$3" = --now ] && rm -f "$ST/enabled" ;;
   is-enabled) if [ -e "$ST/enabled" ]; then echo enabled; else echo not-found; exit 4; fi ;;
@@ -192,9 +198,16 @@ SH
     cat <<'SH'
 printf '%s\n' "$*" >> "$ST/calls.log"
 case "$1" in
-  print) [ -e "$ST/enabled" ] ;;
-  bootstrap) [ -f "$3" ] && touch "$ST/enabled" ;;
-  bootout) rm -f "$ST/enabled" ;;
+  print)
+    if [ -e "$ST/lingering" ]; then rm -f "$ST/lingering"; exit 0; fi
+    [ -e "$ST/enabled" ] || exit 1
+    sed -n -e 's#.*<key>ProgramArguments</key><array><string>\([^<]*\)</string>.*#\tprogram = \1#p' \
+      -e 's#.*<key>PATH</key><string>\([^<]*\)</string>.*#\t\tPATH => \1#p' "$ST/loaded.plist" ;;
+  bootstrap) [ -f "$3" ] && cp "$3" "$ST/loaded.plist" && touch "$ST/enabled" ;;
+  bootout)
+    [ ! -e "$ST/bootout-fails" ] || exit 1
+    [ ! -e "$ST/slow-bootout" ] || touch "$ST/lingering"
+    rm -f "$ST/enabled" ;;
   *) exit 1 ;;
 esac
 SH
@@ -228,7 +241,7 @@ test_install_is_idempotent_and_verify_reports_a_missing_timer() {
   : > "$st/calls.log"
   PATH="$fb:$PATH" HOME="$user" XDG_CONFIG_HOME='' run_backstop "$home" install >/dev/null || status=$?
   expect_code 0 "$status" "a second install on an installed home must succeed"
-  ! grep -q 'daemon-reload\|restart' "$st/calls.log" || fail "an unchanged install must not reload or restart: $(cat "$st/calls.log")"
+  ! grep -q 'restart' "$st/calls.log" || fail "an unchanged install must not restart the timer: $(cat "$st/calls.log")"
   # Moved code dir or PATH: the stale unit is rewritten and the timer reloaded.
   sed -i 's#^ExecStart=.*#ExecStart="/old/place/fm-watch-backstop.sh" check#' "$user/.config/systemd/user/$unit.service"
   : > "$st/calls.log"
@@ -236,9 +249,18 @@ test_install_is_idempotent_and_verify_reports_a_missing_timer() {
   ! grep -q '/old/place' "$user/.config/systemd/user/$unit.service" || fail "install must rewrite a unit whose code dir moved"
   assert_contains "$(cat "$st/calls.log")" "--user daemon-reload" "a rewrite must reload the user scheduler"
   assert_contains "$(cat "$st/calls.log")" "--user restart $unit.timer" "a rewrite must restart the timer"
-  PATH="$fb:$PATH" HOME="$user" XDG_CONFIG_HOME='' PATH="/moved/bin:$fb:$PATH" run_backstop "$home" install >/dev/null || fail "install after a PATH move failed"
+  PATH="/moved/bin:$fb:$PATH" HOME="$user" XDG_CONFIG_HOME='' run_backstop "$home" install >/dev/null || fail "install after a PATH move failed"
   assert_contains "$(cat "$user/.config/systemd/user/$unit.service")" '/moved/bin' "install must rewrite a unit whose captured PATH moved"
   [ "$(find "$user/.config/systemd/user" -type f | grep -c .)" -eq 2 ] || fail "a second install duplicated scheduler files"
+  # A reload that failed after the rewrite is finished by the next install.
+  touch "$st/unreachable"
+  PATH="/elsewhere/bin:$fb:$PATH" HOME="$user" XDG_CONFIG_HOME='' run_backstop "$home" install >/dev/null 2>&1 \
+    && fail "install must fail when the user scheduler cannot reload"
+  rm -f "$st/unreachable"
+  : > "$st/calls.log"
+  PATH="/elsewhere/bin:$fb:$PATH" HOME="$user" XDG_CONFIG_HOME='' run_backstop "$home" install >/dev/null || fail "install rerun after a failed reload failed"
+  assert_contains "$(cat "$st/loaded/$unit.service")" '/elsewhere/bin' "a rerun after a failed reload must load the rewritten unit"
+  assert_contains "$(cat "$st/calls.log")" "--user restart $unit.timer" "a rerun after a failed reload must restart the timer"
   touch "$st/unreachable"
   [ -z "$(PATH="$fb:$PATH" HOME="$user" XDG_CONFIG_HOME='' run_backstop "$home" verify)" ] \
     || fail "verify must stay silent when the user scheduler cannot be asked"
@@ -257,6 +279,16 @@ test_install_is_idempotent_and_verify_reports_a_missing_timer() {
   PATH="/moved/bin:$fb:$PATH" HOME="$user" run_backstop "$home" install >/dev/null || fail "macOS install after a PATH move failed"
   grep -q '^bootout ' "$st/calls.log" || fail "a rewritten agent must be booted out: $(cat "$st/calls.log")"
   [ "$(grep -c '^bootstrap ' "$st/calls.log")" -eq 2 ] || fail "a rewritten agent must be bootstrapped again: $(cat "$st/calls.log")"
+  # A bootout that failed after the rewrite is finished by the next install.
+  touch "$st/bootout-fails"
+  PATH="/elsewhere/bin:$fb:$PATH" HOME="$user" run_backstop "$home" install >/dev/null 2>&1 \
+    && fail "macOS install must fail when the agent cannot be booted out"
+  rm -f "$st/bootout-fails"
+  touch "$st/slow-bootout"
+  PATH="/elsewhere/bin:$fb:$PATH" HOME="$user" run_backstop "$home" install >/dev/null || fail "macOS install rerun after a failed bootout failed"
+  assert_contains "$(cat "$st/loaded.plist")" '/elsewhere/bin' "a rerun after a failed bootout must load the rewritten agent"
+  [ -e "$st/enabled" ] || fail "a bootout that lingers must not leave the agent unloaded"
+  rm -f "$st/slow-bootout"
   [ -z "$(PATH="$fb:$PATH" HOME="$user" run_backstop "$home" verify)" ] || fail "verify must be silent once the agent is loaded"
   pass "backstop: install is one idempotent command, and verify names it while the timer is missing"
 }
