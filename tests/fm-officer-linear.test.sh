@@ -225,8 +225,6 @@ elif scenario == "fleet-and-pc":
     fleet_f = find("tool", "A tool agents need is missing")
     pc_f = find("pc", "Calculator total wrong", project="PropertyCompass2")
     fl, lin = filer()
-    def offered(f):
-        return ["Bug", "scan", "triage"] if f["project"] == "PropertyCompass2" else lib.fleet_labels("scan", {"bug", "scan", "area:fleet"})[0], []
     for f in (fleet_f, pc_f):
         fl.file_single(f, lambda g: (["Bug", "scan", "triage"], []) if g["project"] else (["Bug", "scan", "area:fleet"], []), describe)
     res = {"fleet": fleet_f["filing"], "pc": pc_f["filing"]}
@@ -244,21 +242,25 @@ elif scenario == "fleet-lookup":
     f = find("single", "A single fleet item")
     fl2.file_single(f, lambda g: (["Bug", "scan", "area:fleet"], []), describe)
     res["single_filing"] = f["filing"]
-elif scenario == "fleet-bundle":
-    # an open FLEET bundle of the title is continued, not duplicated; the Canceled PC bundle of the same title is left alone
+elif scenario in ("fleet-bundle", "fleet-bundle-lane"):
+    # an open FLEET bundle of the title is continued, not duplicated; the Canceled PC bundle of the same title is left alone.
+    # fleet-bundle-lane: the lane's saved state still names that Canceled PC bundle, and only one of its two findings is seen.
     officer = lib.Officer("fixture", "Fixture Officer", "Fixture", rubric_file, sources=("scan",), project="Fleet")
     fl, lin = filer()
     bundles = lib.Bundles(fl, 15, area=lambda f: "tooling")
     known, fresh = find("known", "Tool A missing", "low"), find("fresh", "Tool B missing", "low")
-    for f in (known, fresh):
+    seen = [known] if scenario == "fleet-bundle-lane" else [known, fresh]
+    for f in seen:
         f["bundle"] = {"family": "fixture", "area": None}
     names = lib.label_names(lin, "PC")
-    if not lib.file_bundled(fl, [known, fresh], None, None, bundles):
-        lib.file_bundled(fl, [known, fresh], lambda f: lib.fleet_labels("scan", names, "Chore"), describe, bundles)
+    if not lib.file_bundled(fl, seen, None, None, bundles):
+        lib.file_bundled(fl, seen, lambda f: lib.fleet_labels("scan", names, "Chore"), describe, bundles)
     bundles.save()
     issues = json.load(open(os.path.join(os.environ["LDIR"], "issues.json")))
     res = {"known": known["filing"], "fresh": fresh["filing"], "ids": sorted(issues), "creates": fl.creates,
-           "fleet_body": issues["FLEET-73"]["description"], "pc_body": issues["PC-4753"]["description"]}
+           "fleet_body": issues["FLEET-73"]["description"], "pc_body": issues["PC-4753"]["description"],
+           "saved": {fp: b["issue"] for fp, b in json.load(open(os.path.join(W, "bundles.json")))["member_of"].items()
+                     for b in [json.load(open(os.path.join(W, "bundles.json")))["bundles"][b]]}}
 elif scenario in ("closed", "released"):
     f = find("old", "Previously closed finding")
     fl, lin = filer()
@@ -717,6 +719,32 @@ test_fleet_lookups_read_team_fleet() {
   assert_equals "exists FLEET-80" "$(jq -r '.single_filing | "\(.action) \(.issue)"' <<<"$out")" "a fleet finding whose fingerprint is in FLEET-80 is that item, not a new one"
   assert_equals 0 "$(grep -c '^issue create' "$LDIR/calls")" "and nothing is created"
   pass "fm-officer-linear: fleet duplicate, title and bundle lookups read team FLEET"
+}
+
+test_the_first_run_after_the_move_keeps_every_line_of_the_fleet_bundle() {
+  local out known other
+  known=$(printf '%s\0%s\0%s' scan job known | sha256sum | cut -d' ' -f1)
+  other=$(printf '%s\0%s\0%s' scan job other | sha256sum | cut -d' ' -f1)
+  world fleet-bundle-lane "$(jq -n --arg a "$known" --arg b "$other" '{
+    "FLEET-73": {team: "FLEET", title: "Automated findings: tooling (fixture)", state: "Triage",
+                 description: ("Filed by the Fixture Officer.\n\n### (no file)\n\n- [ ] fixture-fp:" + $a + " Tool A missing (low)\n- [ ] fixture-fp:" + $b + " Tool B missing (low)\nfixture-fp:0000")},
+    "PC-4753": {team: "PC", title: "Automated findings: tooling (fixture)", state: "Canceled", project: "Fleet", description: "Refiled to FLEET-73"}
+  }')"
+  # the lane's own state, as the friction lane holds it today: one bundle on the Canceled PC item, two findings on it
+  jq -n --arg a "$known" --arg b "$other" '{"bundles": {"b1": {"fp": "b1", "family": "fixture", "area": "tooling", "fleet": true, "part": 1,
+      "issue": "PC-4753", "labels": ["Bug", "scan", "area:fleet"], "project": "Fleet", "sha": "old", "checked": "2026-11-01",
+      "members": {($a): {"title": "Tool A missing", "file": "", "severity": "low", "state": "open"},
+                  ($b): {"title": "Tool B missing", "file": "", "severity": "low", "state": "open"}}}},
+    "member_of": {($a): "b1", ($b): "b1"}}' > "$W/bundles.json"
+  out=$(drive fleet-bundle-lane) || fail "driver must succeed"
+  assert_equals 0 "$(jq '.creates' <<<"$out")" "no item is created"
+  assert_equals "bundled FLEET-73" "$(jq -r '.known | "\(.action) \(.issue)"' <<<"$out")" "the finding seen tonight moves to FLEET-73"
+  assert_equals 1 "$(jq -r '.fleet_body' <<<"$out" | grep -c "fixture-fp:$other")" "the line of a finding not seen tonight is still on FLEET-73"
+  assert_equals 1 "$(jq -r '.fleet_body' <<<"$out" | grep -c "fixture-fp:$known")" "and the one seen tonight is there once"
+  assert_not_contains "$(jq -r '.fleet_body' <<<"$out" | grep "fixture-fp:$other")" "recurred" "the unseen finding's line carries no recurrence note"
+  assert_contains "$(jq -r '.fleet_body' <<<"$out" | grep "fixture-fp:$known")" "recurred, was in PC-4753" "the one seen tonight names the closed PC item it came from"
+  assert_equals "FLEET-73 FLEET-73" "$(jq -r --arg a "$known" --arg b "$other" '"\(.saved[$a]) \(.saved[$b])"' <<<"$out")" "the lane's state now names FLEET-73 for both findings"
+  pass "fm-officer-linear: the first run after the move keeps every line of the FLEET bundle"
 }
 
 test_a_fleet_bundle_continues_the_open_fleet_item() {
@@ -1445,6 +1473,7 @@ test_a_missing_fleet_type_label_is_not_filed
 test_a_propertycompass2_finding_is_unchanged
 test_fleet_lookups_read_team_fleet
 test_a_fleet_bundle_continues_the_open_fleet_item
+test_the_first_run_after_the_move_keeps_every_line_of_the_fleet_bundle
 test_fleet_finding_starts_and_patterns_go_to_the_quartermaster
 test_fleet_patterns_route_without_linear_writes
 test_pattern_lines_are_whole_recurring_and_have_a_safe_form

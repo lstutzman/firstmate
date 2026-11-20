@@ -38,7 +38,7 @@ how it finds things. This file owns the mechanics every officer shares:
               older item (legacy, bumped until closed), or queues it; dedupe() bumps a queued finding an existing single item
               tracks (fingerprint, then local-jev, never matching a bundle); write() appends the queue to the area's open part
               with room (at most bundle-cap open lines, none on a started part), else adopts an open item of the part's exact
-              title (a lane that lost its state), else creates the next part, and reads each bundle it touches (and every
+              title (a lane that lost its state, or whose closed bundle moved to team FLEET; every line on it is kept), else creates the next part, and reads each bundle it touches (and every
               bundle with a finding still reported, once a day): a closed one is never written again and its reported findings
               are queued again naming it (with recur_closed off, the page-check officer's case, they stay with it). Each
               bundled finding keeps its own found count in found.json `members`. file_bundled() and file_in_bundles() are the
@@ -1111,7 +1111,10 @@ class Bundles:
         b["issue"] = ident
         b["started"] = text(issue.get("stateType")).lower() == "started"
         for fp, m in bundle_lines(issue.get("description")).items():
-            if fp not in self.member_of:
+            # A line whose saved bundle is gone or closed (a finding not seen this run, still pointing at the closed
+            # item this one replaces) is taken over too, so the rewrite never drops it.
+            held = self.bundles.get(self.member_of.get(fp, ""))
+            if fp not in self.member_of or held is None or held.get("closed"):
                 b["members"][fp] = m
                 self.member_of[fp] = b["fp"]
         return b
