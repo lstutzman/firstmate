@@ -472,7 +472,12 @@ done < "$2"
             waiting = counts.get('waiting_on_merge', 0)
             if type(waiting) is not int or waiting < 0:
                 raise ValueError('invalid work counts')
-            work[0] = max(0, work[0] - waiting)
+            # A held in-flight item with no child that declares an external wait (not past its
+            # hold-until) is waiting, not silent work.
+            external = counts.get('external_wait_in_flight', 0)
+            if type(external) is not int or external < 0:
+                raise ValueError('invalid work counts')
+            work[0] = max(0, work[0] - waiting - external)
             if not summary['valid'] and held_terminal_complete(summary, counts):
                 summary = {**summary, 'valid': True, 'invalidity': None}
             invalidity = summary.get('invalidity')
