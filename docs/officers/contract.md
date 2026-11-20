@@ -9,7 +9,7 @@ The Ship's Surgeon was first to adopt it ([`surgeon-rubric.md`](surgeon-rubric.m
 
 1. Find: the officer's script reads its sources and classifies each finding as real, won't fix, or needs a decision.
    The officer's script header owns how; the contract only needs each real finding to carry a severity, a source, a stable key (or a title and location to fingerprint) and, for a bug or code-review finding, the safe form of the fix when the source gives one.
-2. File: every real finding that no Linear item tracks yet is filed once, in team PC, by the shared library, as a line on its area's bundle item (see Bundles).
+2. File: every real finding that no Linear item tracks yet is filed once, in team PC (team FLEET for fleet work), by the shared library, as a line on its area's bundle item (see Bundles).
 3. Triage: the filed item gets a priority from its severity and a score from how often it has been found; the digest shows both.
 4. Start: a finding the rubric admits, whose score reaches the rubric minimum, goes to the owning office as a start request; a finding in a reserved class is held for Lee.
 

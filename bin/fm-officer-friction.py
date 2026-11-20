@@ -291,8 +291,9 @@ A repeat night raises the finding's own found count, and the found
 count is the priority lever: score = severity weight x log2(1 + found), with a
 card-bar finding high, an uncarded one of friction severity 3 or more medium,
 and the rest low. The item body holds counts, waits, the fix, owner and
-identifiers, and never a transcript line, command or quoted ask. A label that
-team PC lacks means the finding is reported and not filed. Whatever the
+identifiers, and never a transcript line, command or quoted ask. Only the Type
+label is checked: while team FLEET lacks Improvement, the finding is reported
+and not filed. Whatever the
 create cap, call budget or a rate limit leaves unfiled is named in the digest
 and filed by the next run. The lane keeps filed-fingerprints.json, found.json
 and review-state.json only when it writes.

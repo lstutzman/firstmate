@@ -224,7 +224,7 @@ With `writes: linear` the friction officer follows the shared [officer contract]
 Every finding that is not a product choice or a retired tool, settled, started or fixed is filed once in team FLEET, with the label Improvement, as a line on its category's [bundle](../officers/contract.md#bundles) (tooling, waiting, environment or other); a repeat night raises the finding's own found count, which raises its score.
 A bundle's start is one request that carries each started-by-default finding's start marker and asks for every friction id on it in the task's backlog line, so each finding reads back as started and its merge is read back.
 The shared [filing rules](../officers/contract.md#file) own duplicates, recurrences and the call budget, and the item body holds counts and identifiers only, never a transcript line.
-The Source label is `agent`, from Lee's Source set, and the officer never creates a label: a finding is reported and not filed while a label is missing from team PC.
+Team FLEET has no Source or area label, so the item carries only its Type label, and the officer never creates a label: a finding is reported and not filed while Improvement is missing from team FLEET.
 A standing-work finding (the groups fleet rules section 2 starts by default) whose item exists is handed to the Quartermaster as a start request, and a finding in a reserved class is held as one keyed `needs-decision` line in the digest.
 Without `writes: linear` nothing starts by default, each card offers Start fix, and the digest names the gap.
 `bin/fm-officer-friction.py`'s header owns the finding states and the start requests.
