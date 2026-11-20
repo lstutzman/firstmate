@@ -57,6 +57,13 @@
 # on a remote yet the change is fully in main. A task whose meta records
 # base_branch= (bin/fm-spawn.sh) runs that content check against origin's copy of
 # its base branch instead of the default branch.
+# A pipeline rebase gives the branch's commits new SHAs on the default branch, so
+# when every commit not on a remote is a non-merge, non-empty commit whose
+# `git patch-id --verbatim` equals that of a commit on the up-to-date default
+# branch (searched since this copy's merge-base with it, newest 500 at most;
+# FM_TEARDOWN_PATCH_SEARCH_LIMIT overrides), it counts as landed. One changed
+# line, a merge commit or an empty commit refuses, and the refusal adds a note
+# that no patch-identical commit was found. --force and local-only mode are unchanged.
 # Squash merges collapse the branch's commits, so per-commit patch ids against main
 # no longer match, and a pipeline rebase can leave the local worktree diverged from
 # the PR head. A diverged copy is not treated as landed: path-set coverage, git
@@ -1833,18 +1840,23 @@ pr_is_merged() {
 # or a Git error), so the caller refuses rather than guesses.
 # CONTENT_LANDED_PROOF_ERROR names a merge-tree option or execution failure
 # separately from a conflict or differing tree.
-content_in_default() {
-  local name=${BASE_BRANCH:-} ref default_tree merged_tree merge_status
-  CONTENT_LANDED_PROOF_ERROR=
+fresh_default_ref() {
+  local name=${BASE_BRANCH:-}
   [ -n "$name" ] || name=$(default_branch) || return 1
   if git -C "$WT" remote get-url origin >/dev/null 2>&1; then
     fm_git_retry git -C "$WT" fetch --quiet origin "+refs/heads/$name:refs/remotes/origin/$name" >/dev/null 2>&1 || return 1
-    ref="refs/remotes/origin/$name"
+    printf '%s\n' "refs/remotes/origin/$name"
   elif git -C "$WT" rev-parse --quiet --verify "refs/heads/$name" >/dev/null 2>&1; then
-    ref="refs/heads/$name"
+    printf '%s\n' "refs/heads/$name"
   else
     return 1
   fi
+}
+
+content_in_default() {
+  local ref default_tree merged_tree merge_status
+  CONTENT_LANDED_PROOF_ERROR=
+  ref=$(fresh_default_ref) || return 1
   default_tree=$(git -C "$WT" rev-parse --quiet --verify "$ref^{tree}" 2>/dev/null) || return 1
   [ -n "$default_tree" ] || return 1
   merged_tree=$(git -C "$WT" merge-tree --write-tree "$ref" HEAD 2>/dev/null) || {
@@ -1860,6 +1872,54 @@ content_in_default() {
   [ "$merged_tree" = "$default_tree" ]
 }
 
+# Is every commit not on any remote also on the up-to-date default branch under a
+# new SHA, with a byte-identical patch? The no-mistakes pipeline rebases the
+# branch, so the local pre-rebase commits are unreachable from the default branch
+# even though the same changes landed there. Each commit must be a non-merge,
+# non-empty commit whose `git patch-id --verbatim` (stable, whitespace-exact)
+# equals the patch-id of a non-merge commit in the search window: the default
+# branch commits since this copy's merge-base with it, capped at the newest
+# PATCH_SEARCH_LIMIT. Any other commit, a changed line included, makes this fail,
+# and PATCH_LANDED_NOTE then names the first commit with no identical match.
+PATCH_SEARCH_LIMIT=${FM_TEARDOWN_PATCH_SEARCH_LIMIT:-500}
+case "$PATCH_SEARCH_LIMIT" in ''|*[!0-9]*|0) PATCH_SEARCH_LIMIT=500 ;; esac
+PATCH_LANDED_NOTE=
+unpushed_patches_are_in_default() {
+  local ref base default_ids unpushed commit patch_id parents parent_fields
+  PATCH_LANDED_NOTE=
+  ref=$(fresh_default_ref) || return 1
+  base=$(git -C "$WT" merge-base HEAD "$ref" 2>/dev/null) || return 1
+  default_ids=$(
+    git -C "$WT" log --no-merges --no-ext-diff -p -n "$PATCH_SEARCH_LIMIT" "$base..$ref" -- 2>/dev/null \
+      | git patch-id --verbatim 2>/dev/null \
+      | awk '{ print $1 }' \
+      | sort -u
+  ) || return 1
+  unpushed=$(git -C "$WT" log --format=%H HEAD --not --exclude='no-mistakes/*' --remotes -- 2>/dev/null) || return 1
+  [ -n "$unpushed" ] || return 1
+  while IFS= read -r commit; do
+    [ -n "$commit" ] || continue
+    parents=$(git -C "$WT" rev-list --parents -n 1 "$commit" 2>/dev/null) || return 1
+    # A line is "<commit> <parent>..." so a merge has more than two fields.
+    read -r -a parent_fields <<<"$parents"
+    if [ "${#parent_fields[@]}" -gt 2 ]; then
+      PATCH_LANDED_NOTE="no patch-identical commit was found on ${ref#refs/remotes/}: ${commit:0:12} is a merge commit, which a patch-id never proves landed"
+      return 1
+    fi
+    patch_id=$(patch_id_for_commit "$commit")
+    if [ -z "$patch_id" ]; then
+      PATCH_LANDED_NOTE="no patch-identical commit was found on ${ref#refs/remotes/}: ${commit:0:12} has an empty diff, which a patch-id never proves landed"
+      return 1
+    fi
+    if ! printf '%s\n' "$default_ids" | grep -qxF "$patch_id"; then
+      PATCH_LANDED_NOTE="no patch-identical commit was found on ${ref#refs/remotes/} for ${commit:0:12} (searched the newest $PATCH_SEARCH_LIMIT non-merge commits since the merge-base)"
+      return 1
+    fi
+  done <<EOF
+$unpushed
+EOF
+}
+
 # Has the worktree's committed work actually LANDED, though its commits are not
 # reachable from any remote-tracking branch? True when a merged PR proves the
 # current local work is contained in the PR head, OR the content is already in the
@@ -1868,7 +1928,8 @@ content_in_default() {
 work_is_landed() {
   local branch=$1
   pr_is_merged "$branch" && return 0
-  content_in_default
+  content_in_default && return 0
+  unpushed_patches_are_in_default
 }
 
 # The completion links this teardown already holds locally. A retained scout
@@ -2298,6 +2359,7 @@ validate_worktree_teardown_safety() {
         echo "Restore or upgrade Git and retry the content check." >&2
       else
         echo "REFUSED: worktree $WT has work not on any remote and not landed." >&2
+        [ -z "${PATCH_LANDED_NOTE:-}" ] || echo "Note: $PATCH_LANDED_NOTE." >&2
       fi
       printf 'unpushed commits:\n%s\n' "$unpushed" >&2
       report_remote_refresh_failure
