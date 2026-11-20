@@ -33,7 +33,7 @@ FM_HOME="$PWD" bin/fm-watch-backstop.sh install
 On Linux it writes a systemd user service and timer into `${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user` and runs `systemctl --user enable --now` on the timer.
 On macOS it writes a launchd agent into `$HOME/Library/LaunchAgents` and bootstraps it unless it is already loaded.
 The generated files capture the installation shell's `PATH` and the home, and the unit names carry a per-home `<slug>`.
-The command is idempotent: running it again keeps the existing files unchanged and enables the same timer, so nothing is overwritten or duplicated.
+The command is idempotent: running it again leaves unchanged files alone and enables the same timer, so nothing is duplicated. When the code directory or the captured `PATH` has moved, it rewrites the files that differ and reloads the timer (on macOS it boots the agent out and back in).
 Session start's bootstrap runs `bin/fm-watch-backstop.sh verify`, which prints one `WATCH_BACKSTOP:` line naming this install command when the home has a recorded endpoint and the scheduler reports its timer as not installed or not enabled.
 It never installs anything itself.
 `bin/fm-watch-backstop.sh timer-files <linux|darwin> <dir>` writes the same files into another directory without touching a scheduler.

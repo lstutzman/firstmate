@@ -152,16 +152,19 @@ test_timer_files() {
   assert_contains "$(cat "$dir/$name.service")" "\"FM_HOME=$(cd -P "$home" && pwd -P)\"" "the service must bind this home"
   assert_contains "$(cat "$dir/$name.service")" "fm-watch-backstop.sh\" check" "the service must run one check"
   assert_contains "$(cat "$dir/$name.timer")" 'OnUnitActiveSec=5min' "the timer must poll every five minutes"
-  printf '# kept\n' >> "$dir/$name.service"
+  cp -p "$dir/$name.service" "$TMP_ROOT/timer-before"
   run_backstop "$home" timer-files linux "$dir" >/dev/null 2>&1 || status=$?
   expect_code 0 "$status" "a second timer-files run on the same home must succeed"
-  assert_contains "$(cat "$dir/$name.service")" '# kept' "timer-files must never overwrite an existing scheduler file"
+  cmp -s "$TMP_ROOT/timer-before" "$dir/$name.service" || fail "timer-files must leave an unchanged scheduler file alone"
+  printf '# stale\n' >> "$dir/$name.service"
+  run_backstop "$home" timer-files linux "$dir" >/dev/null 2>&1 || fail "timer-files over a stale file failed"
+  cmp -s "$TMP_ROOT/timer-before" "$dir/$name.service" || fail "timer-files must rewrite a scheduler file that differs"
   out=$(run_backstop "$home" timer-files darwin "$dir") || fail "darwin timer-files failed"
   python3 -c 'import plistlib,sys; d=plistlib.load(open(sys.argv[1],"rb")); assert d["ProgramArguments"][1]=="check" and d["StartInterval"]==300, d' \
     "$dir/$out" || fail "the launchd plist is not a valid five-minute check agent"
   [ "$(run_backstop "$(make_home "$TMP_ROOT/timer-other")" timer-files linux "$TMP_ROOT/timer-other-out" | head -n 1)" != "$name.service" ] \
     || fail "two homes must get distinct unit names"
-  pass "backstop: timer-files writes per-home scheduler files, and a rerun keeps them"
+  pass "backstop: timer-files writes per-home scheduler files, and a rerun keeps unchanged ones and rewrites differing ones"
 }
 
 # Stateful systemctl, launchctl, and uname stand-ins: <dir>/enabled marks the
@@ -221,11 +224,20 @@ test_install_is_idempotent_and_verify_reports_a_missing_timer() {
   assert_contains "$(cat "$st/calls.log")" "--user enable --now $unit.timer" "install must enable and start the timer"
   [ -z "$(PATH="$fb:$PATH" HOME="$user" XDG_CONFIG_HOME='' run_backstop "$home" verify)" ] \
     || fail "verify must be silent once the timer is enabled"
-  printf '# kept\n' >> "$user/.config/systemd/user/$unit.service"
   status=0
+  : > "$st/calls.log"
   PATH="$fb:$PATH" HOME="$user" XDG_CONFIG_HOME='' run_backstop "$home" install >/dev/null || status=$?
   expect_code 0 "$status" "a second install on an installed home must succeed"
-  assert_contains "$(cat "$user/.config/systemd/user/$unit.service")" '# kept' "a second install must not overwrite the unit"
+  ! grep -q 'daemon-reload\|restart' "$st/calls.log" || fail "an unchanged install must not reload or restart: $(cat "$st/calls.log")"
+  # Moved code dir or PATH: the stale unit is rewritten and the timer reloaded.
+  sed -i 's#^ExecStart=.*#ExecStart="/old/place/fm-watch-backstop.sh" check#' "$user/.config/systemd/user/$unit.service"
+  : > "$st/calls.log"
+  PATH="$fb:$PATH" HOME="$user" XDG_CONFIG_HOME='' run_backstop "$home" install >/dev/null || fail "install over a stale unit failed"
+  ! grep -q '/old/place' "$user/.config/systemd/user/$unit.service" || fail "install must rewrite a unit whose code dir moved"
+  assert_contains "$(cat "$st/calls.log")" "--user daemon-reload" "a rewrite must reload the user scheduler"
+  assert_contains "$(cat "$st/calls.log")" "--user restart $unit.timer" "a rewrite must restart the timer"
+  PATH="$fb:$PATH" HOME="$user" XDG_CONFIG_HOME='' PATH="/moved/bin:$fb:$PATH" run_backstop "$home" install >/dev/null || fail "install after a PATH move failed"
+  assert_contains "$(cat "$user/.config/systemd/user/$unit.service")" '/moved/bin' "install must rewrite a unit whose captured PATH moved"
   [ "$(find "$user/.config/systemd/user" -type f | grep -c .)" -eq 2 ] || fail "a second install duplicated scheduler files"
   touch "$st/unreachable"
   [ -z "$(PATH="$fb:$PATH" HOME="$user" XDG_CONFIG_HOME='' run_backstop "$home" verify)" ] \
@@ -242,6 +254,9 @@ test_install_is_idempotent_and_verify_reports_a_missing_timer() {
   PATH="$fb:$PATH" HOME="$user" run_backstop "$home" install >/dev/null || fail "macOS install failed"
   PATH="$fb:$PATH" HOME="$user" run_backstop "$home" install >/dev/null || fail "a second macOS install failed"
   [ "$(grep -c '^bootstrap ' "$st/calls.log")" -eq 1 ] || fail "a loaded agent must not be bootstrapped again: $(cat "$st/calls.log")"
+  PATH="/moved/bin:$fb:$PATH" HOME="$user" run_backstop "$home" install >/dev/null || fail "macOS install after a PATH move failed"
+  grep -q '^bootout ' "$st/calls.log" || fail "a rewritten agent must be booted out: $(cat "$st/calls.log")"
+  [ "$(grep -c '^bootstrap ' "$st/calls.log")" -eq 2 ] || fail "a rewritten agent must be bootstrapped again: $(cat "$st/calls.log")"
   [ -z "$(PATH="$fb:$PATH" HOME="$user" run_backstop "$home" verify)" ] || fail "verify must be silent once the agent is loaded"
   pass "backstop: install is one idempotent command, and verify names it while the timer is missing"
 }
