@@ -86,6 +86,8 @@ test_run_timed_preserves_piped_stdin() {
     esac
     printf 'hello\nsecond line\twith spaces\r\n\000last bytes\n\n' > "$dir/expected"
     for shape in inherited pipeline; do
+      # The pipe is the point: stdin must be a pipe, not a file redirect.
+      # shellcheck disable=SC2002
       out=$(cat "$dir/expected" | PATH="$dir/bin" bash -c '
         unset FM_TIMEOUT_MECHANISM_OVERRIDE
         . "$1/bin/fm-timeout-lib.sh"
