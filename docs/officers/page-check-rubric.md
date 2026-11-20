@@ -32,7 +32,7 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 
 ## Where findings are filed
 
-- Team PC, project Fleet, label `area:fleet`, Type Bug, Source `agent`, the label Lee's Linear setup gives a worker filing on his behalf; the officer's identity is in each item's fingerprint marker and description.
+- Team FLEET (fleet work: [contract](contract.md#file)), Type Bug, no Source, area label or project, because team FLEET has none; the officer's identity is in each item's fingerprint marker and description.
 - Each page's findings share one [bundle](contract.md#bundles), grouped by route.
 - Duplicates, a repeat of a closed item or bundle (which files nothing new and never starts it) and the call budget are the shared [filing rules](contract.md#file).
 - A line carries the page, the kind, the object id and the severity, under its route; an older single item's body carries the page, the kind, the object id, the evidence and the route.

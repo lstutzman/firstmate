@@ -70,8 +70,7 @@ digest and filed by the next audit run. A safe finding is filed as medium at lea
 reaches the start score once the audit finds it three times (a high one at once). A safe
 finding whose item exists and whose score reaches the rubric minimum gets a start request in
 `start_requests` (and, for this home, a <date>.start-requests.sh handoff). The weekly audit
-covers PropertyCompass2 only, so every finding is PropertyCompass2 work: it is filed without the
-Fleet project, and its start request goes to the --start-home office whose dispatch list names
+covers PropertyCompass2 only, so every finding is PropertyCompass2 work: it is filed in team PC, never in team FLEET, and its start request goes to the --start-home office whose dispatch list names
 PropertyCompass2, else to --fm-home. Code and needs-lee findings are filed and
 never start. A safe finding that matches a reserved class is held, and the audit's
 needs-lee items become one keyed needs-decision `library-needs-lee-<run>` in `asks_for_lee`.

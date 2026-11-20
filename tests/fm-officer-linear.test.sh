@@ -6,8 +6,8 @@
 # one Found line in place, with one comment a day; a match at or below 0.85 filing a new item that names the near
 # match; the score the found count gives (severity weight x log2(1 + found)); the per-run create cap and the Linear
 # call budget leaving a named overflow and nothing dropped; a reserved class becoming one keyed needs-decision and
-# never a start, whatever the rubric lists; a rubric only narrowing; fleet findings taking the Fleet project and
-# area:fleet and their start requests and patterns going to the Quartermaster; --dry-run before --verify on every write; a closed item never edited, reopened or re-prioritised
+# never a start, whatever the rubric lists; a rubric only narrowing; fleet findings filed in team FLEET with one Type label
+# (lookups and bundles reading that team too) and their start requests and patterns going to the Quartermaster; --dry-run before --verify on every write; a closed item never edited, reopened or re-prioritised
 # (a new item names it), or with bump_closed bumped and never started; and no call that closes or deletes.
 set -u
 # shellcheck source=tests/lib.sh
@@ -58,20 +58,24 @@ def failing():
         print(json.dumps({"ok": False, "error": {"code": "RATE_LIMITED", "message": "slow down"}})); sys.exit(1)
     if "--verify" in args and mode == "nowrite":
         print(json.dumps({"ok": False, "error": {"code": "UNKNOWN", "message": "boom"}})); sys.exit(1)
+def team_of(v): return v.get("team", "PC")
+def team_issues(): return {i: v for i, v in issues.items() if team_of(v) == (flag("--team") or "PC")}
 if args[:2] == ["label", "list"]:
-    out({"labels": [{"name": n} for n in open(os.path.join(d, "labels")).read().split()]})
+    # team FLEET reads its own file (Type labels only, as the real team has), every other team the shared one
+    labels_file = os.path.join(d, "labels-" + flag("--team")) if flag("--team") and os.path.exists(os.path.join(d, "labels-" + flag("--team"))) else os.path.join(d, "labels")
+    out({"labels": [{"name": n} for n in open(labels_file).read().split()]})
 if args[:2] == ["issue", "list"]:
     # Linear data, newest first, titles and stateType as the real list prints them (no title filter exists).
-    out({"issues": [{"identifier": i, "title": v["title"], "state": v["state"], "team": "PC", "project": v.get("project"),
+    out({"issues": [{"identifier": i, "title": v["title"], "state": v["state"], "team": team_of(v), "project": v.get("project"),
                      "stateType": state_type(v["state"]),
                      **({"description": v["description"][:200] + ("\n... (truncated, %d chars total - use --full to see complete body)" % len(v["description"])
                                                                   if len(v["description"]) > 200 else "")} if "description" in (flag("--fields") or "") else {})}
-                    for i, v in sorted(issues.items(), key=lambda kv: -int(kv[0].split("-")[1]))][:int(flag("--max-items") or 30)]})
+                    for i, v in sorted(team_issues().items(), key=lambda kv: -int(kv[0].split("-")[1]))][:int(flag("--max-items") or 30)]})
 if args[:2] == ["issue", "search"]:
     if os.environ.get("FAKE_SEARCH_MISS"): out({"issues": []})  # full-text search that never returns these titles
     q = args[2].lower()
     words = {w for w in q.replace("-", " ").split() if len(w) > 3}
-    hits = [i for i, v in issues.items()
+    hits = [i for i, v in team_issues().items()
             if (q in v["description"].lower() if "-fp:" in q else words & set(v["title"].lower().split()))]
     out({"issues": [{"identifier": i} for i in hits[:int(flag("--limit") or 20)]]})
 if args[:2] == ["issue", "view"]:
@@ -82,12 +86,12 @@ dry = "--dry-run" in args
 if args[:2] == ["issue", "create"]:
     if dry: out({"dryRun": True})
     failing()
-    n = "PC-%d" % (101 + len(issues))
-    issues[n] = {"title": flag("--title"), "description": open(flag("--body-file")).read(), "state": "Todo",
+    n = "%s-%d" % (flag("--team") or "PC", 101 + len(issues))
+    issues[n] = {"title": flag("--title"), "description": open(flag("--body-file")).read(), "state": "Todo", "team": flag("--team"),
                  "labels": [args[k + 1] for k, a in enumerate(args) if a == "--label"], "project": flag("--project"),
                  "priority": flag("--priority")}
     if "--verify" in args and os.environ.get("FAKE_DOUBLE"):  # linear-axi re-ran the create: two items, one title
-        issues["PC-%d" % (102 + len(issues) - 1)] = dict(issues[n])
+        issues["%s-%d" % (flag("--team") or "PC", 102 + len(issues) - 1)] = dict(issues[n])
     save(); written(n)
 if args[:2] == ["issue", "update"]:
     if dry: out({"dryRun": True})
@@ -128,6 +132,7 @@ world() {
   FAKEBIN=$(fm_fakebin "$W")
   printf '%s\n' "$2" > "$LDIR/issues.json"
   printf 'Bug\nChore\nscan\narea:fleet\ntriage\n' > "$LDIR/labels"
+  printf 'Bug\nFeature\nImprovement\nChore\nIdea\nStanding\n' > "$LDIR/labels-FLEET"  # team FLEET: workspace labels only
   : > "$LDIR/calls"
   fake_linear "$FAKEBIN"
   fake_jev "$W/jev.py"
@@ -214,6 +219,48 @@ elif scenario == "fleet":
     res = {"filing": f["filing"], "repo_filing": g["filing"], "pc_filing": h["filing"]}
 elif scenario == "fleet-labels":
     res = [lib.fleet_labels("scan", {"bug", "scan", "area:fleet"})[0], lib.fleet_labels("scan", {"bug", "scan", "area:fleet"})[1]]
+elif scenario == "fleet-and-pc":
+    # one fleet finding and one PropertyCompass2 finding, filed by one Filer with a label_set that offers Type, Source and area
+    officer = lib.Officer("fixture", "Fixture Officer", "Fixture", rubric_file, sources=("scan",), project="Fleet")
+    fleet_f = find("tool", "A tool agents need is missing")
+    pc_f = find("pc", "Calculator total wrong", project="PropertyCompass2")
+    fl, lin = filer()
+    for f in (fleet_f, pc_f):
+        fl.file_single(f, lambda g: (["Bug", "scan", "triage"], []) if g["project"] else (["Bug", "scan", "area:fleet"], []), describe)
+    res = {"fleet": fleet_f["filing"], "pc": pc_f["filing"]}
+elif scenario == "fleet-lookup":
+    # lookups for fleet work read team FLEET only; PropertyCompass2 lookups read team PC only
+    officer = lib.Officer("fixture", "Fixture Officer", "Fixture", rubric_file, sources=("scan",), project="Fleet")
+    single = find("single", "A single fleet item")
+    fl, lin = filer()
+    title = "Automated findings: tooling (fixture)"
+    res = {"in_fleet": fl.existing_issue(single["fingerprint"], lib.FLEET_TEAM), "in_pc": fl.existing_issue(single["fingerprint"]),
+           "team_for": [fl.team_for(""), fl.team_for("skills"), fl.team_for("PropertyCompass2")],
+           "fleet_title": fl.open_titles(title, True), "pc_title": fl.open_titles(title, False), "none_title": fl.open_titles(title),
+           "fleet_by_title": fl.open_by_title(title, fleet=True), "pc_by_title": fl.open_by_title(title, fleet=False)}
+    fl2, lin2 = filer()
+    f = find("single", "A single fleet item")
+    fl2.file_single(f, lambda g: (["Bug", "scan", "area:fleet"], []), describe)
+    res["single_filing"] = f["filing"]
+elif scenario in ("fleet-bundle", "fleet-bundle-lane"):
+    # an open FLEET bundle of the title is continued, not duplicated; the Canceled PC bundle of the same title is left alone.
+    # fleet-bundle-lane: the lane's saved state still names that Canceled PC bundle, and only one of its two findings is seen.
+    officer = lib.Officer("fixture", "Fixture Officer", "Fixture", rubric_file, sources=("scan",), project="Fleet")
+    fl, lin = filer()
+    bundles = lib.Bundles(fl, 15, area=lambda f: "tooling")
+    known, fresh = find("known", "Tool A missing", "low"), find("fresh", "Tool B missing", "low")
+    seen = [known] if scenario == "fleet-bundle-lane" else [known, fresh]
+    for f in seen:
+        f["bundle"] = {"family": "fixture", "area": None}
+    names = lib.label_names(lin, "PC")
+    if not lib.file_bundled(fl, seen, None, None, bundles):
+        lib.file_bundled(fl, seen, lambda f: lib.fleet_labels("scan", names, "Chore"), describe, bundles)
+    bundles.save()
+    issues = json.load(open(os.path.join(os.environ["LDIR"], "issues.json")))
+    res = {"known": known["filing"], "fresh": fresh["filing"], "ids": sorted(issues), "creates": fl.creates,
+           "fleet_body": issues["FLEET-73"]["description"], "pc_body": issues["PC-4753"]["description"],
+           "saved": {fp: b["issue"] for fp, b in json.load(open(os.path.join(W, "bundles.json")))["member_of"].items()
+                     for b in [json.load(open(os.path.join(W, "bundles.json")))["bundles"][b]]}}
 elif scenario in ("closed", "released"):
     f = find("old", "Previously closed finding")
     fl, lin = filer()
@@ -268,7 +315,7 @@ elif scenario == "surgeon-clusters":
     def marker(job, key):
         return hashlib.sha256(("review\0%s\0%s" % (job, key)).encode("utf-8")).hexdigest()
     res = {"filings": {f["key"]: [f["filing"]["action"], f["filing"].get("issue"), f["filing"].get("reason")] for f in fs},
-           "items": {i: {"title": v["title"], "labels": v["labels"], "project": v["project"], "tail": v["description"].rsplit("\n", 1)[-1]}
+           "items": {i: {"title": v["title"], "labels": v["labels"], "project": v["project"], "team": v["team"], "tail": v["description"].rsplit("\n", 1)[-1]}
                      for i, v in issues.items()},
            "bundles": {b["issue"]: [b["area"], b["fleet"], b["part"]] for b in json.load(open(os.path.join(W, "bundles.json")))["bundles"].values()}}
 elif scenario == "verify-fail":
@@ -330,7 +377,7 @@ elif scenario in ("fleet-start", "fleet-nowrite"):
            "patterns": [{"home": r["execute"]["env"]["FM_HOME"], "project": r["project"], "target": r["target"], "body": r["execute"]["argv"][-1],
                          "lines": [p["line"] for p in r["patterns"]]} for r in pats],
            "captures": sorted(c["tags"][1] for c in captures),
-           "filed": {v["title"]: v["project"] for v in json.load(open(os.path.join(os.environ["LDIR"], "issues.json"))).values()}}
+           "filed": {v["title"]: v["team"] for v in json.load(open(os.path.join(os.environ["LDIR"], "issues.json"))).values()}}
 elif scenario == "pattern-rules":
     officer = lib.Officer("fixture", "Fixture Officer", "Fixture", rubric_file, sources=("scan",), pattern_sources=("scan",))
     rub = lib.load_rubric(rubric_file, officer)
@@ -605,21 +652,121 @@ EOF
   pass "fm-officer-linear: a reserved class is one keyed needs-decision and never starts; a rubric only narrows"
 }
 
-test_fleet_findings_take_the_fleet_project_and_label() {
+test_fleet_findings_file_in_team_fleet_with_one_type_label() {
   local out
   world fleet '{}'
   out=$(drive fleet) || fail "driver must succeed"
   assert_equals created "$(jq -r '.filing.action' <<<"$out")" "the fleet finding is filed"
-  assert_equals '["Bug","scan","area:fleet"]' "$(issue PC-101 '.labels' | jq -c .)" "one Type, one Source, area:fleet"
-  assert_equals Fleet "$(issue PC-101 .project)" "a Fleet officer's item is in the Fleet project with no Filer argument"
-  assert_equals Fleet "$(issue "$(jq -r '.repo_filing.issue' <<<"$out")" .project)" "a PropertyCompass2 officer's finding naming a fleet repository is filed in the Fleet project too"
-  assert_equals '["Bug","scan","area:fleet"]' "$(issue "$(jq -r '.repo_filing.issue' <<<"$out")" '.labels' | jq -c .)" "with area:fleet in place of the label_set's own area"
+  assert_equals FLEET-101 "$(jq -r '.filing.issue' <<<"$out")" "a Fleet officer's finding is created in team FLEET"
+  assert_equals '["Bug"]' "$(issue FLEET-101 '.labels' | jq -c .)" "with one Type label and no Source or area label"
+  assert_equals null "$(issue FLEET-101 .project)" "and no Linear project"
+  assert_equals FLEET-102 "$(jq -r '.repo_filing.issue' <<<"$out")" "a PropertyCompass2 officer's finding naming a fleet repository is created in team FLEET too"
+  assert_equals '["Bug"]' "$(issue "$(jq -r '.repo_filing.issue' <<<"$out")" '.labels' | jq -c .)" "with its one Type label"
+  assert_equals null "$(issue "$(jq -r '.repo_filing.issue' <<<"$out")" .project)" "and no Linear project"
   assert_equals "not-filed area:fleet is only for fleet work" "$(jq -r '.pc_filing | [.action, .reason] | join(" ")' <<<"$out")" "a PropertyCompass2 finding labelled area:fleet is not filed"
-  assert_equals '[["Bug","scan","area:fleet"],[]]' "$(drive fleet-labels | jq -c .)" "fleet_labels names one Type, one Source and area:fleet, and any missing label"
-  assert_equals 3 "$(issue PC-101 .priority)" "medium is Linear priority 3"
+  assert_equals '[["Bug","scan","area:fleet"],[]]' "$(drive fleet-labels | jq -c .)" "fleet_labels still names one Type, one Source and area:fleet, and any missing label"
+  assert_equals 3 "$(issue FLEET-101 .priority)" "medium is Linear priority 3"
   assert_contains "$(grep '^issue create' "$LDIR/calls" | sed -n 1p)" "--dry-run" "the dry run comes first"
   assert_contains "$(grep '^issue create' "$LDIR/calls" | sed -n 2p)" "--verify" "then the verify"
-  pass "fm-officer-linear: a fleet finding goes to the Fleet project with area:fleet, dry-run then verify"
+  assert_equals 0 "$(grep -c -- '--project' "$LDIR/calls")" "no call names a Linear project"
+  assert_equals 2 "$(grep -c '^label list --team FLEET' "$LDIR/calls")" "team FLEET's labels are read once per Filer (two Filers filed fleet work here), not once per finding"
+  pass "fm-officer-linear: a fleet finding is filed in team FLEET with one Type label, dry-run then verify"
+}
+
+test_a_missing_fleet_type_label_is_not_filed() {
+  local out
+  world fleet-notype '{}'
+  printf 'Feature\nIdea\n' > "$LDIR/labels-FLEET"
+  out=$(drive fleet-and-pc) || fail "driver must succeed"
+  assert_equals "not-filed label(s) not found in team FLEET: Bug" "$(jq -r '.fleet | [.action, .reason] | join(" ")' <<<"$out")" "a Type label team FLEET lacks is named and the finding is not filed"
+  assert_equals 0 "$(grep -c '^issue create --team FLEET' "$LDIR/calls")" "nothing is created in team FLEET"
+  pass "fm-officer-linear: a fleet finding whose Type label team FLEET lacks is reported, not filed"
+}
+
+test_a_propertycompass2_finding_is_unchanged() {
+  local out pc
+  world fleet-and-pc '{}'
+  out=$(drive fleet-and-pc) || fail "driver must succeed"
+  pc=$(jq -r '.pc.issue' <<<"$out")
+  assert_equals "created PC-102" "$(jq -r '.pc | [.action, .issue] | join(" ")' <<<"$out")" "a PropertyCompass2 finding is created in team PC"
+  assert_equals PC "$(issue "$pc" .team)" "in team PC"
+  assert_equals '["Bug","scan","triage"]' "$(issue "$pc" '.labels' | jq -c .)" "with the labels its label_set gave"
+  assert_equals null "$(issue "$pc" .project)" "and no Linear project"
+  assert_equals FLEET-101 "$(jq -r '.fleet.issue' <<<"$out")" "while the fleet finding of the same run is created in team FLEET"
+  assert_equals 2 "$(grep -c '^issue search .* --team PC' "$LDIR/calls")" "the PropertyCompass2 finding's fingerprint and title searches read team PC"
+  assert_equals 2 "$(grep -c '^issue search .* --team FLEET' "$LDIR/calls")" "the fleet finding's fingerprint and title searches read team FLEET"
+  pass "fm-officer-linear: a PropertyCompass2 finding is filed in team PC as before"
+}
+
+test_fleet_lookups_read_team_fleet() {
+  local out fp
+  fp=$(printf '%s\0%s\0%s' scan job single | sha256sum | cut -d' ' -f1)
+  world fleet-lookup "$(jq -n --arg fp "$fp" '{
+    "FLEET-73": {team: "FLEET", title: "Automated findings: tooling (fixture)", state: "Triage", description: "Bundle body"},
+    "FLEET-80": {team: "FLEET", title: "A single fleet item", state: "Todo", description: ("Filed by hand.\nfixture-fp:" + $fp)},
+    "PC-4753": {team: "PC", title: "Automated findings: tooling (fixture)", state: "Canceled", project: "Fleet", description: "Refiled"},
+    "PC-4800": {team: "PC", title: "Automated findings: tooling (fixture)", state: "Todo", description: "A PropertyCompass2 item"},
+    "PC-4801": {team: "PC", title: "Automated findings: tooling (fixture)", state: "Todo", project: "Fleet", description: "Filed before fleet work moved"}
+  }')"
+  out=$(drive fleet-lookup) || fail "driver must succeed"
+  assert_equals '["FLEET-80",null]' "$(jq -c '.in_fleet' <<<"$out")" "a fingerprint kept in team FLEET is found there"
+  assert_equals '[null,null]' "$(jq -c '.in_pc' <<<"$out")" "and not in team PC"
+  assert_equals '["FLEET","FLEET","PC"]' "$(jq -c '.team_for' <<<"$out")" "team_for sends Fleet and fleet-repository work to FLEET and the rest to the Filer's team"
+  assert_equals '["FLEET-73"]' "$(jq -c '.fleet_title' <<<"$out")" "an exact-title lookup for fleet work lists the open FLEET item only"
+  assert_equals '["PC-4800"]' "$(jq -c '.pc_title' <<<"$out")" "one for PropertyCompass2 work lists the open team PC item that is not in the Fleet project, never the Canceled one"
+  assert_equals '["PC-4800","PC-4801"]' "$(jq -c '.none_title' <<<"$out")" "with no side named it lists team PC as it did"
+  assert_equals "FLEET-73 PC-4800" "$(jq -r '"\(.fleet_by_title) \(.pc_by_title)"' <<<"$out")" "open_by_title follows the same sides"
+  assert_equals "exists FLEET-80" "$(jq -r '.single_filing | "\(.action) \(.issue)"' <<<"$out")" "a fleet finding whose fingerprint is in FLEET-80 is that item, not a new one"
+  assert_equals 0 "$(grep -c '^issue create' "$LDIR/calls")" "and nothing is created"
+  pass "fm-officer-linear: fleet duplicate, title and bundle lookups read team FLEET"
+}
+
+test_the_first_run_after_the_move_keeps_every_line_of_the_fleet_bundle() {
+  local out known other
+  known=$(printf '%s\0%s\0%s' scan job known | sha256sum | cut -d' ' -f1)
+  other=$(printf '%s\0%s\0%s' scan job other | sha256sum | cut -d' ' -f1)
+  world fleet-bundle-lane "$(jq -n --arg a "$known" --arg b "$other" '{
+    "FLEET-73": {team: "FLEET", title: "Automated findings: tooling (fixture)", state: "Triage",
+                 description: ("Filed by the Fixture Officer.\n\n### (no file)\n\n- [ ] fixture-fp:" + $a + " Tool A missing (low)\n- [ ] fixture-fp:" + $b + " Tool B missing (low)\nfixture-fp:0000")},
+    "PC-4753": {team: "PC", title: "Automated findings: tooling (fixture)", state: "Canceled", project: "Fleet", description: "Refiled to FLEET-73"}
+  }')"
+  # the lane's own state, as the friction lane holds it today: one bundle on the Canceled PC item, two findings on it
+  jq -n --arg a "$known" --arg b "$other" '{"bundles": {"b1": {"fp": "b1", "family": "fixture", "area": "tooling", "fleet": true, "part": 1,
+      "issue": "PC-4753", "labels": ["Bug", "scan", "area:fleet"], "project": "Fleet", "sha": "old", "checked": "2026-11-01",
+      "members": {($a): {"title": "Tool A missing", "file": "", "severity": "low", "state": "open"},
+                  ($b): {"title": "Tool B missing", "file": "", "severity": "low", "state": "open"}}}},
+    "member_of": {($a): "b1", ($b): "b1"}}' > "$W/bundles.json"
+  out=$(drive fleet-bundle-lane) || fail "driver must succeed"
+  assert_equals 0 "$(jq '.creates' <<<"$out")" "no item is created"
+  assert_equals "bundled FLEET-73" "$(jq -r '.known | "\(.action) \(.issue)"' <<<"$out")" "the finding seen tonight moves to FLEET-73"
+  assert_equals 1 "$(jq -r '.fleet_body' <<<"$out" | grep -c "fixture-fp:$other")" "the line of a finding not seen tonight is still on FLEET-73"
+  assert_equals 1 "$(jq -r '.fleet_body' <<<"$out" | grep -c "fixture-fp:$known")" "and the one seen tonight is there once"
+  assert_not_contains "$(jq -r '.fleet_body' <<<"$out" | grep "fixture-fp:$other")" "recurred" "the unseen finding's line carries no recurrence note"
+  assert_contains "$(jq -r '.fleet_body' <<<"$out" | grep "fixture-fp:$known")" "recurred, was in PC-4753" "the one seen tonight names the closed PC item it came from"
+  assert_equals "FLEET-73 FLEET-73" "$(jq -r --arg a "$known" --arg b "$other" '"\(.saved[$a]) \(.saved[$b])"' <<<"$out")" "the lane's state now names FLEET-73 for both findings"
+  pass "fm-officer-linear: the first run after the move keeps every line of the FLEET bundle"
+}
+
+test_a_fleet_bundle_continues_the_open_fleet_item() {
+  local out known
+  known=$(printf '%s\0%s\0%s' scan job known | sha256sum | cut -d' ' -f1)
+  world fleet-bundle "$(jq -n --arg fp "$known" '{
+    "FLEET-73": {team: "FLEET", title: "Automated findings: tooling (fixture)", state: "Triage",
+                 description: ("Filed by the Fixture Officer.\n\n### (no file)\n\n- [ ] fixture-fp:" + $fp + " Tool A missing (low)\nfixture-fp:0000")},
+    "PC-4753": {team: "PC", title: "Automated findings: tooling (fixture)", state: "Canceled", project: "Fleet", description: "Refiled to FLEET-73"}
+  }')"
+  out=$(drive fleet-bundle) || fail "driver must succeed"
+  assert_equals "bundled FLEET-73" "$(jq -r '.known | "\(.action) \(.issue)"' <<<"$out")" "a finding already on FLEET-73 stays on it"
+  assert_equals "bundled FLEET-73" "$(jq -r '.fresh | "\(.action) \(.issue)"' <<<"$out")" "a new finding is appended to FLEET-73"
+  assert_equals 1 "$(jq -r '.fleet_body' <<<"$out" | grep -c "fixture-fp:$known")" "the finding already on FLEET-73 is one line there, not two"
+  assert_equals 0 "$(jq '.creates' <<<"$out")" "no item is created"
+  assert_equals '["FLEET-73","PC-4753"]' "$(jq -c '.ids' <<<"$out")" "and none exists besides the two seeded"
+  assert_contains "$(jq -r '.fleet_body' <<<"$out")" "Tool B missing" "FLEET-73 now lists the new finding"
+  assert_contains "$(jq -r '.fleet_body' <<<"$out")" "Tool A missing" "and keeps the old one"
+  assert_equals "Refiled to FLEET-73" "$(jq -r '.pc_body' <<<"$out")" "the Canceled PC item is not touched"
+  assert_equals 0 "$(grep -c '^issue \(create\|update\|comment\) PC-' "$LDIR/calls")" "no write reaches team PC"
+  assert_equals 0 "$(grep -c -- '--team PC' <(grep -v '^label list' "$LDIR/calls"))" "and the item search and list read team FLEET only"
+  pass "fm-officer-linear: a fleet bundle continues the open FLEET item of its title"
 }
 
 fleet_rubric() {
@@ -640,7 +787,7 @@ test_fleet_finding_starts_and_patterns_go_to_the_quartermaster() {
   assert_equals '["/home/qm","",true]' "$(jq -c '.starts["Bosun backup check crashes"]' <<<"$out")" "a Fleet item naming no repository keeps no repository, is Linear-only, and starts with the Quartermaster"
   assert_equals '["/home/qm","skills",false]' "$(jq -c '.starts["Skill sync drops manifest entries"]' <<<"$out")" "a finding naming a fleet repository keeps it and starts with the Quartermaster"
   assert_equals '["/home/nav","PropertyCompass2",false]' "$(jq -c '.starts["Null reference when saving"]' <<<"$out")" "a PropertyCompass2 finding still goes to the Navigator"
-  assert_equals '{"Bosun backup check crashes":"Fleet","Skill sync drops manifest entries":"Fleet","Null reference when saving":null}' "$(jq -c '.filed' <<<"$out")" "fleet work is filed in the Fleet project; a PropertyCompass2 finding under a Fleet officer is not"
+  assert_equals '{"Bosun backup check crashes":"FLEET","Skill sync drops manifest entries":"FLEET","Null reference when saving":"PC"}' "$(jq -c '.filed' <<<"$out")" "fleet work is filed in team FLEET; a PropertyCompass2 finding under a Fleet officer is filed in team PC"
   assert_contains "$(jq -r '.body' <<<"$out")" "word: 'Each officer should have a different rubric for what they find as work and decide to start' (Lee, main chat 2026-11-05T17:59:01Z)." "only Lee's words are inside the quotation marks"
   assert_equals '[["/home/qm","Fleet"],["/home/nav","PropertyCompass2"],["/home/qm","skills"]]' "$(jq -c '.patterns | sort_by(.project) | map([.home, .project])' <<<"$out")" "fleet patterns go to the Quartermaster, a PropertyCompass2 one to the Navigator"
   assert_equals "Anti-pattern: Bosun backup check crashes. Safe form: Add a guard." "$(jq -r '.patterns[] | select(.project == "Fleet") | .lines | join("|")' <<<"$out")" "the Fleet request carries only the Fleet pattern"
@@ -698,10 +845,10 @@ test_surgeon_bundles_split_fleet_from_propertycompass2() {
   assert_equals '{"title":"Automated findings: infrastructure (code review)","labels":["Bug","scheduled-review","infrastructure"],"project":null}' \
     "$(jq -c --arg i "$pc" '.items[$i] | {title, labels, project}' <<<"$out")" "the PropertyCompass2 bundle is titled by its feature area, with that area label and no Linear project"
   assert_equals '["infrastructure",false,1]' "$(jq -c --arg i "$pc" '.bundles[$i]' <<<"$out")" "its saved state names the area, side and part"
-  assert_equals '{"labels":["Bug","scheduled-review","area:fleet"],"project":"Fleet"}' \
-    "$(jq -c --arg i "$fleet" '.items[$i] | {labels, project}' <<<"$out")" "the fleet bundle is in the Fleet project with area:fleet"
+  assert_equals '{"labels":["Bug"],"project":null,"team":"FLEET"}' \
+    "$(jq -c --arg i "$fleet" '.items[$i] | {labels, project, team}' <<<"$out")" "the fleet bundle is in team FLEET with its one Type label and no project"
   assert_not_contains "$(jq -r --arg i "$pc" '.items[$i].tail' <<<"$out")" "$(jq -r --arg i "$fleet" '.items[$i].tail' <<<"$out" | cut -d: -f2)" "with its own fingerprint"
-  pass "fm-officer-linear: the Surgeon bundles fleet findings apart, in the Fleet project with area:fleet"
+  pass "fm-officer-linear: the Surgeon bundles fleet findings apart, in team FLEET with one Type label"
 }
 
 test_closed_item_is_never_touched() {
@@ -1321,7 +1468,12 @@ test_found_count_is_raised_in_place_once_a_day
 test_score_is_the_found_count_lever
 test_cap_overflow_is_listed_and_budget_stops_the_run
 test_reserved_class_becomes_one_keyed_needs_decision
-test_fleet_findings_take_the_fleet_project_and_label
+test_fleet_findings_file_in_team_fleet_with_one_type_label
+test_a_missing_fleet_type_label_is_not_filed
+test_a_propertycompass2_finding_is_unchanged
+test_fleet_lookups_read_team_fleet
+test_a_fleet_bundle_continues_the_open_fleet_item
+test_the_first_run_after_the_move_keeps_every_line_of_the_fleet_bundle
 test_fleet_finding_starts_and_patterns_go_to_the_quartermaster
 test_fleet_patterns_route_without_linear_writes
 test_pattern_lines_are_whole_recurring_and_have_a_safe_form

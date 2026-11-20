@@ -33,7 +33,7 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 ## What starts by itself
 
 - A safe-to-ship finding starts once its item exists and its score reaches the minimum below: a high finding on first sight, a medium one when the audit has found it three times.
-- The weekly audit covers PropertyCompass2 only, so every finding is PropertyCompass2 work, filed without the Fleet project.
+- The weekly audit covers PropertyCompass2 only, so every finding is PropertyCompass2 work, filed in team PC and never in team FLEET.
   The request goes to the office whose dispatch list names PropertyCompass2 (the Navigator), else to the main home.
   The Librarian office reads the same digest and ships its own docs pull request, at most one per repository per run, so the request asks only that this item is not missed.
 

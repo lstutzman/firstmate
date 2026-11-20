@@ -47,7 +47,7 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 
 - Every real finding is filed, as a line on its source family's feature-area bundle, under the bundle rule in [`contract.md`](contract.md#bundles).
   The families are code review, nightly E2E, bug sweeper and visual review, each with its own bundles.
-  Findings from a fleet repository (firstmate, skills, fleet-app) are bundled apart from PropertyCompass2 ones, and their bundles go in the Fleet project with `area:fleet`.
+  Findings from a fleet repository (firstmate, skills, fleet-app) are bundled apart from PropertyCompass2 ones, and their bundles are filed in team FLEET with the Type label alone.
   A finding on the reviewer's resolved list is ticked off.
 - An invalid nightly E2E run stays a single item of its own, because it blocks promotion.
 - `bin/fm-officer-surgeon.py fold` moves the Surgeon's existing open items (one per finding, and the old component clusters' open lines) into their area bundles and marks each original a duplicate of its bundle; with `--friction-out` and `--page-check-out` (those officers' lane directories) it also folds the friction and page-check officers' open items, and it folds the fleet-app dependency-majors and nightly E2E items; it is a dry run unless given `--apply`, and main runs `--apply` only on its go.

@@ -9,8 +9,8 @@ vs-<yyyymmdd>-<n>. The pass is deterministic and model-free; it never talks to a
 
 What each reply does, chosen by the words it starts with (case-insensitive):
 
-  Create item for later   files the Linear issue (Improvement, Source agent, area:fleet, project Fleet) and leaves it
-  (older: Accept)         in the backlog; answers the reply "Filed as PC-n" (or "Already filed as PC-n").
+  Create item for later   files the Linear issue (Improvement, in team FLEET) and leaves it
+  (older: Accept)         in the backlog; answers the reply "Filed as FLEET-n" (or "Already filed as FLEET-n").
   Create and fix now      the same, then adds one start note for the owning office (the card's `owner`: an office
                           named by a --start-home office role, else main) to the digest's start_requests, where
                           bin/fm-office.sh delivers it like any officer start request. An owner of main, slarti,
@@ -52,7 +52,6 @@ REPLY_WINDOW_DAYS = 3   # the app's own reply window; older taps are never repla
 LEDGER_FILE = "velocity-taps.json"
 OFFICER_ID = "velocity-taps"
 AGENT_AS = "friction-officer"
-SOURCE_LABEL = "agent"
 TYPE_LABEL = "Improvement"
 MAIN_OWNERS = ("main", "slarti", "deepthought", "gilligan")
 SUGGESTION = re.compile(r"^velocity-(vs-\d{8}-\d+)$")
@@ -230,15 +229,13 @@ def file_card(lib, filer, ctx, reply_ctx, ledger):
     choice = "Create and fix now" if action == "fix" else "Create item for later"
     marker = "%s:%s" % (filer.officer.marker, fp)
     found = filer.officer.found_line(1, ctx["date"], ctx["date"])
-    def label_set(_f):
-        return lib.fleet_labels(SOURCE_LABEL, reply_ctx["names"], TYPE_LABEL)
+    def label_set(_f):  # every card is fleet work: team FLEET, the Type label alone (the Filer reads that team's labels)
+        return [TYPE_LABEL], []
 
     def describe(_f, near=None, recurrence=None):
         return description(sug, card_id, choice, found, known, marker, recurrence)
 
     try:
-        if reply_ctx["names"] is None:
-            reply_ctx["names"] = lib.label_names(filer.lin, ctx["team"])
         filer.file_single(f, label_set, describe)
         filer.settle_bumps(label_set, describe)
     except lib.LinearError as exc:
@@ -301,7 +298,6 @@ def run(replies, ctx):
                       project=lib.FLEET_PROJECT)
     filer = lib.Filer(off, lin, ctx["team"], ctx["date"], ctx["out"], ledger["filed"], ledger["found"], lib.Jev(ctx["jev"]), ctx["max_creates"])
     paused = lib.paused_until(ctx["out"], ctx["now"])
-    names = {"names": None}
     seq = max([e.get("seq", 0) for e in ledger["replies"].values()] or [0])
     for reply, action in pending:
         rid, card_id = reply["requestId"], suggestion_of(reply) or ""
@@ -318,7 +314,7 @@ def run(replies, ctx):
             if suggestions is None or paused:
                 report["waiting"].append(rid)
                 continue
-            issue, status, f = file_card(lib, filer, ctx, dict(card_id=card_id, sug=sug, known=known, title=title, action=action, **names), ledger)
+            issue, status, f = file_card(lib, filer, ctx, dict(card_id=card_id, sug=sug, known=known, title=title, action=action), ledger)
             if not issue:
                 report["gaps"].append("%s: not filed (%s); it waits for the next run." % (card, status))
                 report["waiting"].append(rid)
