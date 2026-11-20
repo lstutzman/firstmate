@@ -1451,6 +1451,14 @@ EOF
   assert_wait '.counts.external_wait_in_flight == 0' "a captain hold is not an external wait"
   write_wait_backlog ""
   assert_wait '.counts.external_wait_in_flight == 0' "an unheld item is not a wait"
+  mkdir -p "$home/projects/wait"
+  fm_write_meta "$home/state/wait-item.meta" \
+    "window=firstmate:fm-wait-item" "worktree=$home/projects/wait" \
+    "project=alpha" "harness=claude" "kind=ship" "mode=no-mistakes"
+  printf 'working [at=1000]: building\n' > "$home/state/wait-item.status"
+  write_wait_backlog " (hold: open part 1 when a place frees) (hold-kind: external)"
+  assert_wait '.counts.in_flight == 1 and .counts.external_wait_in_flight == 0
+    and any(.endpoints[]; .id == "wait-item")' "an external hold with a child is live work, not a wait"
   unset -f write_wait_backlog assert_wait
   pass "home-summary counts held in-flight external waits"
 }

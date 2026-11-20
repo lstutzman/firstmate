@@ -839,6 +839,13 @@ edit_mate_summary "value['counts'].update(in_flight=1, waiting_on_merge=1, holds
 assert_contains "$(run_alarm check)" 'holding work silent' 'an ask covering nothing never exempts when every in-flight item is waiting on merge'
 mate 0 0 0
 run_alarm check >/dev/null
+open_ask_mate 'needs-decision [at=@AT@] [key=item-a]: card a' 'needs-decision [at=@AT@] [key=item-b]: card b'
+edit_mate_summary "value['counts'].update(endpoints=2, external_wait_in_flight=1); value['endpoints']=value['endpoints'][:2]"
+[ -z "$(run_alarm check)" ] || fail 'asks covering every child item beside a declared external wait are waiting, not silent'
+edit_mate_summary "value['counts'].pop('external_wait_in_flight')"
+assert_contains "$(run_alarm check)" 'holding work silent' 'an in-flight item with no child, no ask and no declared wait still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
 open_ask_mate 'needs-decision [at=@AT@] [key=item-a]: card a' 'blocked [at=@AT@] [key=item-b]: stuck b' 'blocked [at=@AT@] [key=item-c]: stuck c'
 assert_contains "$(run_alarm check)" 'holding work silent' 'a blocked line is not a needs-decision and never exempts its item'
 mate 0 0 0

@@ -313,7 +313,8 @@ def waiting_on_open_ask(summary, counts, asks):
     items = {row.get('id') for row in endpoints
              if isinstance(row, dict) and row.get('kind') and row.get('kind') != 'secondmate'}
     asked = (items & named) - merging
-    return len(asked) >= counts.get('in_flight', 0) - counts.get('waiting_on_merge', 0)
+    return len(asked) >= (counts.get('in_flight', 0) - counts.get('waiting_on_merge', 0)
+                          - counts.get('external_wait_in_flight', 0))
 
 
 def held_terminal_complete(summary, counts):
