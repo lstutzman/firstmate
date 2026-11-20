@@ -480,6 +480,45 @@ test_direct_pr_recorded_head_does_not_cover_unpushed_commit() {
   pass "a direct-PR recorded head does not cover a later unpushed commit"
 }
 
+# A copy that moved on to its next task's branch is judged by the PR's recorded
+# head: pushed, it is accepted whatever the copy's HEAD is; unpushed, refused.
+# A copy still on the task's branch keeps its own HEAD as the named head.
+test_moved_on_copy_is_judged_by_the_recorded_pr_head() {
+  local repo wt meta state pushed other reason rc
+  repo="$TMP_ROOT/movedon-repo"
+  wt="$TMP_ROOT/movedon-wt"
+  state="$TMP_ROOT/movedon-state"
+  mkdir -p "$state"
+  fm_git_worktree "$repo" "$wt" fm/movedon
+  git -C "$wt" commit -q --allow-empty -m 'the PR head'
+  pushed=$(git -C "$wt" rev-parse HEAD)
+  git -C "$wt" update-ref refs/remotes/origin/fm/movedon "$pushed"
+  meta="$state/movedon.meta"
+  printf 'kind=ship\nmode=direct-PR\nbranch=fm/movedon\nworktree=%s\nproject=%s\npr=https://github.com/o/r/pull/5\npr_head=%s\n' \
+    "$wt" "$repo" "$pushed" > "$meta"
+  git -C "$wt" checkout -q -b fm/next "$(git -C "$wt" rev-parse HEAD~1)"
+  git -C "$wt" commit -q --allow-empty -m 'the next task, unpushed'
+  other=$(git -C "$wt" rev-parse HEAD)
+  accept_done ship direct-PR "$wt" "$repo" "done: PR https://github.com/o/r/pull/5" "$state" movedon "$meta" \
+    || fail "a moved-on copy's pushed recorded PR head was refused"
+  reason=$(accept_done ship direct-PR "$wt" "$repo" "done: PR https://github.com/o/r/pull/6" "$state" movedon "$meta")
+  rc=$?
+  [ "$rc" -eq 1 ] || fail "a pr_head recorded for PR 5 was accepted for PR 6"
+  case "$reason" in
+    *"named head $other is unreachable outside the worker copy") ;;
+    *) fail "the PR 6 refusal did not name the copy's own head: $reason" ;;
+  esac
+  git -C "$wt" update-ref -d refs/remotes/origin/fm/movedon
+  reason=$(accept_done ship direct-PR "$wt" "$repo" "done: PR https://github.com/o/r/pull/5" "$state" movedon "$meta")
+  rc=$?
+  [ "$rc" -eq 1 ] || fail "a moved-on copy's unpushed recorded PR head was accepted"
+  case "$reason" in
+    *"named head $pushed is unreachable outside the worker copy") ;;
+    *) fail "the unpushed PR head refusal did not name the PR head: $reason" ;;
+  esac
+  pass "a copy that moved to another branch is judged by the recorded PR head, which must be pushed"
+}
+
 test_ci_ready_requires_pr_reference() {
   local note
   for note in \
@@ -693,6 +732,7 @@ test_recorded_merged_pr_is_landed_after_prune
 test_merge_marker_binds_to_the_named_pr
 test_forge_recorded_head_is_accepted_without_local_object
 test_direct_pr_recorded_head_does_not_cover_unpushed_commit
+test_moved_on_copy_is_judged_by_the_recorded_pr_head
 test_ci_ready_requires_pr_reference
 test_ci_ready_variants_are_gated
 test_keyed_and_spaced_done_lines_are_gated
