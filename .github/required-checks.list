@@ -35,5 +35,6 @@ Behavior portable serial 17
 Behavior portable serial 18
 Behavior portable serial 19
 Behavior tests (Herdr)
+Behavior tests (herdr-core)
 Behavior timing aggregate
 PR must be raised via no-mistakes

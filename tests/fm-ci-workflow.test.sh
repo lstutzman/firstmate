@@ -881,6 +881,28 @@ GITHUB_PATH $sandbox/runner-temp/bin"
   pass "the Repo invariants secret scan checks out full history, installs gitleaks, and scans exactly the commits each event adds"
 }
 
+# .github/required-checks.list is what bin/fm-pr-merge.sh requires before a
+# guarded merge: a listed context no workflow produces blocks every merge, and
+# a produced context that is not listed is not required. Compare the list with
+# the contexts ci.yml (matrix-expanded, on a main push where every job runs)
+# and no-mistakes-required.yml publish, in both directions.
+test_required_checks_list_matches_workflow_contexts() {
+  local list produced extra missing
+  list=$(sed -e '/^[[:space:]]*#/d' -e '/^[[:space:]]*$/d' "$ROOT/.github/required-checks.list" | sort -u) \
+    || fail "could not read .github/required-checks.list"
+  produced=$({
+    published_checks event=push | cut -f1
+    ruby -ryaml -e 'YAML.load_file(ARGV[0]).fetch("jobs").each { |id, job| puts job.fetch("name", id) }' \
+      "$ROOT/.github/workflows/no-mistakes-required.yml"
+  } | sort -u) || fail "could not derive the workflow job contexts"
+  [ -n "$produced" ] || fail "no workflow job contexts were derived"
+  extra=$(comm -23 <(printf '%s\n' "$list") <(printf '%s\n' "$produced"))
+  missing=$(comm -13 <(printf '%s\n' "$list") <(printf '%s\n' "$produced"))
+  [ -z "$extra" ] || fail "required-checks.list names contexts no workflow produces (they would block every merge):"$'\n'"$extra"
+  [ -z "$missing" ] || fail "workflow contexts missing from required-checks.list (they are not required):"$'\n'"$missing"
+  pass "required-checks.list names exactly the contexts ci.yml and no-mistakes-required.yml produce"
+}
+
 test_ci_matrices_match_executable_partitions() {
   ruby -ryaml -ropen3 -rshellwords - "$CI_WORKFLOW" "$ROOT" <<'RUBY' || fail "CI partition contract"
 jobs = YAML.load_file(ARGV[0]).fetch("jobs")
@@ -955,6 +977,7 @@ RUBY
   pass "CI matrices cover every executable serial lane and canonical lint root exactly once"
 }
 
+test_required_checks_list_matches_workflow_contexts
 test_ci_matrices_match_executable_partitions
 test_invariants_secret_scan_reads_the_event_range
 test_pr_pushes_supersede_within_one_pr
