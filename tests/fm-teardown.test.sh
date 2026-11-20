@@ -78,6 +78,14 @@
 #   (ah) hung fetch                                               -> bounded, REFUSE
 #   (ai) commits held only by the no-mistakes gate                -> REFUSE, gate not fetched
 #   (aj) file saved during the refresh, work landed                -> REFUSE, file intact
+#
+# Pipeline-rebased commits whose patch-id is on the default branch:
+#   (pa) unpushed commit re-landed on main with an identical patch, main moved on -> ALLOW
+#   (pb) same, but the landed diff differs by one line                            -> REFUSE, note
+#   (pc) identical patch plus a merge commit                                      -> REFUSE
+#   (pd) identical patch plus an empty commit                                     -> REFUSE
+#   (pe) one identical commit and one different commit                            -> REFUSE
+#   (pf) identical patch beyond the search limit                                  -> REFUSE
 set -u
 
 # shellcheck source=tests/lib.sh disable=SC1091
@@ -1355,6 +1363,128 @@ test_no_mistakes_mirror_only_branch_refuses() {
   pass "branch pushed only to the no-mistakes mirror is refused as unlanded"
 }
 
+# Land one commit on origin's main whose diff adds <file> with <content>, then a
+# second commit that edits it, as a pipeline rebase plus later work on main
+# would. The second commit keeps the content check from proving the landing, so
+# only a patch-id match can. Args: case_dir file content
+land_rebased_patch_then_move_on() {
+  local case_dir=$1 file=$2 content=$3 tmp
+  tmp="$case_dir/_rebased_$file"
+  git clone -q "$case_dir/origin.git" "$tmp"
+  printf '%s\n' "$content" > "$tmp/$file"
+  git -C "$tmp" add -- "$file"
+  git -C "$tmp" -c user.email=t@t -c user.name=t commit -q -m "rebased $file"
+  printf '%s\n' "$content" "main moved on" > "$tmp/$file"
+  git -C "$tmp" -c user.email=t@t -c user.name=t commit -q -am "main edits $file"
+  git -C "$tmp" push -q origin HEAD:main
+  rm -rf "$tmp"
+}
+
+# Run teardown on an already-built patch-id case and assert the outcome.
+# Args: label case_dir expected_rc
+run_patch_id_case() {
+  local label=$1 case_dir=$2 want=$3 rc
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code "$want" "$rc" "$label: unexpected teardown exit"$'\n'"$(cat "$case_dir/stderr")"
+}
+
+test_patch_identical_rebased_commit_allows() {
+  local case_dir
+  case_dir=$(make_case patch-identical)
+  write_meta "$case_dir" no-mistakes ship
+  wt_commit_file "$case_dir" feature.txt hello "add feature"
+  land_rebased_patch_then_move_on "$case_dir" feature.txt hello
+  run_patch_id_case patch-identical "$case_dir" 0
+  ! grep -q REFUSED "$case_dir/stderr" || fail "patch-identical: teardown printed a REFUSED line"
+  pass "unpushed commit re-landed on main with an identical patch is torn down"
+}
+
+test_patch_differing_by_one_line_refuses() {
+  local case_dir local_head
+  case_dir=$(make_case patch-one-line)
+  write_meta "$case_dir" no-mistakes ship
+  wt_commit_file "$case_dir" feature.txt hello "add feature"
+  local_head=$(git -C "$case_dir/wt" rev-parse HEAD)
+  land_rebased_patch_then_move_on "$case_dir" feature.txt hellp
+  run_patch_id_case patch-one-line "$case_dir" 1
+  grep -q REFUSED "$case_dir/stderr" || fail "patch-one-line: no REFUSED line in stderr"
+  grep -q 'no patch-identical commit was found' "$case_dir/stderr" \
+    || fail "patch-one-line: refusal lacks the no-patch-identical note"
+  assert_refusal_retained_task_state "$case_dir" patch-one-line "$local_head"
+  pass "a landed diff that differs by one line still refuses, with a note"
+}
+
+test_patch_identical_plus_merge_commit_refuses() {
+  local case_dir local_head tmp
+  case_dir=$(make_case patch-merge)
+  write_meta "$case_dir" no-mistakes ship
+  git -C "$case_dir/wt" checkout -q -b side
+  wt_commit_file "$case_dir" other.txt world "add other"
+  git -C "$case_dir/wt" checkout -q fm/task-x1
+  wt_commit_file "$case_dir" feature.txt hello "add feature"
+  git -C "$case_dir/wt" -c user.email=t@t -c user.name=t merge -q --no-ff -m "merge side" side
+  local_head=$(git -C "$case_dir/wt" rev-parse HEAD)
+  [ "$(git -C "$case_dir/wt" rev-list --parents -n 1 HEAD | wc -w)" = 3 ] || fail "patch-merge: fixture has no merge commit"
+  land_rebased_patch_then_move_on "$case_dir" feature.txt hello
+  land_rebased_patch_then_move_on "$case_dir" other.txt world
+  run_patch_id_case patch-merge "$case_dir" 1
+  grep -q 'is a merge commit' "$case_dir/stderr" || fail "patch-merge: refusal lacks the merge-commit note"
+  assert_refusal_retained_task_state "$case_dir" patch-merge "$local_head"
+  pass "an identical patch plus a merge commit still refuses"
+}
+
+test_patch_identical_plus_empty_commit_refuses() {
+  local case_dir local_head
+  case_dir=$(make_case patch-empty)
+  write_meta "$case_dir" no-mistakes ship
+  wt_commit_file "$case_dir" feature.txt hello "add feature"
+  wt_commit "$case_dir" "empty commit"
+  local_head=$(git -C "$case_dir/wt" rev-parse HEAD)
+  land_rebased_patch_then_move_on "$case_dir" feature.txt hello
+  run_patch_id_case patch-empty "$case_dir" 1
+  grep -q 'has an empty diff' "$case_dir/stderr" || fail "patch-empty: refusal lacks the empty-diff note"
+  assert_refusal_retained_task_state "$case_dir" patch-empty "$local_head"
+  pass "an identical patch plus an empty commit still refuses"
+}
+
+test_patch_one_identical_one_different_refuses() {
+  local case_dir local_head
+  case_dir=$(make_case patch-mixed)
+  write_meta "$case_dir" no-mistakes ship
+  wt_commit_file "$case_dir" feature.txt hello "add feature"
+  wt_commit_file "$case_dir" other.txt world "add other"
+  local_head=$(git -C "$case_dir/wt" rev-parse HEAD)
+  land_rebased_patch_then_move_on "$case_dir" feature.txt hello
+  land_rebased_patch_then_move_on "$case_dir" other.txt worle
+  run_patch_id_case patch-mixed "$case_dir" 1
+  grep -q 'no patch-identical commit was found' "$case_dir/stderr" \
+    || fail "patch-mixed: refusal lacks the no-patch-identical note"
+  assert_refusal_retained_task_state "$case_dir" patch-mixed "$local_head"
+  pass "one identical and one different commit still refuses"
+}
+
+test_patch_identical_beyond_search_limit_refuses() {
+  local case_dir local_head rc
+  case_dir=$(make_case patch-limit)
+  write_meta "$case_dir" no-mistakes ship
+  wt_commit_file "$case_dir" feature.txt hello "add feature"
+  local_head=$(git -C "$case_dir/wt" rev-parse HEAD)
+  land_rebased_patch_then_move_on "$case_dir" feature.txt hello
+  land_rebased_patch_then_move_on "$case_dir" later-a.txt a
+  land_rebased_patch_then_move_on "$case_dir" later-b.txt b
+  set +e
+  FM_TEARDOWN_PATCH_SEARCH_LIMIT=2 run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "patch-limit: a match older than the search window must not count"$'\n'"$(cat "$case_dir/stderr")"
+  grep -q 'searched the newest 2' "$case_dir/stderr" || fail "patch-limit: note does not name the search window"
+  assert_refusal_retained_task_state "$case_dir" patch-limit "$local_head"
+  pass "a patch-identical commit older than the search window refuses"
+}
+
 test_squash_merged_branch_deleted_allows() {
   local case_dir rc pr_head
   case_dir=$(make_case squash-merged)
@@ -1823,6 +1953,12 @@ test_content_fallback_git_capability_boundary() {
     case "$mode" in
       conflict) land_on_origin_main "$case_dir" feature.txt different ;;
       unlanded) ;;
+      unsupported|error)
+        # Same net content as the branch, but in two commits, so no single main
+        # commit is patch-identical to the local one: only the (unavailable)
+        # merge-tree proof could show it landed.
+        land_on_origin_main "$case_dir" feature.txt hell
+        land_on_origin_main "$case_dir" feature.txt hello ;;
       *) land_on_origin_main "$case_dir" feature.txt hello ;;
     esac
     head=$(git -C "$case_dir/wt" rev-parse HEAD)
@@ -7118,6 +7254,12 @@ test_gate_remote_is_not_refreshed_into_landed
 test_no_mistakes_origin_remote_allows
 test_no_mistakes_truly_unpushed_refuses
 test_no_mistakes_mirror_only_branch_refuses
+test_patch_identical_rebased_commit_allows
+test_patch_differing_by_one_line_refuses
+test_patch_identical_plus_merge_commit_refuses
+test_patch_identical_plus_empty_commit_refuses
+test_patch_one_identical_one_different_refuses
+test_patch_identical_beyond_search_limit_refuses
 test_local_only_force_overrides_unpushed
 test_secondmate_pr_registration_publishes_ready_line
 test_secondmate_pr_ready_line_waits_for_green_when_opted_in
