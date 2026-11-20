@@ -51,9 +51,10 @@
 # branch is no longer the task's recorded branch= (the worker moved on to its
 # next task) names the PR's own head instead, the forge-reported one
 # bin/fm-pr-check.sh reads at registration or the recorded pr_head=, which must
-# still be on a ref outside the copy (fm_dod_copy_moved_on). A copy still on its
-# branch keeps its HEAD as the named head, so a later unpushed commit is still
-# refused. A push to Gerrit's refs/for/ leaves no
+# still be on a ref outside the copy (fm_dod_copy_moved_on), as must the local
+# tip of the task's branch, so commits left unpushed there are still refused. A
+# copy still on its branch keeps its HEAD as the named head, so a later unpushed
+# commit is still refused. A push to Gerrit's refs/for/ leaves no
 # ref a fetch can see, so a done naming a Gerrit change skips the remote-tracking
 # reachability test entirely: it passes when that change is already the task's
 # recorded pr=, which bin/fm-pr-check.sh writes only after this gate accepted it
@@ -1409,7 +1410,7 @@ fm_dod_copy_moved_on() {  # <worktree> <meta>
 
 # The named-head half of fm_dod_accept_ship_done, for a done it gates.
 fm_dod_accept_named_head() {  # <kind> <mode> <worktree> <project> <line> [<state> <id> <meta> [meta-locked] [<pr-head>]]
-  local mode=$2 wt=$3 project=$4 line=$5 state=${6:-} id=${7:-} meta=${8:-} url sha gerrit pr_head=${10:-} captured=''
+  local mode=$2 wt=$3 project=$4 line=$5 state=${6:-} id=${7:-} meta=${8:-} url sha tip gerrit pr_head=${10:-} captured=''
   if [ "$mode" = local-only ] && [ -n "$meta" ]; then
     captured=$(cat "$meta") || return 1
     if [ "$(fm_dod_meta_value "$meta" worktree)" != "$wt" ] \
@@ -1443,6 +1444,15 @@ fm_dod_accept_named_head() {  # <kind> <mode> <worktree> <project> <line> [<stat
     [ -n "$pr_head" ] || [ "$(fm_dod_meta_value "$meta" pr)" != "$url" ] \
       || pr_head=$(fm_dod_meta_value "$meta" pr_head)
     ! fm_pr_head_valid "$pr_head" || sha=$pr_head
+    # Moving to another branch must not hide work left on the task's own branch:
+    # a local branch tip that no ref outside the copy holds is the named head.
+    if [ -n "$sha" ]; then
+      tip=$(git -C "$wt" rev-parse --verify -q "refs/heads/$(fm_dod_meta_value "$meta" branch)" 2>/dev/null) || tip=
+      if [ -n "$tip" ] && [ "$tip" != "$sha" ] \
+        && ! fm_dod_named_head_on_surviving_ref "$wt" "$project" "$mode" "$tip"; then
+        sha=$tip
+      fi
+    fi
   fi
   if [ -z "$sha" ]; then
     sha=$(git -C "$wt" rev-parse --verify HEAD 2>/dev/null) || {

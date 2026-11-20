@@ -484,7 +484,7 @@ test_direct_pr_recorded_head_does_not_cover_unpushed_commit() {
 # head: pushed, it is accepted whatever the copy's HEAD is; unpushed, refused.
 # A copy still on the task's branch keeps its own HEAD as the named head.
 test_moved_on_copy_is_judged_by_the_recorded_pr_head() {
-  local repo wt meta state pushed other reason rc
+  local repo wt meta state pushed other left reason rc
   repo="$TMP_ROOT/movedon-repo"
   wt="$TMP_ROOT/movedon-wt"
   state="$TMP_ROOT/movedon-state"
@@ -515,6 +515,19 @@ test_moved_on_copy_is_judged_by_the_recorded_pr_head() {
   case "$reason" in
     *"named head $pushed is unreachable outside the worker copy") ;;
     *) fail "the unpushed PR head refusal did not name the PR head: $reason" ;;
+  esac
+  # Work left unpushed on the task's own branch is not hidden by moving off it.
+  git -C "$wt" update-ref refs/remotes/origin/fm/movedon "$pushed"
+  git -C "$wt" checkout -q fm/movedon
+  git -C "$wt" commit -q --allow-empty -m 'left on the task branch, unpushed'
+  left=$(git -C "$wt" rev-parse HEAD)
+  git -C "$wt" checkout -q fm/next
+  reason=$(accept_done ship direct-PR "$wt" "$repo" "done: PR https://github.com/o/r/pull/5" "$state" movedon "$meta")
+  rc=$?
+  [ "$rc" -eq 1 ] || fail "unpushed work on the task's branch was accepted after the copy moved off it"
+  case "$reason" in
+    *"named head $left is unreachable outside the worker copy") ;;
+    *) fail "the refusal did not name the unpushed branch tip: $reason" ;;
   esac
   pass "a copy that moved to another branch is judged by the recorded PR head, which must be pushed"
 }
