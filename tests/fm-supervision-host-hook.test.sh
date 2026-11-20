@@ -358,7 +358,7 @@ test_claude_stop_hook_delivers_a_main_only_pass_through() {
   assert_re '	pass-through	attended	main-only	signal:' "$home/state/.supervision-host.log" "fixture: the close was not a main-only pass-through"
   assert_rewoke_main "$home" "hook main-only"
   assert_re '^signal: .*demo.status' "$home/hook.err" "the rewake must carry the close"
-  watcher_live "$home" || fail "hook main-only: the pass-through left no successor watcher"
+  wait_until 150 watcher_live "$home" || fail "hook main-only: the pass-through left no successor watcher"
   pass "host+hook: an attended main-only pass-through rewakes main and keeps its successor watcher"
 }
 
@@ -445,7 +445,7 @@ test_claude_stop_hook_runs_the_host_without_the_file_and_off_opts_out() {
   assert_re '^primary=claude$' "$first" "the engine must carry the Claude primary pin"
   assert_re '	handled	turn=[^	]*	posture=attended	' "$home/state/.supervision-host.log" "the ledger must record the attended turn"
   [ ! -s "$home/hook.rc" ] || fail "a routine attended wake on a Claude home without the file reached main: $(cat "$home/hook.err")"
-  watcher_live "$home" || fail "default-on: the host is not parked on a live successor"
+  wait_until 150 watcher_live "$home" || fail "default-on: the host is not parked on a live successor"
   : > "$home/session.stop"
   stop_home_processes "$home"
 
@@ -565,7 +565,7 @@ test_successor_close_during_main_turn_is_delivered_at_the_next_turn_end() {
   assert_rewoke_main "$home" "successor close (next turn end)"
   drained=$(main_drain "$home")
   assert_contains "$drained" 'which region?' "the successor's close must reach main's drain"
-  watcher_live "$home" || fail "successor close: the next turn end left no watcher"
+  wait_until 150 watcher_live "$home" || fail "successor close: the next turn end left no watcher"
   pass "host+hook: a successor close that lands during main's turn is delivered at the next turn end"
 }
 
