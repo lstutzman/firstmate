@@ -70,7 +70,8 @@
 # cherry, and merge-tree containment each fail to prove content landed without also
 # accepting unlanded edits to the same paths. Teardown still accepts a merged PR
 # whose head contains the current local work (ancestor or whitespace-exact patch ids),
-# or a clean content-in-default tree match. Anything else refuses.
+# a clean content-in-default tree match, or the patch-identical rebase proof above.
+# Anything else refuses.
 # The PR itself is resolved from the task's recorded pr= when present, or - when
 # no pr= was ever recorded (e.g. a yolo-authorized merge on a repo with no PR CI,
 # where the usual "checks green" fm-pr-check.sh trigger never fires) - by looking
