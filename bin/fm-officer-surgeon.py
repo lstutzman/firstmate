@@ -102,8 +102,8 @@ team PC, highest score first:
      (AREA_RULES, feature first: the feature rules on its path and then its words before
      `testing`); with no fit it is --triage-label; a label missing from team PC
      means the finding is reported and not filed. The Surgeon never creates a label.
-     Fleet work (lib.fleet_work: a finding from firstmate, skills or fleet-app) takes
-     area:fleet instead and goes in the Fleet project, and its bundles are apart from PropertyCompass2 ones.
+     Fleet work (lib.fleet_work: a finding from firstmate, skills or fleet-app) is filed
+     in team FLEET with its Type label alone, and its bundles are apart from PropertyCompass2 ones.
   2. every finding is a line on its source family's feature-area bundle (docs/officers/contract.md "Bundles";
      lib.Bundles): families code review, nightly E2E, bug sweeper and visual review (FAMILY), the area from
      area_for(..., feature_first=True), grouped by file inside, at most --bundle-cap open lines a part. A finding
@@ -1409,7 +1409,7 @@ def fold_fleet_app(args, names, idents, date, titles):
     """Folds fleet-app's open "Dependency a major version behind" and "Nightly E2E" items into bundles in fleet-app's own format."""
     out = args.out
     filer = lib.Filer(OFFICER, LIN, args.team, date, out, {}, {}, lib.Jev(None), args.max_creates)
-    filer.titles = list(titles)  # the list the fold already read, so bundle titles are looked up with no second read
+    filer.titles = {filer.team: list(titles)}  # the list the fold already read, so bundle titles are looked up with no second read
     findings, kept = [], []
     for ident in idents:
         try:

@@ -19,7 +19,7 @@
 # coverage gap),
 # and the registry refusing a friction line with no archive.
 # With writes: linear (a fake linear-axi that logs every call): every finding filed once with
-# Improvement, agent and area:fleet in the Fleet project, a repeat night raising the
+# Improvement in team FLEET (no Source, area or project), a repeat night raising the
 # Found line, no transcript text in an item, a missing label or writes: none starting nothing
 # and leaving the card on Start fix, the create cap naming what it leaves, the rubric
 # narrowing what starts, and only standing-work findings handed to the office.
@@ -65,8 +65,9 @@ case "$1 $2" in
     case " $* " in
       *" --verify "*)
         n=$(( $(cat "$d/created" 2>/dev/null || echo 100) + 1 )); echo "$n" > "$d/created"
-        for a in "$@"; do [ "${prev:-}" = "--body-file" ] && cat "$a" >> "$d/bodies" && echo >> "$d/bodies"; prev=$a; done
-        echo '{"ok":true,"data":{"issue":{"identifier":"PC-'"$n"'"}}}' ;;
+        team=PC
+        for a in "$@"; do [ "${prev:-}" = "--body-file" ] && cat "$a" >> "$d/bodies" && echo >> "$d/bodies"; [ "${prev:-}" = "--team" ] && team=$a; prev=$a; done
+        echo '{"ok":true,"data":{"issue":{"identifier":"'"$team"'-'"$n"'"}}}' ;;
       *) echo '{"ok":true,"data":{"dryRun":true}}' ;;
     esac ;;
   "issue update")
@@ -1928,8 +1929,12 @@ test_findings_are_filed_in_linear_under_the_contract() {
   assert_equals "Automated findings: environment (friction)|Automated findings: tooling (friction)|Automated findings: waiting (friction)" \
     "$(grep '^issue create .*--verify' "$log" | sed 's/.*--title \(.*\) --body-file.*/\1/' | sort | paste -sd'|')" "titled by category and source family"
   assert_equals "$bundles" "$(grep -c '^issue create .*--dry-run' "$log")" "every create is a dry run first, then a verified write"
-  assert_equals "$bundles" "$(count_lines '^issue create .*--label Improvement --label agent --label area:fleet --project Fleet --verify' "$log")" \
-    "each item has one Type, the agent Source and area:fleet, in the Fleet project"
+  assert_equals "$bundles" "$(count_lines '^issue create --team FLEET .*--label Improvement --verify' "$log")" \
+    "each item is filed in team FLEET with its one Type label"
+  assert_equals "0" "$(count_lines '^issue create .*\(--label agent\|--label area:fleet\|--project\)' "$log")" \
+    "and carries no Source label, no area label and no project"
+  assert_equals "0" "$(count_lines '^issue create --team PC' "$log")" "nothing fleet is filed in team PC"
+  assert_contains "$(<"$log")" "label list --team FLEET" "team FLEET's labels are read for the Type label"
   assert_contains "$(grep '^issue create .*Automated findings: waiting (friction)' "$log" | head -1)" "--priority 2" "a bundle holding a card-bar finding is High priority"
   assert_equals "$real" "$(count_lines '^- \[ \] friction-fp:' "$dir/bodies")" "every finding is one checklist line carrying its fingerprint"
   assert_equals "$bundles" "$(count_lines '^friction-fp:' "$dir/bodies")" "and each bundle's own marker is alone on its line"
@@ -1966,10 +1971,10 @@ test_a_missing_label_or_no_writes_starts_nothing() {
   dir=$FAKE_LINEAR_DIR
   json="$home/data/officers/friction/$DATE.json"
   vel="$home/data/officers/friction/$DATE.velocity-findings.json"
-  printf '%s\n' Bug Improvement area:fleet > "$dir/labels.txt"
+  printf '%s\n' Bug agent area:fleet > "$dir/labels.txt"
   run_officer "$home" >/dev/null || fail "a run with a missing label must succeed"
-  assert_equals "0" "$(creates "$dir/log")" "with the Source label missing nothing is created"
-  assert_contains "$(jq -r '[.findings[].linear.reason // empty] | join(" ")' "$json")" "label(s) not found in team PC: agent" \
+  assert_equals "0" "$(creates "$dir/log")" "with the Type label missing from team FLEET nothing is created"
+  assert_contains "$(jq -r '[.findings[].linear.reason // empty] | join(" ")' "$json")" "label(s) not found in team FLEET: Improvement" \
     "the finding is reported with the missing label named"
   assert_equals "0 0" "$(jq -r '"\(.start_requests | length) \([.findings[] | select(.state.state == "started-by-default")] | length)"' "$json")" \
     "with no Linear item no finding starts by default"
@@ -1986,7 +1991,7 @@ test_a_missing_label_or_no_writes_starts_nothing() {
   assert_equals "gone" "$([ -e "$FAKE_LINEAR_DIR/log" ] && echo called || echo gone)" "writes: none makes no Linear call at all"
   assert_equals "0" "$(jq '.start_requests | length' "$json")" "and starts nothing by default"
   assert_contains "$(jq -r '.coverage.notes | join(" ")' "$json")" "set writes: linear" "the digest says why"
-  pass "fm-officer friction: a missing Source label or writes: none files and starts nothing, and the card offers Start fix"
+  pass "fm-officer friction: a missing Type label or writes: none files and starts nothing, and the card offers Start fix"
 }
 
 test_repeated_ask_words_never_reach_linear() {

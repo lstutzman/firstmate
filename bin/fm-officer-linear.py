@@ -24,7 +24,12 @@ how it finds things. This file owns the mechanics every officer shares:
               edited or re-prioritised: a repeat finding files a new item that names it (`Recurrence of <id>`), unless
               the Filer is built with bump_closed (the page-check officer), when it bumps the closed item and starts nothing.
               An item gets exactly one Type, one Source and one area label; fleet work
-              (is_fleet: a finding's repository, else its Officer's project) goes in the Fleet project, with the area:fleet label (fleet_labels). The library never creates a label and never deletes an item; the one
+              (is_fleet: a finding's repository, else its Officer's project) files in team FLEET instead of the Filer's
+              own team (FLEET_TEAM, Filer.team_for), with exactly one Type label and no Source, area or project
+              (that team has none of those labels; item_labels). Its duplicate search, title lookup and bundle
+              continuation read team FLEET, so the next run appends to the open FLEET bundle. Items filed in team PC
+              (project Fleet) before this stay as they are: a lane's bundle state keeps writing them until a person
+              closes them, and the next bundle is then created in FLEET. The library never creates a label and never deletes an item; the one
               close is close_with_comment(), which only the page-check officer calls, on an item it filed itself
               (docs/officers/contract.md "File").
   bundles     Bundles (docs/officers/contract.md "Bundles" owns the rule): one open item per (officer, source family, area,
@@ -138,6 +143,7 @@ PATTERN_TARGET = ".agents/skills/sdlc-review/references/quality-patterns.md"
 DEFAULT_PROJECT = "PropertyCompass2"
 FLEET_PROJECT = "Fleet"
 FLEET_AREA = "area:fleet"
+FLEET_TEAM = "FLEET"  # fleet work files here, not in the Filer's own team (docs/officers/contract.md "File")
 BUILTIN_START_SEVERITIES = ("medium", "high", "critical")
 RATE_OR_BUDGET = ("RATE_LIMITED", "CALL_BUDGET")
 FLEET_REPOS = ("firstmate", "skills", "fleet-app")
@@ -395,7 +401,8 @@ def recurrence_line(old, issue):
 
 
 def fleet_labels(source_label, names, type_label="Bug"):
-    """(labels, missing) for a fleet finding: one Type, one Source and the area:fleet label (Fleet project goes with it)."""
+    """(labels, missing) an officer offers for a fleet finding: one Type, one Source and the area:fleet label, checked
+    against its own team's labels. Filer.item_labels keeps only the Type (team FLEET has no Source or area labels)."""
     wanted = [type_label, source_label, FLEET_AREA]
     return wanted, [w for w in wanted if w.lower() not in names]
 
@@ -519,7 +526,12 @@ class Filer:
         self.bump_closed = bump_closed
         self.ledger, self.found, self.jev, self.max_creates = ledger, found, jev, max_creates
         self.cache, self.creates, self.bumps = {}, 0, []
-        self.titles = None  # the team's newest items for exact-title lookups, read once a run (title_index)
+        self.titles = {}  # team -> its newest items for exact-title lookups, read once a run (title_index)
+        self.fleet_names = None  # the lower-cased label names of team FLEET, read once a run, only when fleet work is filed
+
+    def team_for(self, project):
+        """The team a finding files in: FLEET for fleet work (fleet_work), else this Filer's own team."""
+        return FLEET_TEAM if fleet_work(self.officer, project) else self.team
 
     def over_cap(self):
         return self.creates >= self.max_creates
@@ -531,15 +543,15 @@ class Filer:
             self.cache[ident] = issue if isinstance(issue, dict) else {}
         return self.cache[ident]
 
-    def search_hits(self, query, limit):
-        found = self.lin(["issue", "search", query, "--team", self.team, "--limit", str(limit)]).get("issues")
+    def search_hits(self, query, limit, team=None):
+        found = self.lin(["issue", "search", query, "--team", team or self.team, "--limit", str(limit)]).get("issues")
         return [text(h.get("identifier"), 20) for h in dicts(found) if h.get("identifier")]
 
     def is_bundle(self, ident):
         return text(self.view_issue(ident).get("title"), 300).startswith(BUNDLE_PREFIX)
 
-    def existing_issue(self, fp):
-        """(open, closed): the open Linear item whose description carries the fingerprint, and the first closed one.
+    def existing_issue(self, fp, team=None):
+        """(open, closed): the open Linear item of `team` (default: this Filer's) whose description carries the fingerprint, and the first closed one.
 
         A closed item is never reused; it only lets the caller file a recurrence that names it, or bump it (bump_closed).
 
@@ -548,7 +560,7 @@ class Filer:
         """
         marker = "%s:%s" % (self.officer.marker, fp)
         closed = None
-        for ident in self.search_hits(marker, 5)[:EXISTING_VIEWS]:
+        for ident in self.search_hits(marker, 5, team)[:EXISTING_VIEWS]:
             issue = self.view_issue(ident)
             if ident and marker in str(issue.get("description") or "") and not self.is_bundle(ident):
                 if not is_closed(issue):
@@ -559,7 +571,7 @@ class Filer:
     def similar_issue(self, f):
         """(issue, confidence, near): a duplicate above JEV_SAME, else the best near match (or None)."""
         best = (None, 0.0)
-        for ident in [i for i in self.search_hits(f["title"], 5) if not self.is_bundle(i)][:JEV_CANDIDATES]:
+        for ident in [i for i in self.search_hits(f["title"], 5, self.team_for(f["project"])) if not self.is_bundle(i)][:JEV_CANDIDATES]:
             issue = self.view_issue(ident)
             confidence = self.jev.same(finding_text(f), "%s\n%s" % (issue.get("title") or "", str(issue.get("description") or "")[:600]),
                                        subject=f["fingerprint"])
@@ -584,16 +596,15 @@ class Filer:
         """(issue, created, verify error): a new item; the caller has already searched for the fingerprint."""
         path = self._write_body(fp, body)
         try:
-            cmd = ["issue", "create", "--team", self.team, "--title", title, "--body-file", path, "--priority", priority]
+            team = self.team_for(project)
+            cmd = ["issue", "create", "--team", team, "--title", title, "--body-file", path, "--priority", priority]
             for label in labels:
                 cmd += ["--label", label]
-            if fleet_work(self.officer, project):
-                cmd += ["--project", FLEET_PROJECT]
             self.lin(cmd + ["--dry-run"])
             self.creates += 1
             # What the run already knew of the team's titles, so a mismatched create is told from older same-title items
             # (a cluster reads the list before it creates; a single does not spend a call on it).
-            before_known, before = self.titles is not None, {h["identifier"] for h in self.titles or ()}
+            before_known, before = team in self.titles, {h["identifier"] for h in self.titles.get(team, ())}
             try:
                 ident = issue_id(self.lin(cmd + ["--verify"]))
                 self.note_title(ident, title, project)
@@ -644,40 +655,42 @@ class Filer:
                 os.remove(path)
         self.cache.pop(ident, None)
 
-    def title_index(self, refresh=False):
-        """The team's newest TITLE_INDEX_ITEMS items as dicts (identifier, title, project, stateType), read once a run.
+    def title_index(self, refresh=False, team=None):
+        """The newest TITLE_INDEX_ITEMS items of `team` (default: this Filer's) as dicts (identifier, title, project, stateType), read once a run.
 
         `issue list` reads Linear's data, not its full-text index: `issue search` misses long, punctuated titles
         (even many minutes after the write), so no exact-title lookup relies on it. One call, however many pages.
         """
-        if self.titles is None or refresh:
-            data = self.lin(["issue", "list", "--team", self.team, "--all", "--max-items", str(TITLE_INDEX_ITEMS),
+        team = team or self.team
+        if team not in self.titles or refresh:
+            data = self.lin(["issue", "list", "--team", team, "--all", "--max-items", str(TITLE_INDEX_ITEMS),
                              "--limit", str(TITLE_INDEX_PAGE), "--fields", "project,stateType"])
-            self.titles = [h for h in dicts(data.get("issues")) if h.get("identifier")]
-        return self.titles
+            self.titles[team] = [h for h in dicts(data.get("issues")) if h.get("identifier")]
+        return self.titles[team]
 
     def note_title(self, ident, title, project):
         """Adds an item this run wrote to the title index, so a later lookup of its title finds it."""
-        if self.titles is not None and ident not in {h["identifier"] for h in self.titles}:
-            self.titles.append({"identifier": ident, "title": title, "project": FLEET_PROJECT if fleet_work(self.officer, project) else None})
+        team = self.team_for(project)
+        if team in self.titles and ident not in {h["identifier"] for h in self.titles[team]}:
+            self.titles[team].append({"identifier": ident, "title": title, "project": None})
 
     def open_titles(self, title, fleet=None, refresh=False, exclude=()):
-        """Every open item in the team whose title equals `title` (case-insensitive), lowest PC number first.
+        """Every open item whose title equals `title` (case-insensitive), lowest number first.
 
         A closed item is never listed (stateType, else state, as is_closed reads it).
-        `fleet` (True or False) also requires the item to be in the Fleet project, or not, so a Fleet and a
-        PropertyCompass2 cluster that share a title never share an item.
+        `fleet` True reads team FLEET, so a fleet cluster never shares an item with a PropertyCompass2 one; False reads
+        this Filer's own team and skips any item still in the Fleet project (filed there before fleet work moved to
+        team FLEET); None reads the own team without that filter.
         `refresh` reads the list again, for an item written since the run's first lookup; `exclude` skips identifiers
         that existed before the write being looked for.
         """
         want = title.strip().lower()
         hits = []
-        for h in self.title_index(refresh):
+        for h in self.title_index(refresh, FLEET_TEAM if fleet else None):
             ident = text(h.get("identifier"), 20)
             if text(h.get("title"), 300).lower() != want or is_closed(h) or ident in exclude:
                 continue
-            in_fleet = text(h.get("project"), 80).lower() == FLEET_PROJECT.lower()
-            if fleet is None or fleet == in_fleet:
+            if fleet or fleet is None or text(h.get("project"), 80).lower() != FLEET_PROJECT.lower():
                 hits.append(ident)
         return sorted(hits, key=lambda i: (int(re.sub(r"\D", "", i) or 0), i))
 
@@ -729,16 +742,30 @@ class Filer:
         self.lin(["issue", "comment", ident, "--body", body, "--verify"])
         return count
 
+    def fleet_label_names(self):
+        """The lower-cased label names of team FLEET, read once a run."""
+        if self.fleet_names is None:
+            self.fleet_names = label_names(self.lin, FLEET_TEAM)
+        return self.fleet_names
+
     def item_labels(self, f, label_set):
-        """(labels, reason not to file or None): label_set's Type and Source; fleet work always takes area:fleet."""
+        """(labels, reason not to file or None): label_set's labels in team PC; fleet work files in team FLEET with
+        exactly one Type label (label_set's first), as that team has no Source or area labels."""
         wanted, missing = label_set(f)
-        if fleet_work(self.officer, f["project"]):
-            missing = [m for m in missing if m in wanted[:2]]
-            wanted = wanted[:2] + [FLEET_AREA]
+        team = self.team_for(f["project"])
+        if team == FLEET_TEAM:
+            wanted = wanted[:1]
+            try:
+                names = self.fleet_label_names()
+            except LinearError as exc:
+                if exc.code in RATE_OR_BUDGET:
+                    raise
+                return wanted, "label lookup failed in team %s: %s" % (FLEET_TEAM, exc)
+            missing = [w for w in wanted if w.lower() not in names]
         elif FLEET_AREA in wanted:
             return wanted, "%s is only for fleet work" % FLEET_AREA
         if missing:
-            return wanted, "label(s) not found in team %s: %s" % (self.team, ", ".join(missing))
+            return wanted, "label(s) not found in team %s: %s" % (team, ", ".join(missing))
         return wanted, None
 
     # one finding, one item
@@ -770,15 +797,15 @@ class Filer:
         label_set(f) -> (labels, missing labels); describe(f, near=None, recurrence=None) -> the item body.
         RATE_LIMITED and CALL_BUDGET are raised to the caller after the finding is marked failed.
         """
-        wanted, reason = self.item_labels(f, label_set)
-        if reason:
-            f["filing"] = {"action": "not-filed", "reason": reason}
-            return
-        if self.over_cap():
-            f["filing"] = {"action": "not-filed", "reason": "over max-creates for this run"}
-            return
         try:
-            ident, closed = self.existing_issue(f["fingerprint"])
+            wanted, reason = self.item_labels(f, label_set)
+            if reason:
+                f["filing"] = {"action": "not-filed", "reason": reason}
+                return
+            if self.over_cap():
+                f["filing"] = {"action": "not-filed", "reason": "over max-creates for this run"}
+                return
+            ident, closed = self.existing_issue(f["fingerprint"], self.team_for(f["project"]))
             if ident:
                 self.ledger[f["fingerprint"]] = ident
                 f["filing"], f["issue_hint"] = {"action": "exists", "issue": ident}, ident
@@ -971,7 +998,7 @@ class Bundles:
             if note:
                 keep.append((f, note))
                 continue
-            ident, closed = self.filer.existing_issue(f["fingerprint"])
+            ident, closed = self.filer.existing_issue(f["fingerprint"], self.filer.team_for(f["project"]))
             if not ident and closed and self.filer.bump_closed:
                 ident = closed
             if ident:
@@ -1331,12 +1358,12 @@ def is_fleet_project(project):
 
 
 def is_fleet(project):
-    """Fleet work: the Fleet project itself or a fleet repository; its items go in the Fleet project with area:fleet."""
+    """Fleet work: the Fleet project itself or a fleet repository; its items file in team FLEET."""
     return is_fleet_project(project) or repo_key(project) in FLEET_REPOS
 
 
 def fleet_work(officer, project):
-    """Whether a finding (its repository, else the officer's project) is fleet work: Fleet project and area:fleet."""
+    """Whether a finding (its repository, else the officer's project) is fleet work: it files in team FLEET."""
     return is_fleet(owning_project(officer, project))
 
 

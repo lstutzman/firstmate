@@ -284,8 +284,8 @@ docs/officers/friction-rubric.md, which owns what counts as work, how a finding
 is scored and what starts. With --writes linear (the registry's `writes:
 linear`, with max-creates, max-linear-calls and jev) every finding that is
 real, not tracked (state settled, started or fixed), and not a product choice
-or a retired tool is filed once in team PC, project Fleet, labels Improvement,
-the Source label agent (from Lee's set) and area:fleet, keyed by its cause, sub and name,
+or a retired tool is filed once in team FLEET, label Improvement alone (no Source, area or
+project there), keyed by its cause, sub and name,
 as a line on its CATEGORY bundle (docs/officers/contract.md "Bundles"; file_findings).
 A repeat night raises the finding's own found count, and the found
 count is the priority lever: score = severity weight x log2(1 + found), with a

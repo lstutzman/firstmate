@@ -4,7 +4,7 @@
 # velocity audit document, a fake linear-axi, a fake fleet-axi and fake inboxes.
 #
 # Covers: each of the five choices (Create item for later, Create and fix now, Let's discuss, Not for us, Object) and
-# the older words Accept and Reject; the Linear item (Improvement, agent, area:fleet, Fleet project, the suggestion
+# the older words Accept and Reject; the Linear item (Improvement alone, in team FLEET, the suggestion
 # id as its key) and the answer "Filed as PC-n" after the acknowledgement; the start note reaching the owning office
 # (and main for main, slarti, Lee or an unknown owner, or a reserved class); a repeat tap filing nothing twice; a
 # rerun of the day changing nothing; a reply that already has an answer or an acknowledgement, a tap older than the
@@ -53,6 +53,7 @@ case "$1 $2" in
           [ "$prev" = "--body-file" ] && cp "$a" "$d/issue.$n"
           [ "$prev" = "--label" ] && echo "$n $a" >> "$d/labels.used"
           [ "$prev" = "--project" ] && echo "$n $a" >> "$d/projects.used"
+          [ "$prev" = "--team" ] && echo "$n $a" >> "$d/teams.used"
           [ "$prev" = "--title" ] && echo "$n $a" >> "$d/titles.used"
           prev=$a
         done
@@ -125,7 +126,7 @@ make_world() {
   chmod 700 "$w/main/state" "$w/office/state"
   printf '{"sessions": []}\n' > "$w/spec.json"
   officer_archive "$w/archive" "$DATE" "$w/spec.json"
-  printf '%s\n' Bug Improvement agent area:fleet > "$w/linear/labels.txt"
+  printf '%s\n' Bug Improvement > "$w/linear/labels.txt"
   jq -n '{value: {suggestions: [
     {id: "vs-20261022-1", title: "Agents wait on the staging queue", tldr: "Five waits of ten minutes each.", severity: 4, confidence: 4,
      effort: "S", improvement: "Raise the staging queue concurrency to two.", impact: "Saves an hour a day.", owner: "quartermaster",
@@ -176,9 +177,10 @@ test_create_for_later_files_and_answers() {
   set_replies "$w" "$(reply 1 1 "Create item for later: Agents wait on the staging queue")"
   tap_run "$w"
   assert_equals "PC-101" "PC-$(cat "$w/linear/created")" "one Linear item was created"
-  assert_equals "Improvement agent area:fleet" "$(awk '{print $2}' "$w/linear/labels.used" | paste -sd' ')" \
-    "the item carries Improvement, agent and area:fleet"
-  assert_equals "101 Fleet" "$(cat "$w/linear/projects.used")" "a fleet item is filed in the Fleet project"
+  assert_equals "Improvement" "$(awk '{print $2}' "$w/linear/labels.used" | paste -sd' ')" \
+    "the item carries its one Type label and no Source or area label"
+  assert_equals "101 FLEET" "$(cat "$w/linear/teams.used")" "a fleet item is filed in team FLEET"
+  assert_equals "gone" "$([ -e "$w/linear/projects.used" ] && echo used || echo gone)" "with no Linear project"
   assert_grep "velocity-taps-fp:" "$w/linear/issue.101" "the item carries the suggestion's fingerprint as its key"
   assert_grep "Raise the staging queue concurrency to two." "$w/linear/issue.101" "the item holds the card's what-to-change text"
   assert_grep "Epic: not assigned; whoever triages this picks one." "$w/linear/issue.101" "the item leaves its epic to triage, as every officer item does"

@@ -15,7 +15,7 @@
 # tool, nothing written outside the lane).
 #
 # With writes: linear (a fake linear-axi that logs every call): every open
-# finding filed once in team PC, project Fleet, as Bug, agent and area:fleet, with
+# finding filed once in team FLEET, as Bug alone, with
 # no card words in the item, a later day raising the Found line in place, the
 # create cap naming its overflow, a start request only for a page defect
 # (page-old, shown-after-done) and never for a card a rule settles, a settled
@@ -372,8 +372,9 @@ test_findings_are_filed_in_linear_under_the_contract() {
   assert_equals "$b" "$(jq '[.findings[] | .page] | unique | length' "$json")" "the open findings go to one bundle per page"
   assert_equals "$b" "$(creates "$log")" "one item per bundle, not one per finding"
   assert_equals "$b" "$(grep -c '^issue create .*--dry-run' "$log")" "every create is a dry run first, then a verified write"
-  assert_equals "$b" "$(count_lines '^issue create .*--title Automated findings: .* (page check) .*--label Bug --label agent --label area:fleet --project Fleet --verify' "$log")" \
-    "each item is titled by its page, with one Type, the agent Source and area:fleet, in the Fleet project"
+  assert_equals "$b" "$(count_lines '^issue create --team FLEET --title Automated findings: .* (page check) .*--label Bug --verify' "$log")" \
+    "each item is titled by its page, with one Type, in team FLEET"
+  assert_equals "0" "$(count_lines '^issue create .*\(--label agent\|--label area:fleet\|--project\)' "$log")" "with no Source label, no area label and no project"
   assert_equals "$n" "$(count_lines '^- \[ \] page-check-fp:' "$dir/bodies")" "every finding is one checklist line carrying its fingerprint"
   assert_equals "$b" "$(count_lines '^page-check-fp:' "$dir/bodies")" "and each bundle's own marker is alone on its line"
   assert_no_grep "Approve deleting 475" "$dir/bodies" "no card question reaches Linear"
@@ -442,9 +443,9 @@ test_no_writes_a_missing_label_and_the_cap() {
   linear_world nolabel
   home=$LW_HOME
   dir=$FAKE_LINEAR_DIR
-  printf '%s\n' Bug area:fleet > "$dir/labels.txt"
+  printf '%s\n' agent area:fleet > "$dir/labels.txt"
   officer nolabel run page-check --date "$KEY" >/dev/null || fail "a run with a missing label must succeed"
-  assert_equals "0" "$(creates "$dir/log")" "a label team PC lacks means nothing is filed"
+  assert_equals "0" "$(creates "$dir/log")" "a Type label team FLEET lacks means nothing is filed"
   assert_contains "$(<"$home/data/officers/page-check/$KEY.md")" "Not filed" "and the digest says so"
   assert_equals "0" "$(jq '.start_requests | length' "$home/data/officers/page-check/$KEY.json")" "an unfiled finding is not started"
 

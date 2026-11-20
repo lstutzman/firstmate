@@ -75,8 +75,7 @@ Linear. The officer follows the shared officer contract (docs/officers/contract.
 bin/fm-officer-linear.py owns the mechanics) with its rubric docs/officers/corpus-rubric.md,
 which owns what counts as work, how a finding is scored and what starts. With
 --writes linear (the registry's `writes: linear`, with max-creates, max-linear-calls and
-jev) every open finding is filed in team PC as a Chore, Source label agent, in the Fleet
-project with the area:fleet label, searched for first by its `corpus-fp:<sha256>` marker and
+jev) every open finding is filed in team FLEET as a Chore (the Type label alone), searched for first by its `corpus-fp:<sha256>` marker and
 then by title with local-jev, as a line on its class's bundle (docs/officers/contract.md
 "Bundles"), and every night it is still open raises its own found count once. The line holds
 only the finding's class, subject, severity, repository and scan-gate note (an older single

@@ -79,7 +79,7 @@ Linear. With --writes linear (the registry's `writes: linear`) the officer follo
 shared officer contract (docs/officers/contract.md; bin/fm-officer-linear.py owns the
 mechanics) with its rubric docs/officers/page-check-rubric.md, which owns what counts
 as work, the severity of each kind and what starts. Every open finding is filed once
-in team PC, project Fleet, labels Bug, the Source label agent and area:fleet, keyed by
+in team FLEET, label Bug alone (no Source, area or project there), keyed by
 its id (kind, page and object), as a line on its page's bundle (docs/officers/contract.md
 "Bundles"), so a finding nobody fixed raises its own found count once a day and that count
 is the priority lever. A card's own words never go to Linear: the line names the card by id.

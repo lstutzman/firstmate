@@ -33,7 +33,7 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 
 ## Where findings are filed
 
-- Team PC, project Fleet, label `area:fleet`, Type Improvement, Source `agent`, the label Lee's Linear setup gives a worker filing on his behalf; the officer's identity is in each item's fingerprint marker and description.
+- Team FLEET (fleet work: [contract](contract.md#file)), Type Improvement, no Source, area label or project, because team FLEET has none; the officer's identity is in each item's fingerprint marker and description.
 - Each friction finding is one line on its category's bundle (tooling, waiting, environment or other), keyed by its cause, sub-cause and name, so the same group is the same line every night; the shared [bundle rule](contract.md#bundles) owns the rest.
 - Duplicates, recurrences of closed items and the call budget are the shared [filing rules](contract.md#file).
 - A line carries the finding's title, severity and fingerprint; an older single item's body carries counts, waits, the root cause, the proposed fix, the owner and effort, and task, status and card identifiers.

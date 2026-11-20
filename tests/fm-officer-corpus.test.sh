@@ -12,7 +12,7 @@
 # writes, and the registry's archive requirement.
 #
 # With writes: linear (a fake linear-axi that logs every call): findings filed as Chore items
-# under the corpus-fp marker in the Fleet project with area:fleet, nothing but counts, names
+# under the corpus-fp marker in team FLEET with the Type label alone, nothing but counts, names
 # and timestamps in an item body, the create cap with the overflow named, the Found line
 # raised once a night, a high finding started on first sight and a medium one on its third
 # night, a start request addressed to the office that dispatches the repository (else this
@@ -325,7 +325,7 @@ request_of() {  # <class> [date]: the start request of a finding class from the 
   jq -c --arg c "$1" '.start_requests[] | select(.class == $c)' "$(lane)/${2:-$DATE}.json"
 }
 
-test_findings_are_filed_in_the_fleet_project_with_counts_only() {
+test_findings_are_filed_in_team_fleet_with_counts_only() {
   local dir log json
   linear_world filed
   dir=$FAKE_LINEAR_DIR
@@ -334,8 +334,10 @@ test_findings_are_filed_in_the_fleet_project_with_counts_only() {
   run_corpus >/dev/null || fail "a writing run must succeed"
   assert_equals 6 "$(count_lines '^issue create .*--verify' "$log")" "each of the six open findings is filed once"
   assert_equals 6 "$(count_lines '^issue create .*--dry-run' "$log")" "every create is a dry run first"
-  assert_equals 6 "$(count_lines '^issue create .*--label Chore --label agent --label area:fleet --project Fleet --dry-run' "$log")" \
-    "each item is a Chore with the agent Source and area:fleet, in the Fleet project, in team PC"
+  assert_equals 6 "$(count_lines '^issue create --team FLEET .*--label Chore --dry-run' "$log")" \
+    "each item is a Chore filed in team FLEET"
+  assert_equals 0 "$(count_lines '^issue create .*\(--label agent\|--label area:fleet\|--project\)' "$log")" "with no Source label, no area label and no project"
+  assert_equals 0 "$(count_lines '^issue create --team PC' "$log")" "and nothing fleet in team PC"
   assert_equals 6 "$(count_lines '^Automated findings: ' <(grep '^issue create .*--verify' "$log" | sed 's/.*--title //'))" "each finding class is its own bundle"
   assert_equals 6 "$(count_lines '^corpus-fp:' "$dir/bodies")" "every body carries the bundle's corpus-fp marker alone on its line"
   assert_equals 6 "$(count_lines '^- \[ \] corpus-fp:[0-9a-f]* .*; repository: ' "$dir/bodies")" "and one checklist line per finding, naming its repository"
@@ -455,10 +457,10 @@ test_no_writes_and_a_missing_label_file_nothing() {
 
   linear_world nolabel
   dir=$FAKE_LINEAR_DIR
-  printf '%s\n' Bug Chore area:fleet > "$dir/labels.txt"
+  printf '%s\n' Bug agent area:fleet > "$dir/labels.txt"
   run_corpus >/dev/null || fail "a run with a missing label must succeed"
-  assert_equals 0 "$(count_lines '^issue create' "$dir/log")" "with the Source label missing nothing is created"
-  assert_contains "$(jq -r '[.findings[].linear.reason // empty] | join(" ")' "$(lane)/$DATE.json")" "label(s) not found in team PC: agent" "each finding is reported with the label named"
+  assert_equals 0 "$(count_lines '^issue create' "$dir/log")" "with the Type label missing from team FLEET nothing is created"
+  assert_contains "$(jq -r '[.findings[].linear.reason // empty] | join(" ")' "$(lane)/$DATE.json")" "label(s) not found in team FLEET: Chore" "each finding is reported with the label named"
   pass "fm-officer corpus: writes: none and a missing label file nothing"
 }
 
@@ -819,7 +821,7 @@ test_harvest_zero_total_is_not_missing_counts
 test_coverage_gaps_never_fail_the_run
 test_run_writes_only_its_lane
 test_registry_needs_archive
-test_findings_are_filed_in_the_fleet_project_with_counts_only
+test_findings_are_filed_in_team_fleet_with_counts_only
 test_create_cap_names_the_overflow
 test_start_requests_follow_the_rubric_and_the_repository
 test_a_medium_finding_starts_on_its_third_night
