@@ -843,9 +843,9 @@ def check(channel):
             if side == announced.get(repo, 'off'):
                 continue
             announced[repo] = side
-            changes.append((f'pr-drain-{repo}', side == 'on', f'PR drain {side}: {repo} has {count} open PRs '
-                            + ('(20 or more); only exempt work and PR landing may run there until it is back to 0'
-                               if side == 'on' else '(back to 0); ordinary ship work may resume there')
+            changes.append((f'pr-drain-{repo}', side == 'on', f'PR drain {side}: {repo} has {count} eligible open PRs '
+                            + ('(24 or more); only exempt work and PR landing may run there until it is back to its CI slots S or fewer'
+                               if side == 'on' else '(back to S or fewer); ordinary ship work may resume there')
                             + f'; relay drain-{side} to every home'))
         # CI slots: announce only a change between over (open PRs P above the slots S) and within.
         slots_announced = dict(stored.get('ci_slots', {}).get(channel, {}))

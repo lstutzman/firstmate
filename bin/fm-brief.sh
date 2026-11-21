@@ -1236,7 +1236,7 @@ case "$PR_DRAIN" in
       [ "$PR_DRAIN_STATE" != on ] || PR_DRAIN_SECTION="
 
 # PR drain
-$PR_DRAIN_REPO was in PR drain ($PR_DRAIN_OPEN open PRs) when this brief was written: it takes no new pull requests until its open PRs are merged down to 0.
+$PR_DRAIN_REPO was in PR drain ($PR_DRAIN_OPEN open PRs) when this brief was written: it takes no new pull requests until its eligible open PRs are merged down to its CI slots S or fewer (0 when it declares none).
 ${PR_DRAIN_DOD:+Follow the PR drain check in the Definition of done before you open a pull request.}${PR_DRAIN_DOD:-$PR_DRAIN_RULE}"
     fi
     ;;

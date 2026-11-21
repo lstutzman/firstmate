@@ -298,18 +298,18 @@ run_slots shared >/dev/null || status=$?
 [ "$status" -eq 3 ] || fail "--ci-slots did not refuse a project named twice (status $status)"
 pass "fm-project-mode: --ci-slots reads config/ci-slots, prints nothing when undeclared, and refuses a malformed or duplicated declaration"
 
-# --open-pr-cap prints the project's open-PR cap: its line in config/open-pr-cap, else 12 when the project declares CI slots,
+# --open-pr-cap prints the project's open-PR cap: its line in config/open-pr-cap, else min(2 x S, 16) when the project declares CI slots,
 # else nothing; a malformed file refuses.
 run_cap() {  # <project>
   FM_DATA_OVERRIDE="$TMP_ROOT/no-registry" FM_CONFIG_OVERRIDE="$CI_CONFIG" "$PROJECT_MODE" --open-pr-cap "$1" 2>/dev/null
 }
 rm -f "$CI_CONFIG/open-pr-cap"
 printf '%s\n' 'shared 4' 'spaced name 2' > "$CI_CONFIG/ci-slots"
-[ "$(run_cap shared)" = "12" ] || fail "--open-pr-cap did not default to 12 for a project with CI slots: $(run_cap shared)"
+[ "$(run_cap shared)" = "8" ] || fail "--open-pr-cap did not default to min(2 x S, 16) for a project with CI slots: $(run_cap shared)"
 [ -z "$(run_cap absent)" ] || fail "--open-pr-cap printed a value for a project with no CI slots"
 printf '%s\n' '# cap' 'shared 7' 'absent 3' > "$CI_CONFIG/open-pr-cap"
 [ "$(run_cap shared)" = "7" ] || fail "--open-pr-cap did not read the declared cap: $(run_cap shared)"
-[ "$(run_cap 'spaced name')" = "12" ] || fail "--open-pr-cap did not default a project with slots and no cap line"
+[ "$(run_cap 'spaced name')" = "4" ] || fail "--open-pr-cap did not default a project with slots and no cap line"
 [ -z "$(run_cap absent)" ] || fail "--open-pr-cap applied a cap to a project with no CI slots"
 for bad in 'shared four' 'shared 0' 'shared'; do
   printf '%s\n' "$bad" > "$CI_CONFIG/open-pr-cap"
@@ -319,6 +319,6 @@ for bad in 'shared four' 'shared 0' 'shared'; do
   [ -z "$out" ] || fail "--open-pr-cap printed '$out' for the malformed line '$bad'"
 done
 rm -f "$CI_CONFIG/open-pr-cap" "$CI_CONFIG/ci-slots"
-pass "fm-project-mode: --open-pr-cap reads config/open-pr-cap, defaults to 12 for a project with CI slots, prints nothing without slots, and refuses a malformed file"
+pass "fm-project-mode: --open-pr-cap reads config/open-pr-cap, defaults to min(2 x S, 16) for a project with CI slots, prints nothing without slots, and refuses a malformed file"
 
 echo "# fm-project-mode.test.sh: all assertions passed"

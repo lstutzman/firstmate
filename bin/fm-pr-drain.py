@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PR-drain state of one project's GitHub repository (the captain's open-PR drain rule).
 
-Usage: fm-pr-drain.py state <project-dir>
+Usage: fm-pr-drain.py state <project-dir> [<project-name>]
        fm-pr-drain.py open <project-dir>
        fm-pr-drain.py gate <project-dir> [<project-name>]
        fm-pr-drain.py class <value>
@@ -9,17 +9,20 @@ Usage: fm-pr-drain.py state <project-dir>
        fm-pr-drain.py evidence < <captain's-intent-text>
        fm-pr-drain.py security <PC-n>
 
-A repository enters drain at 20 or more open PRs and leaves it only when its open count reaches 0.
+A repository enters drain at 24 or more eligible open PRs and leaves it when its eligible count is at or below S (its
+config/ci-slots line; 0 when it declares none). An eligible PR is a ready (non-draft) open PR that is not a promotion PR
+(head branch `staging`) and, where a local task record shows it, not waiting for the captain's merge word; a PR held
+for a release day (Wednesday) has no signal yet, so it counts.
 state prints one line and exits 0:
   on <owner/repo> <open>       in drain
   off <owner/repo> <open>      not in drain
   unknown <owner/repo> <why>   GitHub could not be read or the history is not decisive
   none                         the clone's origin is not on github.com, so the rule does not apply
 The state is derived from GitHub itself, so every home on every machine reads the same answer with no
-shared marker: the open list gives the count now, and when it is between 1 and 19 the PRs closed in the
-last 14 days are walked back from now (a close adds one PR, a creation removes one) until the count was
-20 or more (on) or 0 (off). Read-only: one `gh pr list` of open PRs, plus one of recently closed PRs only
-in that 1..19 band. FM_PR_DRAIN_TIMEOUT (default 20) bounds each read in seconds.
+shared marker: the open list gives the eligible count now, and when it is above S and below 24 the PRs closed in the
+last 14 days are walked back from now (a close adds one PR, a creation removes one; closed PRs count as eligible unless
+they were drafts or promotion PRs) until the count was 24 or more (on) or S or fewer (off). Read-only: one `gh pr list`
+of open PRs, plus one of recently closed PRs only in that band. FM_PR_DRAIN_TIMEOUT (default 20) bounds each read in seconds.
 open prints one line, the ready open PR count (P, drafts left out) that bin/fm-fleet-alarm.py compares with a project's
 CI slots (config/ci-slots; bin/fm-project-capacity-lib.sh owns it), from one `gh pr list` read:
   open <owner/repo> <n>        the repository has n ready (non-draft) open PRs
@@ -29,8 +32,8 @@ gate is the worker's CI slots check, run just before it opens a pull request (bi
 a brief). It prints one line: `hold <owner/repo> <why>` when the opening must wait, `open <owner/repo>` when it may
 go ahead (also for a project with no CI slots), `unknown <owner/repo> <why>` when a declaration or GitHub cannot be
 read, or `none` off github.com. It holds when the ready open PRs, less drafts and the PRs waiting for the captain's
-merge word (bin/fm-ci-slots-held.sh), reach S (config/ci-slots), or when every open PR, drafts and held ones
-included, reaches the open-PR cap (config/open-pr-cap, default 12). <project-name> is the registered name that
+merge word (bin/fm-ci-slots-held.sh) and promotion PRs, reach the open-PR cap (config/open-pr-cap, default
+min(2 x S, 16)). <project-name> is the registered name that
 names the project in those files; it defaults to the directory's name. FM_HOME picks the home whose config is read.
 class exits 0 when <value> is a recognised drain declaration: an exemption class (production-outage,
 cve, security, wolverine, lee-research, lee-explicit, officer, scheduled) or a landing job (restack,
@@ -61,7 +64,8 @@ import sys
 import urllib.request
 
 BIN = os.path.dirname(os.path.abspath(__file__))
-THRESHOLD = 20
+THRESHOLD = 24
+PROMOTION_HEAD = 'staging'
 WINDOW_DAYS = 14
 CLOSED_LIMIT = 1000
 EXEMPT = ('production-outage', 'cve', 'security', 'wolverine', 'lee-research', 'lee-explicit', 'officer', 'scheduled')
@@ -108,8 +112,9 @@ def open_prs(project):
     if not repo:
         return 'none'
     try:
-        prs = gh(repo, '--state', 'open', '--limit', '1000', '--json', 'createdAt,isDraft,url')
-        return repo, [{'isDraft': bool(pr.get('isDraft')), 'url': pr.get('url') or ''} for pr in prs]
+        prs = gh(repo, '--state', 'open', '--limit', '1000', '--json', 'createdAt,isDraft,url,headRefName')
+        return repo, [{'createdAt': pr.get('createdAt'), 'isDraft': bool(pr.get('isDraft')), 'url': pr.get('url') or '',
+                       'promotion': pr.get('headRefName') == PROMOTION_HEAD} for pr in prs]
     except (ValueError, KeyError, TypeError, OSError, subprocess.TimeoutExpired, AttributeError) as error:
         return f'unknown {repo} GitHub unreadable: {error}'.replace('\n', ' ')
 
@@ -144,6 +149,13 @@ def held_count(project, urls):
         return 0
 
 
+def eligible(project, prs):
+    """(eligible count, drafts, held, promotion) of the open PRs: ready, not a promotion PR, not waiting for the captain."""
+    ready = [pr for pr in prs if not pr['isDraft'] and not pr['promotion']]
+    held = held_count(project, [pr['url'] for pr in ready]) if ready else 0
+    return len(ready) - held, sum(1 for pr in prs if pr['isDraft']), held, sum(1 for pr in prs if pr['promotion'] and not pr['isDraft'])
+
+
 def gate(project, name):
     """The worker's CI slots check: `hold`, `open`, `unknown` or `none`, as one line."""
     found = open_prs(project)
@@ -157,35 +169,39 @@ def gate(project, name):
         return f'unknown {repo} the CI slots declaration for {name} is unreadable: {error}'.replace('\n', ' ')
     if not slots:
         return f'open {repo}'
-    ready = [pr['url'] for pr in prs if not pr['isDraft']]
-    drafts = len(prs) - len(ready)
-    held = held_count(project, ready) if ready else 0
-    counted = len(ready) - held
-    if counted >= int(slots):
-        return (f'hold {repo} CI slots full: {counted} open PR(s) count against {slots} CI slot(s) (config/ci-slots; '
-                f"{drafts} draft PR(s) and {held} PR(s) waiting for the captain's merge word are not counted); "
-                'open no pull request until one merges or closes')
-    if len(prs) >= int(cap):
-        return (f'hold {repo} open-PR cap reached: {len(prs)} open PR(s) against the open-PR cap of {cap} '
-                '(config/open-pr-cap); every open PR counts, drafts included; open no pull request until one merges or closes')
+    counted, drafts, held, promotion = eligible(project, prs)
+    if counted >= int(cap):
+        return (f'hold {repo} open-PR cap reached: {counted} eligible open PR(s) against the open-PR cap of {cap} '
+                f"(config/open-pr-cap; min(2 x {slots} CI slots, 16) unless declared; {drafts} draft PR(s), {held} PR(s) waiting for "
+                f"the captain's merge word and {promotion} promotion PR(s) are not counted); open no pull request until one merges or closes")
     return f'open {repo}'
 
 
-def state(project):
+def state(project, name=None):
     repo = repo_of(project)
     if not repo:
         return 'none'
     try:
         # The open read (no --search) proves the repository is readable; a search answers [] when it is not.
-        opened = gh(repo, '--state', 'open', '--limit', '1000', '--json', 'createdAt')
-        count = len(opened)
-        if count >= THRESHOLD or count == 0:
-            return f"{'on' if count else 'off'} {repo} {count}"
+        found = open_prs(project)
+        if isinstance(found, str):
+            return found
+        repo, prs = found
+        count = eligible(project, prs)[0]
+        try:
+            # S when the project declares CI slots, else drain ends only at 0.
+            floor = int(project_mode('--ci-slots', name or os.path.basename(os.path.abspath(project))) or 0)
+        except (ValueError, OSError, subprocess.TimeoutExpired):
+            floor = 0
+        if count >= THRESHOLD or count <= floor:
+            return f"{'on' if count > floor else 'off'} {repo} {count}"
+        opened = [pr for pr in prs if not pr['isDraft'] and not pr['promotion']]
         since = datetime.now(timezone.utc) - timedelta(days=WINDOW_DAYS)
-        closed = gh(repo, '--state', 'closed', '--search', f"closed:>={since:%Y-%m-%dT%H:%M:%SZ}",
-                    '--limit', str(CLOSED_LIMIT), '--json', 'createdAt,closedAt')
+        closed = [pr for pr in gh(repo, '--state', 'closed', '--search', f"closed:>={since:%Y-%m-%dT%H:%M:%SZ}",
+                                  '--limit', str(CLOSED_LIMIT), '--json', 'createdAt,closedAt,isDraft,headRefName')]
         if len(closed) >= CLOSED_LIMIT:
             return f'unknown {repo} {CLOSED_LIMIT} or more PRs closed in {WINDOW_DAYS} days (the GitHub search cap)'
+        closed = [pr for pr in closed if not pr.get('isDraft') and pr.get('headRefName') != PROMOTION_HEAD]
         steps = {}
         for pr in opened + closed:
             if when(pr['createdAt']) >= since:
@@ -193,13 +209,13 @@ def state(project):
             if pr.get('closedAt') and when(pr['closedAt']) >= since:
                 steps[when(pr['closedAt'])] = steps.get(when(pr['closedAt']), 0) + 1
         live = count
-        # Events sharing one timestamp apply together, so a same-second open and close is no false 0 or 20.
+        # Events sharing one timestamp apply together, so a same-second open and close is no false peak or floor.
         for moment in sorted(steps, reverse=True):
             live += steps[moment]
-            if live >= THRESHOLD or live <= 0:
-                return f"{'on' if live > 0 else 'off'} {repo} {count}"
-        # shortcut: 14 days of 1..19 open PRs is undecided; widen WINDOW_DAYS if that becomes common.
-        return f'unknown {repo} open count stayed between 1 and {THRESHOLD - 1} for {WINDOW_DAYS} days'
+            if live >= THRESHOLD or live <= floor:
+                return f"{'on' if live > floor else 'off'} {repo} {count}"
+        # shortcut: 14 days between S and 23 eligible open PRs is undecided; widen WINDOW_DAYS if that becomes common.
+        return f'unknown {repo} eligible open count stayed between {floor + 1} and {THRESHOLD - 1} for {WINDOW_DAYS} days'
     except (ValueError, KeyError, TypeError, OSError, subprocess.TimeoutExpired) as error:
         return f'unknown {repo} GitHub unreadable: {error}'.replace('\n', ' ')
 
@@ -270,8 +286,8 @@ def security(item):
 
 
 if __name__ == '__main__':
-    if len(sys.argv) == 3 and sys.argv[1] == 'state':
-        print(state(sys.argv[2]))
+    if len(sys.argv) in (3, 4) and sys.argv[1] == 'state':
+        print(state(sys.argv[2], sys.argv[3] if len(sys.argv) == 4 else None))
     elif len(sys.argv) == 3 and sys.argv[1] == 'open':
         print(open_count(sys.argv[2]))
     elif len(sys.argv) in (3, 4) and sys.argv[1] == 'gate':
