@@ -25,6 +25,9 @@
 # data/backlog.md; those cases print the manual follow-up. A configured
 # non-markdown adapter remains active without a markdown file; any active
 # automatic backend without compatible tasks-axi refuses before cleanup.
+# An ordinary ship task whose recorded project is not a clone root leaves its
+# backlog item open (no close) and prints the PR and the manual follow-up, since
+# the landed-work check had no repository to read.
 # None of this loosens the landed-work gates below: the transition runs only on
 # the paths that already proceed to remove the record.
 # The close - and only the close - is replaced by `tasks-axi reopen` with the
@@ -1983,7 +1986,9 @@ backlog_refresh_reminder() {
   else
     backlog_display="${DATA%/}/backlog.md"
   fi
-  if [ "$BACKLOG_CLOSED" = 1 ] && [ "$BACKLOG_TRANSITION" = retain ]; then
+  if [ "$BACKLOG_LEFT_OPEN" = 1 ]; then
+    printf '%s\n' "Backlog: $ID left open because landed work could not be checked (project $PROJ is not a clone root)${PR_URL:+; its PR is $PR_URL}. Confirm what landed, then close it in $backlog_display with bin/fm-tasks-axi.sh."
+  elif [ "$BACKLOG_CLOSED" = 1 ] && [ "$BACKLOG_TRANSITION" = retain ]; then
     printf '%s\n' "Backlog: $ID stays open in $backlog_display, still held for the captain with its deliverable recorded. Relay the question and close it only with bin/fm-captain-hold.sh answer."
   elif [ "$BACKLOG_CLOSED" = 1 ]; then
     printf '%s\n' "Backlog: $ID is closed in $backlog_display. Run bin/fm-tasks-axi.sh ready for dependency-cleared candidates, check date gates, and dispatch only work whose blockers are gone and date is due."
@@ -4078,6 +4083,22 @@ BACKLOG_TRANSITION=$TEARDOWN_BACKLOG_TRANSITION
 BACKLOG_TRANSITION_FLAGS=()
 [ "$BACKLOG_TRANSITION" = close ] || BACKLOG_TRANSITION_FLAGS=(--retain)
 BACKLOG_SKIP_REASON=
+# An ordinary ship task whose recorded project is not a clone root (the same test
+# bin/fm-fleet-sync.sh applies) has no repository the landed-work check could
+# have read, so teardown must not report the work done: it leaves the backlog
+# item as it is and says so. A forced or local-only teardown, a scout, a
+# secondmate and a captain-held item (its retain transition closes nothing) keep
+# their own rules.
+BACKLOG_LEFT_OPEN=0
+if [ "$TEARDOWN_BACKLOG_APPLIES" = 1 ] && [ "$BACKLOG_TRANSITION" = close ] \
+   && [ "$KIND" != scout ] && [ "$KIND" != secondmate ] && [ "$MODE" != local-only ] && [ "$FORCE" != "--force" ]; then
+  proj_top=$(git -C "$PROJ" rev-parse --show-toplevel 2>/dev/null) || proj_top=
+  proj_abs=$(cd "$PROJ" 2>/dev/null && pwd -P) || proj_abs=
+  if [ -z "$proj_top" ] || [ -z "$proj_abs" ] || ! [ "$proj_top" -ef "$proj_abs" ]; then
+    TEARDOWN_BACKLOG_APPLIES=0
+    BACKLOG_LEFT_OPEN=1
+  fi
+fi
 if [ "$TEARDOWN_BACKLOG_APPLIES" = 1 ]; then
   backlog_done_args || {
     echo "error: the pending backlog $BACKLOG_TRANSITION for $ID is not replayable; refusing destructive teardown" >&2
