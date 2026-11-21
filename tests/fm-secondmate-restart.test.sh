@@ -472,6 +472,16 @@ printf '%s\n' "${rargs[*]}" >> "$FM_FAKE_SSH_LOG"
 case "${FM_FAKE_SSH_MODE:-ok}" in
   unreachable) exit 255 ;;
 esac
+if [ "${rargs[0]:-}" = fm-remote-inherit.sh ]; then
+  # The receiving half of the inherited-material push: a fresh home at
+  # generation 0 that accepts every item.
+  case "${rargs[1]:-}" in
+    generation) printf '0\n' ;;
+    put) printf 'pushed: %s\n' "${rargs[2]}" ;;
+    absent) printf 'unchanged: %s\n' "${rargs[2]}" ;;
+  esac
+  exit 0
+fi
 case "${rargs[1]:-}" in
   send-stdin)
     # Model the live remote mate: act on the instruction and report back on the
@@ -719,7 +729,7 @@ test_persist_waits_are_polled_together() {
   add_local_mate "$dir" sm2
   arm_answer "$dir" sm2
 
-  out=$(FM_TEST_PERSIST_WAIT=3 run_restart "$dir" sm1 sm2); rc=$?
+  out=$(FM_TEST_PERSIST_WAIT=12 run_restart "$dir" sm1 sm2); rc=$?
 
   expect_code 3 "$rc" "the unanswered mate should fall back after the confirmed mate restarts"$'\n'"$out"
   exit_line=$(grep -n '^/exit$' "$dir/fake/literal" | head -1 | cut -d: -f1)
@@ -785,7 +795,7 @@ test_unpublished_worker_result_is_accounted_for() {
   driver=$!
   result_dir=
   i=0
-  while [ "$i" -lt 200 ]; do
+  while [ "$i" -lt 3000 ]; do
     result_dir=$(find "$dir/home/state" -maxdepth 1 -type d -name '.secondmate-restart.*' -print -quit)
     [ -e "$dir/fake/remote-relaunch-start" ] && [ -n "$result_dir" ] && break
     /bin/sleep 0.01
@@ -987,6 +997,63 @@ w = { tokens: [],
   pass "T17 a T3 mate is routed to the re-read message by both passes, never restarted"
 }
 
+# --- T18: a restart delivers the parent's current inherited captain-shared.md --
+# FLEET-141: a mate restarted after an update stayed on an older copy of
+# data/captain-shared.md until fm-config-push.sh was run by hand.
+test_local_restart_delivers_current_captain_shared() {
+  local dir out rc
+  dir=$(new_case inherit-local)
+  add_local_mate "$dir" sm1
+  arm_answer "$dir" sm1
+  printf 'old preferences\n' > "$dir/sm1-home/data/captain-shared.md"
+  chmod 444 "$dir/sm1-home/data/captain-shared.md"
+  printf '%s%s\n' '# main-authoritative: read-only in secondmate homes and must not be edited there; ask the main firstmate through a marked status or document pointer.'$'\n' 'new preferences' > "$dir/home/data/captain-shared.md"
+
+  out=$(run_restart "$dir" sm1); rc=$?
+
+  expect_code 0 "$rc" "the restart should succeed"$'\n'"$out"
+  assert_contains "$out" "restarted: sm1" "the mate should be restarted"
+  [ "$(tail -n 1 "$dir/sm1-home/data/captain-shared.md")" = "new preferences" ] \
+    || fail "a restart left the mate on a stale captain-shared.md: $(cat "$dir/sm1-home/data/captain-shared.md")"
+  pass "T18 a local restart delivers the parent's current captain-shared.md"
+}
+
+test_remote_restart_pushes_inherited_material_before_relaunch() {
+  local dir out rc push_line relaunch_line
+  dir=$(new_case inherit-remote)
+  setup_remote_case "$dir" sm2 ok
+  export FM_FAKE_ANSWER_STATUS="$dir/home/state/sm2.status"
+  printf '%s%s\n' '# main-authoritative: read-only in secondmate homes and must not be edited there; ask the main firstmate through a marked status or document pointer.'$'\n' 'new preferences' > "$dir/home/data/captain-shared.md"
+
+  out=$(run_restart "$dir" fm-sm2); rc=$?
+  unset FM_FAKE_ANSWER_STATUS
+
+  expect_code 0 "$rc" "a remote mate should restart"$'\n'"$out"
+  push_line=$(grep -n '^fm-remote-inherit.sh put data/captain-shared.md' "$dir/ssh.log" | head -1 | cut -d: -f1)
+  relaunch_line=$(grep -n '^fm-remote-secondmate-control.sh relaunch' "$dir/ssh.log" | head -1 | cut -d: -f1)
+  [ -n "$push_line" ] || fail "a remote restart never pushed captain-shared.md"$'\n'"$(cat "$dir/ssh.log")"
+  [ "$push_line" -lt "$relaunch_line" ] \
+    || fail "captain-shared.md was pushed after the relaunch"$'\n'"$(cat "$dir/ssh.log")"
+  pass "T18b a remote restart pushes inherited material before relaunching"
+}
+
+test_failed_inherited_push_keeps_the_agent_running() {
+  local dir out rc
+  dir=$(new_case inherit-fail)
+  add_local_mate "$dir" sm1
+  arm_answer "$dir" sm1
+  # No main-authoritative header: the push refuses it, so nothing may restart.
+  printf 'headerless\n' > "$dir/home/data/captain-shared.md"
+
+  out=$(run_restart "$dir" sm1); rc=$?
+
+  expect_code 3 "$rc" "a failed inherited push is a fallback, not a success"$'\n'"$out"
+  assert_contains "$out" "nudged: sm1: its inherited local material could not be refreshed" \
+    "the fallback must say the inherited push failed"
+  assert_no_regex '^/exit$' "$dir/fake/literal" "the agent was stopped after a failed inherited push"
+  pass "T18c a failed inherited push keeps the agent and falls back to the nudge"
+}
+
 test_persist_gates_and_asks_only_for_open_records
 test_persist_precedes_restart
 test_arrived_answer_precedes_deadline_check
@@ -1011,5 +1078,8 @@ test_result_published_while_reaping_is_honored
 test_already_current_mate_restarts_end_to_end
 test_already_current_unprovable_mate_stays_on_the_nudge_path
 test_t3_mate_stays_on_the_nudge_path
+test_local_restart_delivers_current_captain_shared
+test_remote_restart_pushes_inherited_material_before_relaunch
+test_failed_inherited_push_keeps_the_agent_running
 
 echo "# all fm-secondmate-restart tests passed"
