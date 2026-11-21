@@ -86,15 +86,18 @@
 # lane officer's digest, its .json and the start requests addressed to that
 # office, which a home on another host cannot read from the parent
 # (bin/fm-office-feed-lib.sh owns the format). It prints the same one line as
-# publish, including the "feed not pushed" line, after which it sends nothing. feed-sweep is the watcher check that keeps the copy current: for each
+# publish, and sends it. A lane over its size limit is omitted and the rest sent,
+# with a "feed coverage gap: lane <officer> omitted, <why>" line, because that lane's remote
+# source check then stays silent; "feed not pushed" remains only for a copy over its limit with every
+# lane dropped, after which it sends nothing. feed-sweep is the watcher check that keeps the copy current: for each
 # remote office it sends the feed when the copy's content changed since the last
 # send, or the last send is over FM_OFFICE_FEED_REFRESH_SECS (default 21600)
 # old, never more often than every FM_OFFICE_FEED_RETRY_SECS (default 120) for one
 # office, within one 25 second bound for the whole sweep. It prints nothing,
-# except one "OFFICE: office <id>: feed not pushed: <why>" line the first time
-# that office's feed or a given lane goes over its size limit (record:
+# except one "OFFICE: office <id>: feed coverage gap: ..." (or "feed not pushed: <why>") line the first time
+# that office's feed gains a given gap (record:
 # state/office-feed.<id>.over, cleared once the feed fits; FM_OFFICE_FEED_SWEEP_REPORT=0
-# neither prints nor records it); the oversized feed is not sent. arm-feed (run once in the main home)
+# neither prints nor records it). arm-feed (run once in the main home)
 # writes state/office-feed.check.sh, a shim that execs "fm-office.sh feed-sweep",
 # and binds it with bin/fm-check-register.sh; running it again rewrites the same
 # bytes. A new digest therefore reaches a remote office within one parent
@@ -335,6 +338,7 @@ office_problems() {
       || printf 'it is on a remote route and %s is not registered in %s (run bin/fm-office.sh arm-feed, or publish %s)\n' "$FEED_CHECK_ID" "$STATE" "$id"
     feed_stage "$id"
     [ -z "$FEED_OVER" ] || printf '%s\n' "$FEED_REASON"
+    [ -z "$FEED_GAP" ] || printf '%s\n' "$FEED_GAP"
     return
   fi
   home=${SECONDMATE_REGISTRY_HOME/#\~/$HOME}
@@ -521,13 +525,15 @@ remote_push() {
 }
 
 # feed_stage <id>: sets FEED_FP to the fingerprint of the feed the parent would send now, or empty;
-# when the copy or a lane is over its size limit, FEED_OVER (feed or lane:<officer>) and FEED_REASON
-# ("feed not pushed: ...") say so.
+# when the copy is over its size limit with every lane dropped, FEED_OVER (feed) and FEED_REASON
+# ("feed not pushed: ...") say so. A lane omitted for size still sends the rest and sets FEED_GAP
+# ("feed coverage gap: lane <officer> omitted, ...").
 feed_stage() {
   local id=$1 stage rc=0
   FEED_FP=
   FEED_OVER=
   FEED_REASON=
+  FEED_GAP=
   stage=$(mktemp "${TMPDIR:-/tmp}/fm-office-feed.XXXXXX") || return 0
   if secondmate_registry_line_for_id "$DATA/secondmates.md" "$id"; then
     fm_office_feed_payload "$FM_HOME" "$DATA" "$id" "$SECONDMATE_REGISTRY_HOME" "$stage" "$(now_epoch)" || rc=$?
@@ -536,6 +542,7 @@ feed_stage() {
       FEED_REASON=$FM_OFFICE_ERROR
     elif [ "$rc" -eq 0 ] && [ -f "$stage" ]; then
       FEED_FP=$(fm_office_feed_fingerprint "$stage")
+      [ -z "$FM_OFFICE_FEED_GAP" ] || FEED_GAP="feed coverage gap: $FM_OFFICE_FEED_GAP"
     fi
   fi
   rm -f "$stage"
@@ -559,6 +566,7 @@ cmd_feed() {
   fi
   if remote_push "$id" office-feed; then
     [ -z "$FEED_FP" ] || record_feed_push "$id" "$FEED_FP"
+    [ -z "$FEED_GAP" ] || printf 'office %s: %s\n' "$id" "$FEED_GAP"
     printf 'office %s: %s\n' "$id" "$PUSH_STATUS"
   else
     printf 'office %s: error - %s\n' "$id" "$PUSH_REASON"
@@ -585,7 +593,14 @@ cmd_feed_sweep() {
       fi
       continue
     fi
-    rm -f "$over_rec" 2>/dev/null || true
+    if [ -n "$FEED_GAP" ]; then
+      if [ "${FM_OFFICE_FEED_SWEEP_REPORT:-1}" != 0 ] && [ "$(cat "$over_rec" 2>/dev/null)" != "$FEED_GAP" ]; then
+        printf 'OFFICE: office %s: %s\n' "$id" "$FEED_GAP"
+        mkdir -p "$STATE" 2>/dev/null && printf '%s\n' "$FEED_GAP" > "$over_rec" 2>/dev/null || true
+      fi
+    else
+      rm -f "$over_rec" 2>/dev/null || true
+    fi
     [ -n "$fp" ] || continue
     read -r last_fp last_at < "$STATE/$FEED_CHECK_ID.$id.pushed" 2>/dev/null || { last_fp=; last_at=0; }
     case "$last_at" in ''|*[!0-9]*) last_at=0 ;; esac
@@ -642,6 +657,7 @@ cmd_publish() {
       fi
     elif remote_push "$id" "office-authority office-feed"; then
       [ -z "$FEED_FP" ] || record_feed_push "$id" "$FEED_FP"
+      [ -z "$FEED_GAP" ] || printf 'office %s: %s\n' "$id" "$FEED_GAP"
       printf 'office %s: %s\n' "$id" "$PUSH_STATUS"
       return 0
     fi

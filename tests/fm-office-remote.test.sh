@@ -171,53 +171,58 @@ test_stale_or_absent_copy_is_silent() {
   pass 'a stale, mismatched or absent feed leaves every remote check silent'
 }
 
-test_oversized_feed_is_held_and_reported() {
+test_oversized_feed_drops_only_the_oversized_lane() {
   local w before out rc
   w=$(world oversize)
   publish "$w" >/dev/null || fail "publish failed"
   before=$(cat "$w/remote-nav/config/office-feed")
   put_digest "$w" 2026-11-04 3
 
+  # A whole copy over FM_OFFICE_FEED_MAX drops its largest lanes, keeps the office line, and still publishes.
   rc=0; out=$(main_env "$w" "$((NOW + 100))" env FM_OFFICE_FEED_MAX=1000 bash "$OFFICE" feed nav) || rc=$?
-  [ "$rc" -ne 0 ] || fail "feed must exit non-zero for an oversized copy"
-  assert_contains "$out" "office nav: feed not pushed: " "feed names the held copy"
-  assert_contains "$out" " bytes over FM_OFFICE_FEED_MAX (1000)" "feed names the limit"
-  assert_equals "$before" "$(cat "$w/remote-nav/config/office-feed")" "feed leaves the remote copy untouched"
+  assert_equals 0 "$rc" "feed must still publish when the copy is over its limit: $out"
+  assert_contains "$out" "office nav: feed coverage gap: lane progress omitted, " "feed names the omitted lane"
+  assert_contains "$out" "bytes, over FM_OFFICE_FEED_MAX (1000)" "and the limit"
+  assert_contains "$(cat "$w/remote-nav/config/office-feed")" "coverage=" "the sent copy carries a coverage record"
+  assert_no_grep "lane=progress " "$w/remote-nav/config/office-feed" "the oversized lane is not sent"
+  assert_equals "" "$(remote_office "$w" "$((NOW + 100))" check lane:progress)" "the omitted lane stays silent on the remote office"
 
   rc=0; out=$(main_env "$w" "$((NOW + 100))" env FM_OFFICE_FEED_MAX=1000 bash "$OFFICE" publish nav) || rc=$?
-  [ "$rc" -ne 0 ] || fail "publish must exit non-zero for an oversized copy"
-  assert_contains "$out" "office nav: feed not pushed: " "publish names the held copy"
-  assert_equals "$before" "$(cat "$w/remote-nav/config/office-feed")" "publish leaves the remote copy untouched"
+  assert_equals 0 "$rc" "publish must succeed with an omitted lane: $out"
   assert_equals "0|nav|" "$(resolve "$w/remote-nav")" "publish still sends the authority record"
 
   rc=0; out=$(main_env "$w" "$((NOW + 100))" env FM_OFFICE_FEED_MAX=1000 FM_INHERITABLE_CONFIG="office-authority office-feed" \
     bash "$ROOT/bin/fm-remote-inherit-push.sh" nav 900 2>&1) || rc=$?
-  assert_equals 0 "$rc" "a convergence push still succeeds with an oversized copy: $out"
-  assert_equals "$before" "$(cat "$w/remote-nav/config/office-feed")" "a convergence push never sends an absence for it"
-  assert_equals "0|nav|" "$(resolve "$w/remote-nav")" "and still delivers the authority record"
+  assert_equals 0 "$rc" "a convergence push succeeds with an omitted lane: $out"
+  assert_contains "$(cat "$w/remote-nav/config/office-feed")" "coverage=" "a convergence push sends the trimmed copy"
 
   assert_contains "$(main_env "$w" "$((NOW + 100))" env FM_OFFICE_FEED_MAX=1000 bash "$OFFICE" ensure)" \
-    "OFFICE: office nav: feed not pushed: " "ensure reports the held copy"
+    "OFFICE: office nav: feed coverage gap: lane progress omitted" "ensure reports the gap"
 
+  printf 'x 0\n' > "$w/state/office-feed.nav.pushed"
   out=$(main_env "$w" "$((NOW + 200))" env FM_OFFICE_FEED_MAX=1000 bash "$OFFICE" feed-sweep)
-  assert_contains "$out" "OFFICE: office nav: feed not pushed: " "the sweep reports the held copy"
+  assert_contains "$out" "OFFICE: office nav: feed coverage gap: lane progress omitted" "the sweep reports the gap"
+  printf 'x 0\n' > "$w/state/office-feed.nav.pushed"
   assert_equals "" "$(main_env "$w" "$((NOW + 300))" env FM_OFFICE_FEED_MAX=1000 bash "$OFFICE" feed-sweep)" "and only once"
-  assert_equals "$before" "$(cat "$w/remote-nav/config/office-feed")" "the sweep leaves the remote copy untouched"
 
+  # A single lane file over FM_OFFICE_FEED_LANE_MAX is omitted the same way.
   rc=0; out=$(main_env "$w" "$((NOW + 400))" env FM_OFFICE_FEED_LANE_MAX=10 bash "$OFFICE" feed nav) || rc=$?
-  [ "$rc" -ne 0 ] || fail "feed must exit non-zero for an oversized lane"
-  assert_contains "$out" "office nav: feed not pushed: lane progress digest $w/data/officers/progress/2026-11-04.md is " "feed names the oversized lane"
+  assert_equals 0 "$rc" "feed must still publish with an oversized lane: $out"
+  assert_contains "$out" "office nav: feed coverage gap: lane progress omitted, digest $w/data/officers/progress/2026-11-04.md is " "feed names the oversized lane"
   assert_contains "$out" "over FM_OFFICE_FEED_LANE_MAX (10)" "and its limit"
   assert_contains "$(main_env "$w" "$((NOW + 400))" env FM_OFFICE_FEED_LANE_MAX=10 bash "$OFFICE" ensure)" \
-    "OFFICE: office nav: feed not pushed: lane progress" "ensure reports the oversized lane"
+    "OFFICE: office nav: feed coverage gap: lane progress" "ensure reports the oversized lane"
+  printf 'x 0\n' > "$w/state/office-feed.nav.pushed"
   out=$(main_env "$w" "$((NOW + 500))" env FM_OFFICE_FEED_LANE_MAX=10 bash "$OFFICE" feed-sweep)
-  assert_contains "$out" "OFFICE: office nav: feed not pushed: lane progress" "the sweep reports a newly oversized lane"
-  assert_equals "$before" "$(cat "$w/remote-nav/config/office-feed")" "an oversized lane leaves the remote copy untouched"
+  assert_contains "$out" "OFFICE: office nav: feed coverage gap: lane progress" "the sweep reports a newly oversized lane"
 
-  assert_equals "" "$(sweep "$w" "$((NOW + 600))")" "a copy that fits again is sent silently"
+  printf 'x 0\n' > "$w/state/office-feed.nav.pushed"
+  rm -f "$w/state/office-feed.nav.try"
+  assert_equals "" "$(sweep "$w" "$((NOW + 700))")" "a copy that fits again is sent silently"
   assert_contains "$(cat "$w/remote-nav/config/office-feed")" "lane=progress " "with its lane"
-  assert_absent "$w/state/office-feed.nav.over" "and the held record is cleared"
-  pass 'an oversized feed or lane is never sent, and publish, feed, the sweep and ensure report it'
+  assert_no_grep "coverage=" "$w/remote-nav/config/office-feed" "and no coverage record"
+  assert_absent "$w/state/office-feed.nav.over" "and the gap record is cleared"
+  pass 'an oversized feed or lane drops only the oversized lane, and publish, feed, the sweep and ensure report the gap'
 }
 
 test_officer_run_sends_its_digest_to_a_remote_office() {
@@ -241,5 +246,5 @@ test_remote_checks_read_the_carried_copy
 test_sweep_pushes_only_what_changed
 test_sweep_backs_off_after_a_failed_push
 test_stale_or_absent_copy_is_silent
-test_oversized_feed_is_held_and_reported
+test_oversized_feed_drops_only_the_oversized_lane
 test_officer_run_sends_its_digest_to_a_remote_office

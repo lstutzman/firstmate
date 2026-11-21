@@ -20,17 +20,22 @@
 # is the office's own registered home, and everything else untouched. A lane
 # whose files cannot be read is left out, so the remote check stays silent for
 # it, as it is for a missing digest. A lane file over FM_OFFICE_FEED_LANE_MAX
-# bytes, or a whole copy over FM_OFFICE_FEED_MAX bytes, is not left out: no copy
-# is built at all, so the remote inherit push leaves the remote office's last copy
-# in place and still succeeds, and bin/fm-office.sh reports why.
+# bytes is omitted from the copy, and a whole copy over FM_OFFICE_FEED_MAX bytes
+# drops its largest lanes until it fits; the other lanes and the office line are
+# still sent. Each omission is written as a record, one per line, after the lanes:
+#   coverage=<officer> <reason>
+# and reported through FM_OFFICE_FEED_GAP so bin/fm-office.sh says so, because an
+# omitted lane leaves that remote source check silent.
 #
 # Public functions:
 #   fm_office_feed_payload <src-home> <src-data> <dest-id> <remote-home> <out-file> <now>
 #       writes <dest-id>'s copy to <out-file>, or leaves it absent when the
 #       registry names no such office line; returns 1 with FM_OFFICE_ERROR
-#       when the line is malformed or the copy cannot be staged, and 2 with
-#       FM_OFFICE_ERROR ("feed not pushed: ...") and FM_OFFICE_FEED_OVER (feed,
-#       or lane:<officer>) when the copy or a lane is over its size limit.
+#       when the line is malformed or the copy cannot be staged. A lane
+#       omitted for size leaves the return 0 and sets FM_OFFICE_FEED_GAP to
+#       "lane <officer> omitted, <reason>" entries joined by "; ". Return 2 with
+#       FM_OFFICE_ERROR ("feed not pushed: ...") and FM_OFFICE_FEED_OVER (feed)
+#       only when the copy is over FM_OFFICE_FEED_MAX with every lane dropped.
 #   fm_office_feed_fingerprint <file>
 #       prints a digest of the copy without its generated= line, so an
 #       unchanged copy has an unchanged fingerprint.
@@ -74,7 +79,7 @@ fm_office_feed_lane_record() {
   for f in "$path" "${path%.md}.json"; do
     bytes=$(LC_ALL=C wc -c < "$f" | tr -d ' ')
     if [ "$bytes" -gt "$FM_OFFICE_FEED_LANE_MAX" ]; then
-      printf 'lane %s digest %s is %s bytes, over FM_OFFICE_FEED_LANE_MAX (%s)\n' "$officer" "$f" "$bytes" "$FM_OFFICE_FEED_LANE_MAX"
+      printf 'digest %s is %s bytes, over FM_OFFICE_FEED_LANE_MAX (%s)\n' "$f" "$bytes" "$FM_OFFICE_FEED_LANE_MAX"
       return 2
     fi
   done
@@ -97,9 +102,11 @@ sys.stdout.write(json.dumps(doc, sort_keys=True, separators=(",", ":")))
 }
 
 fm_office_feed_payload() {  # <src-home> <src-data> <dest-id> <remote-home> <out-file> <now>
-  local home=$1 data=$2 want=$3 remote=$4 out=$5 now=$6 REGISTRY="$2/offices.md" line match='' n=0 src officer seen=' ' tmp rec rc sources bytes
+  local home=$1 data=$2 want=$3 remote=$4 out=$5 now=$6 REGISTRY="$2/offices.md" line match='' n=0 src officer seen=' ' tmp rec rc sources
+  local head_lines lane_lines=() lane_names=() lane_sizes=() cover_lines=() gaps='' i big total count cover
   FM_OFFICE_ERROR=
   FM_OFFICE_FEED_OVER=
+  FM_OFFICE_FEED_GAP=
   rm -f "$out" || { FM_OFFICE_ERROR="cannot clear the staged office feed $out"; return 1; }
   [ -n "$want" ] && [ -f "$REGISTRY" ] && [ -r "$REGISTRY" ] || return 0
   while IFS= read -r line; do
@@ -113,35 +120,53 @@ EOF
     return 1
   fi
   sources=$(line_field "$match" sources || true)
-  tmp=$(mktemp "${TMPDIR:-/tmp}/fm-office-feed.XXXXXX") || { FM_OFFICE_ERROR="cannot stage the office feed"; return 1; }
-  {
-    printf '%s\n' fm-office-feed-v1 "generated=$now" "id=$want" "line=$(printf '%s\n' "$match" | fm_office_feed_b64)"
-    for src in ${sources//,/ }; do
-      case "$src" in lane:*) ;; *) continue ;; esac
-      officer=${src#lane:}; officer=${officer%:high}
-      [[ "$officer" =~ ^[a-z0-9-]+$ ]] || continue
-      case "$seen" in *" $officer "*) continue ;; esac
-      seen="$seen$officer "
-      rc=0
-      rec=$(fm_office_feed_lane_record "$home" "$data" "$officer" "$remote") || rc=$?
-      if [ "$rc" -eq 2 ]; then
-        FM_OFFICE_FEED_OVER="lane:$officer"
-        FM_OFFICE_ERROR="feed not pushed: $rec"
-        break
-      fi
-      [ "$rc" -ne 0 ] || [ -z "$rec" ] || printf '%s\n' "$rec"
-    done
-  } > "$tmp" || { rm -f "$tmp"; FM_OFFICE_ERROR="cannot stage the office feed"; return 1; }
-  bytes=$(LC_ALL=C wc -c < "$tmp" | tr -d ' ')
-  if [ -z "$FM_OFFICE_FEED_OVER" ] && [ "$bytes" -gt "$FM_OFFICE_FEED_MAX" ]; then
+  head_lines=$(printf '%s\n' fm-office-feed-v1 "generated=$now" "id=$want" "line=$(printf '%s\n' "$match" | fm_office_feed_b64)") \
+    || { FM_OFFICE_ERROR="cannot stage the office feed"; return 1; }
+  for src in ${sources//,/ }; do
+    case "$src" in lane:*) ;; *) continue ;; esac
+    officer=${src#lane:}; officer=${officer%:high}
+    [[ "$officer" =~ ^[a-z0-9-]+$ ]] || continue
+    case "$seen" in *" $officer "*) continue ;; esac
+    seen="$seen$officer "
+    rc=0
+    rec=$(fm_office_feed_lane_record "$home" "$data" "$officer" "$remote") || rc=$?
+    if [ "$rc" -eq 2 ]; then
+      cover_lines+=("coverage=$officer $rec")
+      gaps="${gaps:+$gaps; }lane $officer omitted, $rec"
+      continue
+    fi
+    [ "$rc" -ne 0 ] || [ -z "$rec" ] || { lane_lines+=("$rec"); lane_names+=("$officer"); lane_sizes+=("${#rec}"); }
+  done
+  total=$(( ${#head_lines} + 1 ))
+  count=${#lane_lines[@]}
+  for (( i = 0; i < count; i++ )); do total=$(( total + lane_sizes[i] + 1 )); done
+  for (( i = 0; i < ${#cover_lines[@]}; i++ )); do total=$(( total + ${#cover_lines[i]} + 1 )); done
+  # Over the whole-copy limit: drop the largest remaining lane until it fits.
+  while [ "$total" -gt "$FM_OFFICE_FEED_MAX" ] && [ "${#lane_lines[@]}" -gt 0 ]; do
+    big=0
+    count=${#lane_lines[@]}
+    for (( i = 1; i < count; i++ )); do [ "${lane_sizes[i]}" -le "${lane_sizes[big]}" ] || big=$i; done
+    rec="digest copy would be $total bytes, over FM_OFFICE_FEED_MAX ($FM_OFFICE_FEED_MAX)"
+    cover="coverage=${lane_names[big]} $rec"
+    cover_lines+=("$cover")
+    gaps="${gaps:+$gaps; }lane ${lane_names[big]} omitted, $rec"
+    total=$(( total - lane_sizes[big] - 1 + ${#cover} + 1 ))
+    unset "lane_lines[$big]" "lane_names[$big]" "lane_sizes[$big]"
+    lane_lines=(${lane_lines[@]+"${lane_lines[@]}"}); lane_names=(${lane_names[@]+"${lane_names[@]}"}); lane_sizes=(${lane_sizes[@]+"${lane_sizes[@]}"})
+  done
+  if [ "$total" -gt "$FM_OFFICE_FEED_MAX" ]; then
     FM_OFFICE_FEED_OVER=feed
-    FM_OFFICE_ERROR="feed not pushed: $bytes bytes over FM_OFFICE_FEED_MAX ($FM_OFFICE_FEED_MAX)"
-  fi
-  if [ -n "$FM_OFFICE_FEED_OVER" ]; then
-    rm -f "$tmp"
+    FM_OFFICE_ERROR="feed not pushed: $total bytes over FM_OFFICE_FEED_MAX ($FM_OFFICE_FEED_MAX) with every lane dropped"
     return 2
   fi
+  tmp=$(mktemp "${TMPDIR:-/tmp}/fm-office-feed.XXXXXX") || { FM_OFFICE_ERROR="cannot stage the office feed"; return 1; }
+  {
+    printf '%s\n' "$head_lines"
+    [ "${#lane_lines[@]}" -eq 0 ] || printf '%s\n' "${lane_lines[@]}"
+    [ "${#cover_lines[@]}" -eq 0 ] || printf '%s\n' "${cover_lines[@]}"
+  } > "$tmp" || { rm -f "$tmp"; FM_OFFICE_ERROR="cannot stage the office feed"; return 1; }
   mv -f "$tmp" "$out" || { rm -f "$tmp"; FM_OFFICE_ERROR="cannot stage the office feed"; return 1; }
+  FM_OFFICE_FEED_GAP=$gaps
 }
 
 fm_office_feed_fingerprint() {  # <file>
