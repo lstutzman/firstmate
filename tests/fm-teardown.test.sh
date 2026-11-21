@@ -783,6 +783,30 @@ test_teardown_closes_the_backlog_item_itself() {
   pass "teardown closes its own backlog item before reporting success"
 }
 
+# A ship task whose recorded project is not a clone root (a path that does not
+# exist, or a folder inside another repository, as here) has no landed-work check that
+# could have run, so teardown must leave its backlog item open and say so.
+test_teardown_leaves_item_open_when_project_is_not_a_clone_root() {
+  local case_dir out
+  case_dir=$(make_case tasks-axi-not-clone-root)
+  write_meta "$case_dir" no-mistakes ship
+  mkdir -p "$case_dir/project/sub"
+  sed -i "s|^project=.*|project=$case_dir/project/sub|" "$case_dir/state/task-x1.meta"
+  printf '%s\n' 'pr=https://github.com/example/repo/pull/7' >> "$case_dir/state/task-x1.meta"
+  seed_backlog_in_flight "$case_dir"
+
+  out=$(run_teardown "$case_dir" 2>&1) || fail "teardown failed for a task whose project is not a clone root: $out"
+  [ "$(backlog_row_state "$case_dir")" != "done" ] \
+    || fail "teardown closed the backlog item although landed work could not be checked"
+  printf '%s\n' "$out" | grep -F "left open because landed work could not be checked" >/dev/null \
+    || fail "teardown did not say the item was left open: $out"
+  printf '%s\n' "$out" | grep -F 'is closed in' >/dev/null \
+    && fail "teardown still reported the item closed: $out"
+  assert_absent "$case_dir/state/task-x1.backlog-close" \
+    "an unclosed item left a pending-close record behind"
+  pass "teardown leaves the backlog item open when the project is not a clone root"
+}
+
 # The task's gate-edit grant (bin/fm-gate-grant.sh) ends with its cleanup; the
 # log that records the decision stays under data/<id>/.
 test_teardown_removes_the_gate_grant() {
@@ -7231,6 +7255,7 @@ test_forced_secondmate_own_missing_adapter_sibling_refuses_before_child_cleanup
 test_retained_sources_still_reach_the_ordinary_refusal
 test_local_only_fork_remote_allows
 test_teardown_closes_the_backlog_item_itself
+test_teardown_leaves_item_open_when_project_is_not_a_clone_root
 test_teardown_removes_the_gate_grant
 test_teardown_logs_edits_made_after_the_pr_registered
 test_teardown_writes_the_dispatch_outcome_receipt
