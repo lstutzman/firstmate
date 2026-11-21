@@ -66,13 +66,17 @@ A project with no line is never held.
 The slots hold PR openings, never ship starts (captain, 2026-11-21): `bin/fm-spawn.sh` reads neither S nor the cap, so a ship always starts and builds to a finished, verified branch.
 A brief for a ship of a project that declares S carries a CI slots check that the worker runs just before it opens a pull request, as it does the [PR drain](#pr-drain-open-pr-drain-rule) check: `python3 bin/fm-pr-drain.py gate . <project>`.
 While it prints `hold`, the worker opens no pull request and does not run `/no-mistakes`, pushes the branch, reports `done: branch <branch> pushed, no PR (CI slots)` and stops, and firstmate opens the pull request when a place frees.
+The worker's own tests and gate ran before it parked the branch, and the no-mistakes review runs when the branch is released, so nothing reaches a pull request unvalidated.
 Firstmate records that parked branch with `bin/fm-ready-branch.sh <task> <branch>`, which appends `ready_branch=<branch>` to the task record, and a recorded ready branch frees the ship's [project capacity](../configuration.md#project-capacity-configproject-capacity) place exactly as a recorded ready PR does, so parked branches never fill the places.
+`bin/fm-ready-branch.sh list` prints `<task> <branch> <project>` for each recorded ready branch with no PR; on every heartbeat and after any PR of the project lands, firstmate re-runs the gate for each one and, when it prints `open`, steers or relaunches that ship's worker to run `/no-mistakes` on the branch, which validates it and opens the PR ([ship landing](../../.agents/skills/ship-landing/SKILL.md)).
 The gate holds when P, the ready open PRs on the project's GitHub repository less drafts and less PRs waiting for the captain's merge word, reaches S, or when every open PR reaches the open-PR cap.
 A draft PR is left out of P because GitHub says so (`isDraft`).
 A PR waiting for the captain's merge word is left out only on positive evidence from a task record in a local home: the task recorded `yolo` that is not on, which waits for the captain's merge word by definition, or its backlog row is held for the captain and not done.
 A PR no local record shows to be waiting counts, and so does a PR whose task lives in a remote home, which is never walked.
 A PR held for a release day (Wednesday) counts too: firstmate has no signal for it, so the gate leaves out only the classes it can detect.
-An unreadable declaration, record or GitHub reads as `unknown`, and the worker opens the pull request as usual.
+That Wednesday-hold signal is tracked as a follow-up under Linear FLEET-145 (backlog item `wednesday-hold-signal`).
+An unreadable declaration or GitHub reads as `unknown`, and the worker opens the pull request as usual.
+An unreadable task record leaves no PR out as held, so every ready PR counts and the gate can hold.
 The open-PR cap is separate from S because drafts and held PRs still fall behind staging and cost rebase work.
 `config/open-pr-cap` holds one `<project> <cap>` line per project in the same format and is inherited the same way; a project that declares S and no cap line gets a cap of 12 (captain, 2026-11-21), and a project with no S has none.
 The cap counts every open PR, drafts and held ones included, and the gate reports it as `open-PR cap reached`.
@@ -81,7 +85,7 @@ The other drain classes (`wolverine`, `lee-research`, `officer`, `scheduled`) ca
 A promoted scout's instructions carry it too.
 A malformed file makes the gate read `unknown`; it never refuses a spawn.
 The fleet alarm announces a change only: a `working [key=ci-slots-over-<owner>-<repo>]` line when P, drafts left out, exceeds S and a `resolved` line with that key once P is back at or under S, each naming P and S ([Fleet quota and secondmate alarm](away-and-alarms.md#fleet-quota-and-secondmate-alarm-configfleet-alarmjson)).
-[`bin/fm-project-capacity-lib.sh`](../../bin/fm-project-capacity-lib.sh) owns the file formats, the cap default and the held signal, [`bin/fm-pr-drain.py`](../../bin/fm-pr-drain.py) owns the open count, the gate and the exempt classes, [`bin/fm-ci-slots-held.sh`](../../bin/fm-ci-slots-held.sh) reads the held signal, [`bin/fm-ready-branch.sh`](../../bin/fm-ready-branch.sh) records a parked ready branch, and `bin/fm-project-mode.sh --ci-slots <name>` and `--open-pr-cap <name>` read S and the cap back.
+[`bin/fm-project-capacity-lib.sh`](../../bin/fm-project-capacity-lib.sh) owns the file formats, the cap default and the held signal, [`bin/fm-pr-drain.py`](../../bin/fm-pr-drain.py) owns the open count, the gate and the exempt classes, [`bin/fm-ci-slots-held.sh`](../../bin/fm-ci-slots-held.sh) reads the held signal, [`bin/fm-ready-branch.sh`](../../bin/fm-ready-branch.sh) records and lists parked ready branches, and `bin/fm-project-mode.sh --ci-slots <name>` and `--open-pr-cap <name>` read S and the cap back.
 
 ## Admission by class (data/projects.md admission= token, config/admission/)
 

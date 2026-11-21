@@ -1426,6 +1426,42 @@ test_ci_slots_never_hold_a_ship_start() {
   pass "open PRs against the CI slots or the open-PR cap never refuse, queue or warn about a ship start"
 }
 
+test_ci_slots_gate_counts_every_pr_when_a_record_is_unreadable() {
+  local case_dir home
+  if [ "$(id -u)" = 0 ]; then
+    pass "an unreadable task record makes the gate count every ready PR (skipped: root reads files regardless of mode)"
+    return 0
+  fi
+  case_dir=$(make_case slots-unreadable)
+  home="$case_dir/home"
+  declare_slots "$home" "project 3"
+  drain_gh "$case_dir" 0
+  open_prs "$case_dir" 3 0
+  write_ready "$home" held-a "$case_dir/project" 1 5 off
+  write_ready "$home" held-b "$case_dir/project" 2 5 off
+  write_live "$home" other-c "$case_dir/project"
+  assert_equals "open o/r" "$(slots_gate "$case_dir")" "two yolo-off PRs of 3 still held a PR opening against 3 slots"
+  chmod 000 "$home/state/other-c.meta"
+  assert_contains "$(slots_gate "$case_dir")" "hold o/r CI slots full: 3 open PR(s) count against 3 CI slot(s)" \
+    "an unreadable task record did not make every ready PR count: $(slots_gate "$case_dir")"
+  assert_contains "$(slots_gate "$case_dir")" "0 PR(s) waiting for the captain's merge word" "an unreadable record still left held PRs out"
+  chmod 600 "$home/state/other-c.meta"
+  pass "when a task record cannot be read the gate counts every ready PR rather than guessing which wait"
+}
+
+test_ready_branch_list_shows_parked_branches_only() {
+  local case_dir home
+  case_dir=$(make_case ready-branch-list)
+  home="$case_dir/home"
+  assert_equals "" "$(FM_HOME="$home" "$ROOT/bin/fm-ready-branch.sh" list)" "a home with no records listed a parked branch"
+  write_live "$home" parked-a "$case_dir/project" "ready_branch=fm/parked-a"
+  write_live "$home" opened-b "$case_dir/project" "ready_branch=fm/opened-b" "pr=https://github.com/o/r/pull/7"
+  write_live "$home" live-c "$case_dir/project"
+  assert_equals "parked-a fm/parked-a $case_dir/project" "$(FM_HOME="$home" "$ROOT/bin/fm-ready-branch.sh" list)" \
+    "list did not show exactly the parked branch with no PR"
+  pass "list shows each task with a recorded ready branch and no PR, with its branch and project"
+}
+
 declare_cap() {  # <home> <line>...
   local home=$1
   shift
@@ -1520,3 +1556,5 @@ test_pr_drain_unknown_or_off_launches
 test_ci_slots_never_hold_a_ship_start
 test_ci_slots_gate_leaves_captain_held_prs_out
 test_ci_slots_gate_counts_a_pr_no_local_record_owns
+test_ci_slots_gate_counts_every_pr_when_a_record_is_unreadable
+test_ready_branch_list_shows_parked_branches_only

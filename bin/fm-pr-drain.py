@@ -3,11 +3,9 @@
 
 Usage: fm-pr-drain.py state <project-dir>
        fm-pr-drain.py open <project-dir>
-       fm-pr-drain.py open-detail <project-dir>
        fm-pr-drain.py gate <project-dir> [<project-name>]
        fm-pr-drain.py class <value>
        fm-pr-drain.py slots-class <value>
-       fm-pr-drain.py landing-class <value>
        fm-pr-drain.py evidence < <captain's-intent-text>
        fm-pr-drain.py security <PC-n>
 
@@ -27,8 +25,6 @@ CI slots (config/ci-slots; bin/fm-project-capacity-lib.sh owns it), from one `gh
   open <owner/repo> <n>        the repository has n ready (non-draft) open PRs
   unknown <owner/repo> <why>   GitHub could not be read
   none                         the clone's origin is not on github.com
-open-detail prints the same first line with the total after the count (`open <owner/repo> <ready> <total>`), then
-the URL of each ready open PR, one per line.
 gate is the worker's CI slots check, run just before it opens a pull request (bin/fm-dod-lib.sh writes the step into
 a brief). It prints one line: `hold <owner/repo> <why>` when the opening must wait, `open <owner/repo>` when it may
 go ahead (also for a project with no CI slots), `unknown <owner/repo> <why>` when a declaration or GitHub cannot be
@@ -43,8 +39,6 @@ brief and bin/fm-spawn.sh reads it back.
 slots-class exits 0 when <value> is a drain declaration that also bypasses the CI-slots cap: production-outage, cve,
 security, lee-explicit and the four landing jobs; wolverine, lee-research, officer and scheduled stay held. It is
 bin/fm-brief.sh's one list of the classes whose briefs carry no CI slots check.
-landing-class exits 0 when <value> is one of the four landing jobs (restack, red-gate-fix, returned-pr-fix, review),
-which work on a PR that is already open, and 2 otherwise.
 evidence reads a brief's `## Captain's intent` section body on stdin (bin/fm-spawn.sh extracts it with
 bin/fm-brief-heading-lib.sh) and exits 0 when it holds a quoted captain instruction with a timestamp,
 the proof a `lee-explicit` brief needs: at least one double-quoted span, and an ISO-8601 UTC timestamp (YYYY-MM-DDTHH:MM:SSZ) on the same line as a quote or on the line before it.
@@ -120,17 +114,13 @@ def open_prs(project):
         return f'unknown {repo} GitHub unreadable: {error}'.replace('\n', ' ')
 
 
-def open_count(project, detail=False):
-    """The ready (non-draft) open PR count of the clone's repository, as one line like state:
-    `open <owner/repo> <n>`; with detail, `open <owner/repo> <n> <total>` and then each ready PR's URL."""
+def open_count(project):
+    """The ready (non-draft) open PR count of the clone's repository, as one line like state: `open <owner/repo> <n>`."""
     found = open_prs(project)
     if isinstance(found, str):
         return found
     repo, prs = found
-    ready = [pr for pr in prs if not pr['isDraft']]
-    if not detail:
-        return f'open {repo} {len(ready)}'
-    return '\n'.join([f'open {repo} {len(ready)} {len(prs)}'] + [pr['url'] for pr in ready if pr['url']])
+    return f"open {repo} {sum(1 for pr in prs if not pr['isDraft'])}"
 
 
 def project_mode(flag, name):
@@ -284,14 +274,10 @@ if __name__ == '__main__':
         print(state(sys.argv[2]))
     elif len(sys.argv) == 3 and sys.argv[1] == 'open':
         print(open_count(sys.argv[2]))
-    elif len(sys.argv) == 3 and sys.argv[1] == 'open-detail':
-        print(open_count(sys.argv[2], detail=True))
     elif len(sys.argv) in (3, 4) and sys.argv[1] == 'gate':
         print(gate(sys.argv[2], sys.argv[3] if len(sys.argv) == 4 else os.path.basename(os.path.abspath(sys.argv[2]))))
     elif len(sys.argv) == 3 and sys.argv[1] == 'slots-class':
         sys.exit(0 if sys.argv[2] in SLOTS_EXEMPT else 2)
-    elif len(sys.argv) == 3 and sys.argv[1] == 'landing-class':
-        sys.exit(0 if sys.argv[2] in LANDING else 2)
     elif len(sys.argv) == 3 and sys.argv[1] == 'class':
         sys.exit(0 if sys.argv[2] in EXEMPT + LANDING else 2)
     elif len(sys.argv) == 2 and sys.argv[1] == 'evidence':

@@ -348,17 +348,14 @@ json.dump([{"createdAt": "2026-11-01T00:00:00Z", "isDraft": n > ready, "url": f"
            for n in range(1, ready + drafts + 1)], open(sys.argv[1], "w"))' "$GHDATA/open.json" "$1" "$2"
 }
 
-test_open_leaves_drafts_out_of_the_count_and_detail_lists_ready_urls() {
+test_open_leaves_drafts_out_of_the_count() {
   peak_then 5
   open_prs 2 3
   assert_equals "open o/r 2" "$("$DRAIN" open "$PROJECT")" "drafts were counted in the open PR count"
-  assert_equals "$(printf 'open o/r 2 5\nhttps://github.com/o/r/pull/1\nhttps://github.com/o/r/pull/2')" \
-    "$("$DRAIN" open-detail "$PROJECT")" "open-detail did not print the ready count, the total and the ready PR URLs"
   assert_equals "on o/r 5" "$("$DRAIN" state "$PROJECT")" "state must still count every open PR, drafts included, for the 20-PR drain"
-  assert_contains "$(FAKE_GH_FAIL=1 "$DRAIN" open-detail "$PROJECT")" "unknown o/r GitHub unreadable: HTTP 502" "open-detail did not report an unreadable GitHub"
   timeline 1 2 --
-  assert_equals "open o/r 2 2" "$("$DRAIN" open-detail "$PROJECT")" "a PR with no isDraft or url field was not counted as ready"
-  pass "open and open-detail leave drafts out of the count, open-detail also reports the total and the ready URLs, and state still counts every PR"
+  assert_equals "open o/r 2" "$("$DRAIN" open "$PROJECT")" "a PR with no isDraft field was not counted as ready"
+  pass "open leaves drafts out of the count, and state still counts every PR"
 }
 
 GATE_HOME="$TMP_ROOT/gate-home"
@@ -444,7 +441,7 @@ fm_test_run \
   test_non_github_origin_is_not_applicable \
   test_classes_are_validated \
   test_open_count_reads_one_repository \
-  test_open_leaves_drafts_out_of_the_count_and_detail_lists_ready_urls \
+  test_open_leaves_drafts_out_of_the_count \
   test_gate_holds_a_pr_opening_at_the_slots_and_at_the_cap \
   test_brief_carries_the_ci_slots_gate_only_when_slots_are_declared \
   test_slots_classes_are_the_urgent_and_landing_ones \
