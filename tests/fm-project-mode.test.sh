@@ -49,6 +49,10 @@ cat > "$DATA/projects.md" <<'EOF'
 - evidenced-first [ready-evidence=pc-ready no-mistakes] - ready-evidence token first, order must not matter (added 2026-01-01)
 - evidenced-blank [direct-PR ready-evidence=] - an empty ready-evidence binding (added 2026-01-01)
 - evidenced-bad [direct-PR ready-evidence=../pc] - a ready-evidence name that is not a file name (added 2026-01-01)
+- committed [no-mistakes +yolo merger=slarti merge=commit] - merge commits only (added 2026-01-01)
+- committed-first [merge=commit direct-PR] - merge token first, order must not matter (added 2026-01-01)
+- committed-blank [direct-PR merge=] - an empty merge binding (added 2026-01-01)
+- committed-squash [direct-PR merge=squash] - a method outside the closed set (added 2026-01-01)
 - hand [no-mistakes pr=manual] - the worker writes the PR text (added 2026-01-01)
 - hand-first [pr=manual no-mistakes +yolo branch=] - pr token first, order must not matter (added 2026-01-01)
 - hand-prod [no-mistakes-prod-only pr=manual] - conditional policy keeps the binding (added 2026-01-01)
@@ -320,5 +324,29 @@ for bad in 'shared four' 'shared 0' 'shared'; do
 done
 rm -f "$CI_CONFIG/open-pr-cap" "$CI_CONFIG/ci-slots"
 pass "fm-project-mode: --open-pr-cap reads config/open-pr-cap, defaults to 12 for a project with CI slots, prints nothing without slots, and refuses a malformed file"
+
+run_merge_method() {
+  FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" --merge-method "$1" 2>/dev/null
+}
+[ "$(run_merge_method committed)" = "commit" ] || fail "merge=commit did not resolve: $(run_merge_method committed)"
+[ "$(run_merge_method committed-first)" = "commit" ] || fail "merge= placed before the mode did not resolve: $(run_merge_method committed-first)"
+[ "$(run_mode committed)" = "no-mistakes on" ] || fail "a merge token changed the two-word output: $(run_mode committed)"
+[ "$(run_mode committed-first)" = "direct-PR off" ] || fail "merge= placed before the mode was read as the mode: $(run_mode committed-first)"
+[ "$(run_merger committed)" = "slarti" ] || fail "a merge token disturbed the merger token: $(run_merger committed)"
+err=$(FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" committed-first 2>&1 >/dev/null)
+[ -z "$err" ] || fail "a registered merge= warned: $err"
+[ -z "$(run_merge_method legacy)" ] || fail "an entry with no merge token must print nothing: $(run_merge_method legacy)"
+[ -z "$(run_merge_method missing-project)" ] || fail "a missing project must print no merge method"
+[ -z "$(FM_DATA_OVERRIDE="$TMP_ROOT/no-such-dir" "$PROJECT_MODE" --merge-method legacy 2>/dev/null)" ] \
+  || fail "an absent registry must print no merge method"
+pass "fm-project-mode: merge=commit binds in any token order, leaves the default output unchanged, and prints nothing when absent"
+
+for name in committed-blank committed-squash; do
+  out=$(FM_DATA_OVERRIDE="$DATA" "$PROJECT_MODE" --merge-method "$name" 2>/dev/null)
+  status=$?
+  [ "$status" -eq 3 ] || fail "$name: a malformed merge binding must exit 3, got $status"
+  [ -z "$out" ] || fail "$name: a malformed merge binding must print nothing: $out"
+done
+pass "fm-project-mode: an empty or unknown merge= value is refused with exit status 3"
 
 echo "# fm-project-mode.test.sh: all assertions passed"

@@ -6625,6 +6625,155 @@ test_allow_no_pipeline_is_attended_only_and_gitlab_only() {
   pass "fm-pr-merge --allow-no-pipeline is attended-only, takes no value, and applies only to GitLab"
 }
 
+# A project whose registry entry carries merge=commit takes merge commits only
+# (bin/fm-project-mode.sh owns the binding): the default method is a merge
+# commit, and a squash or rebase, by any spelling, is refused before any forge
+# call. A project with no merge token keeps today's squash default.
+register_merge_commit() {
+  local case_dir=$1
+  printf '%s\n' '## Projects' \
+    '- project [no-mistakes +yolo merge=commit] - fixture (added 2026-01-01)' \
+    > "$case_dir/home/data/projects.md"
+}
+
+test_merge_commit_project_defaults_to_a_merge_commit() {
+  local case_dir rc
+  case_dir=$(make_case merge-commit-default)
+  add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
+  : > "$case_dir/gh-axi.log"
+  register_merge_commit "$case_dir"
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "merge-commit-default: the merge should succeed: $(cat "$case_dir/stderr")"
+  assert_logged_gh_merge "$case_dir" 9 example/repo --merge
+  assert_no_grep '--squash' "$case_dir/gh.log" "merge-commit-default: a squash reached the forge"
+
+  # An explicit --merge is the same merge.
+  case_dir=$(make_case merge-commit-explicit)
+  add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
+  : > "$case_dir/gh-axi.log"
+  register_merge_commit "$case_dir"
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 -- --merge \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "merge-commit-explicit: an explicit --merge should succeed: $(cat "$case_dir/stderr")"
+  assert_logged_gh_merge "$case_dir" 9 example/repo --merge
+  pass "fm-pr-merge merges a merge=commit project with a merge commit by default and for an explicit --merge"
+}
+
+test_merge_commit_project_refuses_squash_and_rebase() {
+  local case_dir rc spelling label=0
+  for spelling in '--squash' '--rebase' '--method squash' '--method=rebase' '--method rebase' '-s' '-r' '-ms'; do
+    label=$((label + 1))
+    case_dir=$(make_case "merge-commit-refuses-$label")
+    add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
+    : > "$case_dir/gh-axi.log"
+    register_merge_commit "$case_dir"
+    set +e
+    # shellcheck disable=SC2086
+    run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 -- $spelling \
+      > "$case_dir/stdout" 2> "$case_dir/stderr"
+    rc=$?
+    set -e
+    expect_code 1 "$rc" "merge-commit-refuses ($spelling): a squash or rebase must be refused"
+    assert_grep 'merge=commit' "$case_dir/stderr" \
+      "merge-commit-refuses ($spelling): the refusal did not name the registry token"
+    assert_grep 'project' "$case_dir/stderr" \
+      "merge-commit-refuses ($spelling): the refusal did not name the project"
+    assert_no_regex '^pr merge ' "$case_dir/gh.log" \
+      "merge-commit-refuses ($spelling): a merge reached the forge"
+    assert_no_regex '^pr=' "$case_dir/state/task-x1.meta" \
+      "merge-commit-refuses ($spelling): pr= was recorded before the refusal"
+  done
+  pass "fm-pr-merge refuses a squash or rebase of a merge=commit project, in every spelling, before any forge call"
+}
+
+test_merge_commit_project_ignores_squash_summary() {
+  local case_dir rc
+  case_dir=$(make_case merge-commit-no-summary)
+  add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
+  : > "$case_dir/gh-axi.log"
+  register_merge_commit "$case_dir"
+  : > "$case_dir/home/config/pr-squash-summary"
+  write_github_text "$case_dir" "A title" $'## What Changed\n\n- Something.\n'
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "merge-commit-no-summary: the merge should succeed: $(cat "$case_dir/stderr")"
+  assert_logged_gh_merge "$case_dir" 9 example/repo --merge
+  pass "fm-pr-merge adds no squash summary to a merge=commit project's merge commit"
+}
+
+test_merge_commit_project_forgejo_and_gitlab() {
+  local case_dir rc
+  # Forgejo: the repository's own squash default is not used, and a named
+  # squash is refused before any merge call.
+  case_dir=$(make_forgejo_case merge-commit-forgejo)
+  printf '{"default_merge_style":"squash"}\n' > "$case_dir/tea-repo.json"
+  register_merge_commit "$case_dir"
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$FJ_URL" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "merge-commit-forgejo: the merge should succeed: $(cat "$case_dir/stderr")"
+  [ "$(cat "$case_dir/tea-merge-do" 2>/dev/null)" = merge ] \
+    || fail "merge-commit-forgejo: the default was not a merge commit: '$(cat "$case_dir/tea-merge-do" 2>/dev/null)'"
+
+  case_dir=$(make_forgejo_case merge-commit-forgejo-squash)
+  register_merge_commit "$case_dir"
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$FJ_URL" -- --squash \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "merge-commit-forgejo-squash: a squash must be refused"
+  assert_grep 'merge=commit' "$case_dir/stderr" "merge-commit-forgejo-squash: the refusal did not name the token"
+  [ -z "$(tea_merge_line "$case_dir/tea.log")" ] \
+    || fail "merge-commit-forgejo-squash: a merge reached the forge"
+
+  # GitLab: a squash or rebase flag is refused; the project's own method stands
+  # otherwise.
+  case_dir=$(make_gitlab_case merge-commit-gitlab)
+  register_merge_commit "$case_dir"
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$MR_URL" -- --squash \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "merge-commit-gitlab: a squash must be refused"
+  assert_grep 'merge=commit' "$case_dir/stderr" "merge-commit-gitlab: the refusal did not name the token"
+  [ -z "$(glab_merge_line "$case_dir/glab.log")" ] \
+    || fail "merge-commit-gitlab: a merge reached the forge"
+  pass "fm-pr-merge applies merge=commit to Forgejo (default and refusal) and GitLab (refusal)"
+}
+
+test_malformed_merge_field_refuses() {
+  local case_dir rc
+  case_dir=$(make_case malformed-merge-field)
+  add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
+  : > "$case_dir/gh-axi.log"
+  printf '%s\n' '## Projects' '- project [no-mistakes merge=squash] - fixture (added 2026-01-01)' \
+    > "$case_dir/home/data/projects.md"
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 1 "$rc" "malformed-merge-field: an unreadable merge binding must refuse"
+  assert_grep 'merge binding' "$case_dir/stderr" \
+    "malformed-merge-field: the refusal did not name the merge binding"
+  assert_no_regex '^pr merge ' "$case_dir/gh.log" "malformed-merge-field: a merge reached the forge"
+  pass "fm-pr-merge refuses to merge when the project's merge binding is malformed"
+}
+
 test_merger_home_refuses_another_home
 test_merger_home_merges
 test_no_merger_field_keeps_every_home_merging
@@ -6924,3 +7073,8 @@ test_squash_summary_falls_back_to_repository_default
 test_squash_summary_caller_commit_text_wins
 test_squash_summary_leaves_gitlab_and_forgejo_untouched
 test_squash_summary_ignores_headings_inside_code_fences
+test_merge_commit_project_defaults_to_a_merge_commit
+test_merge_commit_project_refuses_squash_and_rebase
+test_merge_commit_project_ignores_squash_summary
+test_merge_commit_project_forgejo_and_gitlab
+test_malformed_merge_field_refuses

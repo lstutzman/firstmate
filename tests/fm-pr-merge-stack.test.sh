@@ -587,6 +587,49 @@ test_stack_member_with_an_upstream_merge_commit_refuses_the_whole_stack() {
   pass "a stack member carrying an upstream merge commit refuses the whole stack unless merged with --merge"
 }
 
+# A project whose registry entry carries merge=commit takes merge commits only:
+# a stack with no named method merges with a merge commit, and a named squash
+# or rebase refuses the whole stack before any merge request.
+register_stack_merge_commit() {
+  printf '%s\n' '## Projects' \
+    '- project [no-mistakes +yolo merge=commit] - fixture (added 2026-01-01)' \
+    > "$1/home/data/projects.md"
+}
+
+test_stack_of_a_merge_commit_project_merges_with_a_merge_commit() {
+  local case_dir rc=0
+  case_dir=$(make_stack_case merge-commit-default)
+  register_stack_merge_commit "$case_dir"
+  run_default_stack "$case_dir" || rc=$?
+  expect_code 0 "$rc" "merge-commit-default: the stack merge should succeed ($(cat "$case_dir/stderr"))"
+  assert_grep "-f merge_method=merge" "$case_dir/gh.log" \
+    "merge-commit-default: the stack was not merged with a merge commit"
+  assert_no_grep "merge_method=squash" "$case_dir/gh.log" "merge-commit-default: a squash reached the forge"
+
+  case_dir=$(make_stack_case merge-commit-explicit)
+  register_stack_merge_commit "$case_dir"
+  rc=0
+  run_default_stack "$case_dir" -- --merge || rc=$?
+  expect_code 0 "$rc" "merge-commit-explicit: an explicit --merge should succeed ($(cat "$case_dir/stderr"))"
+  assert_grep "-f merge_method=merge" "$case_dir/gh.log" "merge-commit-explicit: --merge was not forwarded"
+  pass "a stack of a merge=commit project merges with a merge commit by default and for an explicit --merge"
+}
+
+test_stack_of_a_merge_commit_project_refuses_squash_and_rebase() {
+  local case_dir rc method
+  for method in --squash --rebase; do
+    case_dir=$(make_stack_case "merge-commit-refuses${method}")
+    register_stack_merge_commit "$case_dir"
+    rc=0
+    run_default_stack "$case_dir" -- "$method" || rc=$?
+    expect_code 1 "$rc" "merge-commit-refuses $method: the stack must be refused"
+    assert_grep 'merge=commit' "$case_dir/stderr" \
+      "merge-commit-refuses $method: the refusal did not name the registry token"
+    assert_no_merge_request "$case_dir" "merge-commit-refuses $method"
+  done
+  pass "a stack of a merge=commit project refuses --squash and --rebase before any merge request"
+}
+
 test_stack_merges_and_records_every_member
 test_stack_merge_method_flag_is_forwarded
 test_top_head_must_equal_gated_head
@@ -608,3 +651,5 @@ test_away_record_refuses_stack_mode
 test_invalid_stack_requests_refuse_before_any_read
 test_stack_member_with_a_flagged_class_needs_the_captains_answer
 test_stack_member_with_an_upstream_merge_commit_refuses_the_whole_stack
+test_stack_of_a_merge_commit_project_merges_with_a_merge_commit
+test_stack_of_a_merge_commit_project_refuses_squash_and_rebase
