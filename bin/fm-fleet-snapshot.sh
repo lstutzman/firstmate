@@ -1098,7 +1098,7 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
               (.state == "in_flight" and .current_role == "held"
                and (.id as $id
                     | any($tasks[]; .id == $id and .current_state.state == "working") | not)))) ]) as $queued_all
-    | ([ $queued_all[] | select(.state == "queued" and .hold_kind == null and .hold_bucket == null) ]) as $queued_unheld
+    | ([ $queued_all[] | select(.state == "queued" and .hold_reason == null and .hold_kind == null) ]) as $queued_unheld
     | ([ $queued_all[]
          | select(.captain_actionable == true)
          | {id,key:.id,verb:"captain-hold",summary:(.title | trunc(160)),

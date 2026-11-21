@@ -1227,7 +1227,7 @@ w, at, root, specs = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4:]
 rows = []
 for spec in specs:
     rank, home, shape = spec.split(":")
-    rid = "progress-2026-11-05-%016x" % int(rank)
+    rid = "progress-%016x" % int(rank)
     program = "/tmp/evil.sh" if shape == "bad" else root + "/bin/fm-inbox.sh"
     rows.append({"id": "item-" + rank, "rank": int(rank), "execute": {
         "action": "start", "request_id": rid, "env": {"FM_HOME": w if home == "main" else w + "/" + home},

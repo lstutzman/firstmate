@@ -2178,7 +2178,7 @@ EOF
 }
 
 test_backlog_queue_line_states_depth_and_oldest_age() {
-  local rec root home fakebin out
+  local rec root home fakebin out age
   rec=$(new_world backlog-queue-line)
   IFS='|' read -r root home fakebin <<EOF
 $rec
@@ -2186,10 +2186,10 @@ EOF
   make_fake_toolchain "$fakebin"
   make_fake_ps_claude "$fakebin"
   printf '%s\n' manual > "$home/config/backlog-backend"
-  printf '## In flight\n\n## Queued\n- [ ] a - A (repo: x) (kind: task) (since 2999-01-02)\n- [ ] b - B (repo: x) (kind: task) (since 2020-01-01) (hold: waits) (hold-kind: external)\n- [ ] c - C (repo: x) (kind: task) (since 2020-03-04)\n\n## Done\n' > "$home/data/backlog.md"
+  printf '## In flight\n\n## Queued\n- [ ] a - A (repo: x) (kind: task) (since 2999-01-02)\n- [ ] b - B (repo: x) (kind: task) (since 2020-01-01) (hold: waits) (hold-kind: external)\n- [ ] d - D (repo: x) (kind: task) (since 2019-05-05) (hold: waits on vendor)\n- [ ] e - E (repo: x) (kind: task) (since 2020-03-01) (holding pattern)\n- [ ] c - C (repo: x) (kind: task) (since 2020-03-04)\n\n## Done\n' > "$home/data/backlog.md"
   out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
-  assert_contains "$out" "queue: 3 queued, 2 unheld, oldest unheld since 2020-03-04 (" "the queue line must skip the held row's older date"
-  assert_contains "$out" " days old)" "the queue line must state the oldest age"
+  age=$(python3 -I -c 'import datetime; print((datetime.datetime.now(datetime.timezone.utc).date() - datetime.date(2020, 3, 1)).days)')
+  assert_contains "$out" "queue: 5 queued, 3 unheld, oldest unheld since 2020-03-01 ($age days old)" "the queue line must skip held rows, count a (holding text as unheld, and state the exact age"
   printf '## In flight\n\n## Queued\n\n## Done\n' > "$home/data/backlog.md"
   out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
   assert_not_contains "$out" "queue: " "an empty queue prints no queue line"

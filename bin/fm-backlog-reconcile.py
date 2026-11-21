@@ -10,13 +10,18 @@ findings to <home>/state/backlog-reconcile.json (atomically) and prints one line
 or the owner of the home decides what to close. Exit 0 whether or not it found anything; 1 when the
 backlog cannot be read; 2 on a usage error.
 
-A queued row is a finding when:
-  linear-closed   a Linear identifier in the row (`ABC-123`) is Done, Released, Canceled or a Duplicate
-                  (`linear-axi issue view`), so the work is finished or abandoned;
-  pr-closed       a pull request URL in the row is merged or closed (`gh pr view`);
-  duplicate       the row's id is already an In flight or Done row in this backlog or in another registered
-                  local home (data/secondmates.md). A remote home (host: ...) is not read; the count of
-                  homes skipped is printed, so a duplicate held only there is named as unchecked.
+A queued row is judged only on its own item. Its Linear item is the `(linear: ...)` field, otherwise the
+first PC or FLEET identifier in its title; its pull request is the first `/pull/` link on its title line,
+the rule the fleet snapshot uses for pr_url. Identifiers and links anywhere else are context: they are
+never looked up. A queued row is a finding when:
+  linear-closed   its Linear item is Done, Released, Canceled or a Duplicate (`linear-axi issue view`),
+                  so the work is finished or abandoned;
+  pr-closed       its pull request is merged or closed (`gh pr view`);
+  duplicate       the row's id is already an In flight or Done row in this backlog, in the primary home or
+                  in another local home in the primary's registry (data/secondmates.md). The primary is
+                  this home, or the local parent named in its .fm-secondmate-parent record. A remote home
+                  (host: ...) is not read; the count of homes skipped is printed, and a missing registry is
+                  reported, so a duplicate the sweep could not see is named as unchecked.
 
 A held row (`(hold` marker) is skipped, because it waits on something by design. Linear and GitHub reads are
 bounded by --max-linear (default 25) and --max-prs (default 25) per run, oldest rows first, and the rows left
@@ -36,16 +41,18 @@ ROW = re.compile(r"^- \[( |x)\] ([A-Za-z0-9._-]+) - (.*)$")
 HEADING = re.compile(r"^## (.+?)\s*$")
 HELD = re.compile(r"\(hold(?:-kind)?:")
 SINCE = re.compile(r"\(since (\d{4}-\d{2}-\d{2})")
-LINEAR_ID = re.compile(r"\b[A-Z][A-Z0-9]{1,9}-\d{1,6}\b")
+LINEAR_ID = re.compile(r"\b(?:PC|FLEET)-\d{1,6}\b")
+LINEAR_FIELD = re.compile(r"(?:\(|,\s*)linear:\s*((?:PC|FLEET)-\d{1,6})\b")
+METADATA = re.compile(r"\s*\((?:[a-z][a-z-]*:|(?:since|merged|reported|done)\s)[^)]*\)")
 PR_URL = re.compile(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/\d+")
 LINEAR_CLOSED = {"done", "released", "canceled", "cancelled", "duplicate"}
 LANES = {"in flight": "in_flight", "queued": "queued", "done": "done"}
 
 
 def parse(path):
-    """{lane: [row]}; a row is {id, head, body}. A missing file is an empty backlog."""
+    """{lane: [row]}; a row is {id, head}. A missing file is an empty backlog."""
     lanes = {"in_flight": [], "queued": [], "done": []}
-    lane = row = None
+    lane = None
     try:
         with open(path, encoding="utf-8") as fh:
             text = fh.read()
@@ -54,27 +61,49 @@ def parse(path):
     for line in text.splitlines():
         heading = HEADING.match(line)
         if heading:
-            lane, row = LANES.get(heading.group(1).strip().lower()), None
+            lane = LANES.get(heading.group(1).strip().lower())
             continue
         match = ROW.match(line)
         if lane and match:
-            row = {"id": match.group(2), "head": match.group(3), "body": ""}
-            lanes[lane].append(row)
-        elif row is not None and line.startswith("  "):
-            row["body"] += line.strip() + "\n"
-        else:
-            row = None
+            lanes[lane].append({"id": match.group(2), "head": match.group(3)})
     return lanes
 
 
-def other_homes(home):
-    """(local home paths, number of remote homes skipped) from data/secondmates.md."""
-    local, remote = [], 0
+def own_linear(head):
+    field = LINEAR_FIELD.search(head)
+    if field:
+        return field.group(1)
+    found = LINEAR_ID.search(METADATA.sub("", PR_URL.sub("", head)))
+    return found.group(0) if found else None
+
+
+def own_pr(head):
+    found = PR_URL.search(head)
+    return found.group(0) if found else None
+
+
+def primary_home(home):
+    """The home that owns the registry: the local parent in .fm-secondmate-parent, else this home."""
     try:
-        with open(os.path.join(home, "data", "secondmates.md"), encoding="utf-8") as fh:
+        with open(os.path.join(home, ".fm-secondmate-parent"), encoding="utf-8") as fh:
+            fields = dict(line.split("=", 1) for line in fh.read().splitlines() if "=" in line)
+    except OSError:
+        return home
+    parent = fields.get("parent_home", "")
+    return parent if fields.get("route") == "local" and parent.startswith("/") else None
+
+
+def other_homes(primary):
+    """(local home paths, number of remote homes skipped, registry found) from the primary's registry."""
+    local, remote = [], 0
+    if primary is None:
+        return local, remote, False
+    try:
+        with open(os.path.join(primary, "data", "secondmates.md"), encoding="utf-8") as fh:
             lines = fh.read().splitlines()
     except OSError:
-        return local, remote
+        return [os.path.realpath(primary)], remote, False
+    local.append(os.path.realpath(primary))
     for line in lines:
         if not line.startswith("- "):
             continue
@@ -84,7 +113,7 @@ def other_homes(home):
         found = re.search(r"home:\s*([^;)]+)", line)
         if found and os.path.isdir(found.group(1).strip()):
             local.append(os.path.realpath(found.group(1).strip()))
-    return local, remote
+    return local, remote, True
 
 
 def run_json(argv, env=None):
@@ -120,12 +149,12 @@ def oldest_first(rows):
 def reconcile(home, max_linear, max_prs):
     lanes = parse(os.path.join(home, "data", "backlog.md"))
     findings, unchecked = [], {"linear": 0, "pr": 0}
-    siblings, remote_skipped = other_homes(home)
+    siblings, remote_skipped, registry_found = other_homes(primary_home(home))
     taken = {}
     for lane in ("in_flight", "done"):
         for row in lanes[lane]:
             taken.setdefault(row["id"], "this home (%s)" % lane.replace("_", " "))
-    for path in siblings:
+    for path in dict.fromkeys(siblings):
         if path == os.path.realpath(home):
             continue
         other = parse(os.path.join(path, "data", "backlog.md"))
@@ -135,38 +164,39 @@ def reconcile(home, max_linear, max_prs):
     linear_left, pr_left = max_linear, max_prs
     seen_linear, seen_pr = {}, {}
     for row in oldest_first([r for r in lanes["queued"] if not HELD.search(r["head"])]):
-        text = row["head"] + "\n" + row["body"]
         if row["id"] in taken:
             findings.append({"id": row["id"], "kind": "duplicate", "detail": "already a row in " + taken[row["id"]]})
-        for url in dict.fromkeys(PR_URL.findall(text)):
-            if url not in seen_pr:
-                if pr_left <= 0:
-                    unchecked["pr"] += 1
-                    continue
+        url = own_pr(row["head"])
+        if url and url not in seen_pr:
+            if pr_left <= 0:
+                unchecked["pr"] += 1
+                url = None
+            else:
                 pr_left -= 1
                 try:
                     seen_pr[url] = pr_state(url)
                 except (RuntimeError, ValueError, OSError, subprocess.SubprocessError):
                     seen_pr[url] = None
                     unchecked["pr"] += 1
-            if seen_pr.get(url) in ("MERGED", "CLOSED"):
-                findings.append({"id": row["id"], "kind": "pr-closed", "detail": "%s is %s" % (url, seen_pr[url].lower())})
-        for identifier in dict.fromkeys(LINEAR_ID.findall(text)):
-            if identifier not in seen_linear:
-                if linear_left <= 0:
-                    unchecked["linear"] += 1
-                    continue
+        if url and seen_pr.get(url) in ("MERGED", "CLOSED"):
+            findings.append({"id": row["id"], "kind": "pr-closed", "detail": "%s is %s" % (url, seen_pr[url].lower())})
+        identifier = own_linear(row["head"])
+        if identifier and identifier not in seen_linear:
+            if linear_left <= 0:
+                unchecked["linear"] += 1
+                identifier = None
+            else:
                 linear_left -= 1
                 try:
                     seen_linear[identifier] = linear_state(identifier)
                 except (RuntimeError, ValueError, OSError, subprocess.SubprocessError):
                     seen_linear[identifier] = None
                     unchecked["linear"] += 1
-            if (seen_linear.get(identifier) or "").lower() in LINEAR_CLOSED:
+        if identifier and (seen_linear.get(identifier) or "").lower() in LINEAR_CLOSED:
                 findings.append({"id": row["id"], "kind": "linear-closed", "detail": "%s is %s" % (identifier, seen_linear[identifier])})
     return {"schema": "fm-backlog-reconcile.v1", "home": os.path.realpath(home), "generated_epoch": int(time.time()),
             "queued": len(lanes["queued"]), "findings": findings, "unchecked": unchecked,
-            "remote_homes_skipped": remote_skipped}
+            "remote_homes_skipped": remote_skipped, "registry_found": registry_found}
 
 
 def write_atomic(path, document):
@@ -216,6 +246,8 @@ def main(argv):
         notes.append("%d Linear and %d PR lookups unchecked" % (report["unchecked"]["linear"], report["unchecked"]["pr"]))
     if report["remote_homes_skipped"]:
         notes.append("%d remote homes not read for duplicates" % report["remote_homes_skipped"])
+    if not report["registry_found"]:
+        notes.append("registry not found; duplicates in other homes unchecked")
     print("backlog-reconcile: %d queued, %d finding(s)%s; nothing changed" % (
         report["queued"], len(report["findings"]), "; " + "; ".join(notes) if notes else ""))
     return 0

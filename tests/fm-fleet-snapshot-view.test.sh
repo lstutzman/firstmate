@@ -1513,11 +1513,12 @@ test_home_summary_queue_counts_survive_truncation() {
     done
     printf -- '- [ ] old-1 - Old (repo: alpha) (kind: ship) (since 2026-10-02)\n'
     printf -- '- [ ] held-old - Held old (repo: alpha) (kind: ship) (since 2026-09-01) (hold: waits on PC-1) (hold-kind: external)\n'
+    printf -- '- [ ] reason-only - Reason only (repo: alpha) (kind: ship) (since 2026-08-01) (hold: waits on vendor)\n'
     printf -- '- [ ] undated - Undated (repo: alpha) (kind: ship)\n'
     printf '\n## Done\n'
   } > "$home/data/backlog.md"
   out=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_SECONDMATE_QUEUED=2 "$SNAPSHOT" --secondmate-home-summary)
-  printf '%s' "$out" | jq -e '.counts.queued == 6 and (.queued | length) == 2
+  printf '%s' "$out" | jq -e '.counts.queued == 7 and (.queued | length) == 2
     and .counts.queued_unheld == 5 and .counts.queued_oldest_since == "2026-10-02"' >/dev/null \
     || fail "queued_unheld and queued_oldest_since must cover every unheld row, not the capped array: $out"
   printf '## In flight\n\n## Queued\n- [ ] undated - Undated (repo: alpha) (kind: ship)\n\n## Done\n' > "$home/data/backlog.md"

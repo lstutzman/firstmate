@@ -431,7 +431,7 @@ print_file_or_absent() {
 }
 
 # One line for the whole queue. The listing above is bounded and newest-first, so depth and the
-# oldest unheld item's age are stated here: an unheld row is one with no "(hold" marker. Printed only
+# oldest unheld item's age are stated here: an unheld row is one with no "(hold:" or "(hold-kind:" marker. Printed only
 # when the queue has rows. Age uses today's UTC date and a days-from-civil count, so no GNU or BSD
 # date flag is involved.
 print_queue_line() {
@@ -446,7 +446,7 @@ print_queue_line() {
     /^##[[:space:]]+/ { in_queue = ($0 ~ /^##[[:space:]]+Queued[[:space:]]*$/); next }
     in_queue && /^[-*][[:space:]]+/ {
       total++
-      if ($0 ~ /[(]hold/) next
+      if ($0 ~ /[(]hold(-kind)?:/) next
       unheld++
       if (match($0, /[(]since [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/)) {
         d = substr($0, RSTART + 7, 10)
