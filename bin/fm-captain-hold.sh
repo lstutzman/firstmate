@@ -282,7 +282,9 @@
 # bin/fm-pending-reply-sweep.sh), and this home holds no open captain call named
 # by the key or by its legacy `<secondmate-id>-decision-<key>` identity, because
 # that call is settled through `answer` or `reconcile`, and closing its status
-# twin would raise a record divergence. --reason is required. A rerun on a key
+# twin would raise a record divergence. --reason is required and must not name
+# Lee or the captain, because bin/fm-officer-friction.py counts a resolution
+# that does as his answer. A rerun on a key
 # whose latest line is already a hand-back close prints `already handed back`
 # and appends nothing; a key closed any other way refuses. After the append the
 # fold is read again, and a key still open fails. Exit 0 closed or already
@@ -2854,6 +2856,8 @@ command_handed_back() {
   validate_slug key "$key"
   [ -n "$reason" ] || fail "--reason is required; say where the decision went"
   validate_one_line reason "$reason"
+  ! printf '%s\n' "$reason" | grep -Ewq 'Lee|captain|Captain' \
+    || fail "--reason must not name Lee or the captain; a close that does reads as his answer"
   for prefix in ${FM_CLASSIFY_RESERVED_KEY_PREFIXES:-$FM_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT}; do
     case "$key" in
       "$prefix"*) fail "$key is a reserved $prefix key; only its owner closes it (bin/fm-pending-reply-sweep.sh for pending-reply keys)" ;;

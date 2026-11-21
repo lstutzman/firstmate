@@ -3085,6 +3085,8 @@ EOF
   refuses "not an open needs-decision" mate sample-answered-call --reason r
   refuses "not an open needs-decision" mate sample-never-raised --reason r
   refuses "--reason is required" mate sample-kept-call
+  refuses "must not name Lee or the captain" mate sample-kept-call --reason "the captain asked to hand it back"
+  refuses "must not name Lee or the captain" mate sample-kept-call --reason "Lee said hand it back"
   refuses "must be a non-empty privacy-safe slug" mate 'bad key' --reason r
   refuses "this home holds captain call sample-own-call" mate sample-own-call --reason r
   refuses "this home holds captain call mate-decision-sample-legacy" mate sample-legacy --reason r
