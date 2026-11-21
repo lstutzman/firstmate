@@ -148,7 +148,10 @@
 #     it reports done again.
 # A handoff routed by an admission config (route.<class>=handoff:<home>) also
 # writes state/<id>.merge-handoff when bin/fm-pr-merge.sh refuses the PR, so it
-# frees its place like any other handoff.
+# frees its place like any other handoff. As for a merge-via handoff, the same
+# record also lets the release sweep (bin/fm-pr-check.sh release) run
+# `no-mistakes axi handoff` for the worker, and lets the tree-park sweep
+# (bin/fm-tree-park.sh) return the ship's copy to the pool.
 # Project capacity (bin/fm-project-capacity-lib.sh) and landing lag
 # (data/projects.md landing-lag=) still bound every spawn, so leaving landing
 # tasks out of wip= never lifts a project's own limits.
