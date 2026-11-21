@@ -2255,6 +2255,34 @@ test_scan_handoff_to_a_hung_merger_falls_back_inside_the_bound() {
   pass "a scan registration bounds a hung merger send by its scan budget and still wakes the parent"
 }
 
+# A home with no parent sends the handoff to its merger itself and has no
+# keyed fallback. When that send fails during a watcher scan, the PR is still
+# armed, so no later scan retries it: the failure must reach the scan's wake
+# queue and output, not only the registration's discarded stderr.
+test_scan_reports_a_failed_handoff_from_a_home_with_no_parent() {
+  local dir state tasks_path url=https://github.com/o/r/pull/53 out
+  tasks_path=$(command -v tasks-axi) || fail "these cases read captain holds through tasks-axi, which was not found"
+  tasks_path=$(dirname "$tasks_path")
+  dir=$(merger_direct_case merger-no-parent-scan-fail)
+  state="$dir/home/state"
+  rm -f -- "$dir/home/.fm-secondmate-parent" "$dir/home/.fm-secondmate-home"
+  printf '%s\n' "done [at=2]: PR $url checks green" > "$state/task-a.status"
+  out=$(FM_TEST_SEND_RC=1 FM_TEST_SEND_LOG="$dir/send.log" FM_TEST_SEND_ENV_LOG="$dir/send-env.log" \
+    FM_TEST_GH_HEAD=7777777777777777777777777777777777777777 BASE_PATH="$BASE_PATH:$tasks_path" \
+    run_check_entry "$dir" scan 2> "$dir/stderr") || fail "merger-no-parent: the scan failed: $(cat "$dir/stderr")"
+  grep -qxF "pr=$url" "$state/task-a.meta" || fail "merger-no-parent: the PR was not recorded: $(cat "$dir/stderr")"
+  [ "$(grep -c '^fm-slarti$' "$dir/send.log" 2>/dev/null || true)" -eq 1 ] \
+    || fail "merger-no-parent: the handoff was not sent to the merger: $(cat "$dir/send.log" 2>/dev/null)"
+  [ ! -e "$state/task-a.merge-handoff" ] || fail "merger-no-parent: a failed handoff was recorded as delivered"
+  case "$out" in
+    *"task-a registered $url, but PR $url is registered but its handoff to home slarti could not be written"*) ;;
+    *) fail "merger-no-parent: the scan did not report the failed handoff: $out" ;;
+  esac
+  [ "$(grep -c "check: pr-register: task-a registered $url, but .*handoff to home slarti could not be written" "$state/.wake-queue" 2>/dev/null || true)" -eq 1 ] \
+    || fail "merger-no-parent: the failed handoff did not wake the home: $(cat "$state/.wake-queue" 2>/dev/null)"
+  pass "a scan reports a failed merger handoff from a home with no parent through its wake queue"
+}
+
 # A no-mistakes ship whose PR another home merges has its run released with
 # `no-mistakes axi handoff` once that PR is handed off and the worker reports it
 # checks green, so the run stops holding a pipeline slot until the merge. The
@@ -6247,6 +6275,7 @@ test_ready_time_is_recorded_once_per_pr
 test_ready_pr_is_handed_to_its_merger_once_per_head
 test_ready_pr_handoff_goes_straight_to_the_merger_inbox
 test_scan_handoff_to_a_hung_merger_falls_back_inside_the_bound
+test_scan_reports_a_failed_handoff_from_a_home_with_no_parent
 test_handed_off_nm_run_is_released_once_at_green
 test_rejected_metacharacter_bytes_are_inert
 test_static_poll_contract

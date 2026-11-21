@@ -255,6 +255,11 @@ pr_check_scan() {
       bash "$SCRIPT_DIR/fm-pr-check.sh" "$id" "$url") 2>&1 >/dev/null) || rc=$?
     if [ "$rc" -eq 0 ]; then
       rm -f -- "$refused" "$timed_out"
+      printf '%s\n' "$err" | sed -n 's/^actionable: //p' | while IFS= read -r note; do
+        line="$id registered $url, but $note"
+        fm_wake_append check pr-register "check: pr-register: $line" || continue
+        printf '%s\n' "$line"
+      done
       continue
     fi
     if fm_timed_out "$rc"; then
