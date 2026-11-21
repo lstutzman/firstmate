@@ -2127,6 +2127,85 @@ SH
   pass "fm-pr-check hands a ready PR to its project's merger home once per head, and never with no merger, from the merger, or while held"
 }
 
+# A secondmate home with a local parent route delivers the handoff straight
+# into the merger's durable inbox, resolved in the parent home (where the
+# merger is a recorded secondmate), as a fire-and-forget request so no reply
+# expectation is armed. The parent channel gets only a silent working line,
+# and the keyed needs-decision wake is reserved for a failed delivery.
+test_ready_pr_handoff_goes_straight_to_the_merger_inbox() {
+  local dir parent chan url=https://github.com/o/r/pull/51 head2=2222222222222222222222222222222222222222
+  local tasks_path id1 id2
+  tasks_path=$(command -v tasks-axi) || fail "these cases read captain holds through tasks-axi, which was not found"
+  tasks_path=$(dirname "$tasks_path")
+  dir=$(make_case merger-direct)
+  write_task_meta "$dir"
+  parent="$dir/parent"
+  mkdir -p "$parent/state"
+  chan="$parent/state/mate-x.status"
+  printf '%s\n' kind=secondmate > "$parent/state/slarti.meta"
+  printf '%s\n' mate-x > "$dir/home/.fm-secondmate-home"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$parent" > "$dir/home/.fm-secondmate-parent"
+  fm_test_tasks_toml "$dir/home/.tasks.toml"
+  printf '%s\n' '## In flight' '' '## Queued' '' '## Done' > "$dir/home/data/backlog.md"
+  printf '%s\n' '- project [no-mistakes +yolo merger=slarti] - fixture (added 2026-01-01)' > "$dir/home/data/projects.md"
+  cat > "$dir/root/bin/fm-send.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$#" "${FM_HOME:-}" "$@" >> "$FM_TEST_SEND_LOG"
+exit "${FM_TEST_SEND_RC:-0}"
+SH
+  chmod +x "$dir/root/bin/fm-send.sh"
+  sends() { grep -c '^fm-slarti$' "$dir/send.log" 2>/dev/null || true; }
+  register() {  # <head> [send-rc]
+    FM_TEST_SEND_RC=${2:-0} FM_TEST_SEND_LOG="$dir/send.log" FM_TEST_GH_HEAD=$1 \
+      BASE_PATH="$BASE_PATH:$tasks_path" run_check_entry "$dir" task-a "$url" >/dev/null 2>"$dir/err"
+  }
+  wakes() { grep -c 'needs-decision.*merge-handoff-51' "$chan" 2>/dev/null || true; }
+
+  register "$head2" || fail "merger-direct: registering failed: $(cat "$dir/err")"
+  [ "$(sends)" -eq 1 ] || fail "merger-direct: expected one direct send, got: $(cat "$dir/send.log" 2>/dev/null)"
+  [ "$(sed -n 1p "$dir/send.log")" = 4 ] || fail "merger-direct: wrong send argument count: $(cat "$dir/send.log")"
+  [ "$(sed -n 2p "$dir/send.log")" = "$parent" ] \
+    || fail "merger-direct: the send did not resolve the merger in the parent home: $(cat "$dir/send.log")"
+  [ "$(sed -n 4p "$dir/send.log")" = --fire-and-forget ] \
+    || fail "merger-direct: the send armed a reply expectation: $(cat "$dir/send.log")"
+  id1=$(sed -n 5p "$dir/send.log")
+  printf '%s' "$id1" | grep -Eq '^[a-f0-9]{16}$' || fail "merger-direct: delivery id is not 16 hex: $id1"
+  case "$(sed -n 6p "$dir/send.log")" in
+    "needs-decision [key=merge-handoff-51] [cause=external] [at="*"]: [handoff=slarti] $url is ready to merge") ;;
+    *) fail "merger-direct: wrong handoff line: $(cat "$dir/send.log")" ;;
+  esac
+  [ "$(wakes)" -eq 0 ] || fail "merger-direct: a delivered handoff still woke the parent: $(cat "$chan")"
+  assert_grep "merge handoff delivered to home slarti inbox: $url" "$chan" \
+    "merger-direct: no silent ledger line was recorded for the parent"
+  bash -c '. "$1/bin/fm-classify-lib.sh"; status_open_decisions "$2"' _ "$ROOT" "$chan" > "$dir/open"
+  assert_no_grep 'merge-handoff' "$dir/open" "merger-direct: the ledger line opened a decision"
+
+  register "$head2" || fail "merger-direct: re-registering the same head failed"
+  [ "$(sends)" -eq 1 ] || fail "merger-direct: the same head was sent twice"
+  [ "$(grep -c 'slarti inbox: ' "$chan")" -eq 1 ] || fail "merger-direct: the same head wrote two ledger lines"
+
+  register 3333333333333333333333333333333333333333 || fail "merger-direct: a new head failed"
+  [ "$(sends)" -eq 2 ] || fail "merger-direct: a new head was not sent once"
+  id2=$(sed -n 11p "$dir/send.log")
+  [ "$id2" != "$id1" ] || fail "merger-direct: two heads shared one delivery id"
+
+  # A failed delivery wakes the parent with the keyed handoff line instead,
+  # so the PR still reaches its merger by the old route, and the failure is
+  # not retried on every registration.
+  register 4444444444444444444444444444444444444444 1 || fail "merger-direct: a failed send failed the registration: $(cat "$dir/err")"
+  [ "$(wakes)" -eq 1 ] || fail "merger-direct: a failed delivery did not wake the parent: $(cat "$chan")"
+  register 4444444444444444444444444444444444444444 || fail "merger-direct: re-registering after a failed send failed"
+  [ "$(wakes)" -eq 1 ] || fail "merger-direct: the failed delivery woke the parent twice"
+  [ "$(sends)" -eq 3 ] || fail "merger-direct: a recorded fallback was sent again"
+
+  # Merger main has no inbox to deliver into: the parent channel carries it.
+  printf '%s\n' '- project [no-mistakes +yolo merger=main] - fixture (added 2026-01-01)' > "$dir/home/data/projects.md"
+  register 5555555555555555555555555555555555555555 || fail "merger-direct: merger main failed to register"
+  [ "$(sends)" -eq 3 ] || fail "merger-direct: a merger main was sent a direct handoff"
+  [ "$(wakes)" -eq 2 ] || fail "merger-direct: a merger main did not use the parent channel: $(cat "$chan")"
+  pass "fm-pr-check delivers a merger handoff straight to the merger's inbox once per head, records a silent ledger line, and wakes the parent only on a failed delivery"
+}
+
 # A no-mistakes ship whose PR another home merges has its run released with
 # `no-mistakes axi handoff` once that PR is handed off and the worker reports it
 # checks green, so the run stops holding a pipeline slot until the merge. The
@@ -6117,6 +6196,7 @@ test_watcher_sweep_records_a_reported_pr
 test_valid_recording_and_merge_derivation
 test_ready_time_is_recorded_once_per_pr
 test_ready_pr_is_handed_to_its_merger_once_per_head
+test_ready_pr_handoff_goes_straight_to_the_merger_inbox
 test_handed_off_nm_run_is_released_once_at_green
 test_rejected_metacharacter_bytes_are_inert
 test_static_poll_contract
