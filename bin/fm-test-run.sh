@@ -407,7 +407,7 @@ family_for_basename() {
     fm-spawn-dispatch-profile.test.sh|fm-claude-trust.test.sh|\
     fm-worker-account.test.sh|\
     fm-git-strip-ai-trailers.test.sh|\
-    fm-spawn-setup.test.sh|fm-trace-context-spawn.test.sh|fm-spawn-worktree-settle.test.sh|\
+    fm-spawn-setup.test.sh|fm-spawn-project-root.test.sh|fm-trace-context-spawn.test.sh|fm-spawn-worktree-settle.test.sh|\
     fm-spawn-claude-launch-doorbell.test.sh|\
     fm-spawn-compact-adviser-disable.test.sh|\
     fm-spawn-compact-adviser-disable-remote.test.sh|\
@@ -1034,6 +1034,7 @@ tests/fm-spawn-home-summary.test.sh 6200
 tests/fm-spawn-manual-pr-text.test.sh 10177
 tests/fm-spawn-orca-worktree.test.sh 62375
 tests/fm-spawn-pool-base-freshen.test.sh 264249
+tests/fm-spawn-project-root.test.sh 8000
 tests/fm-spawn-setup.test.sh 39482
 tests/fm-spawn-worktree-settle.test.sh 47430
 tests/fm-startup-growth-check.test.sh 6116

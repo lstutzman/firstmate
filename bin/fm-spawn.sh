@@ -4443,6 +4443,26 @@ if [ "$KIND" = secondmate ]; then
     BRIEF="$DATA/$ID/brief.md"
   fi
 else
+  # A fresh ship or scout spawn leases a worktree of this path, so it must be a
+  # clone root: a missing path or a folder inside another repository (a bare
+  # name resolved against the home, which sits inside the firstmate checkout)
+  # would lease that enclosing repository instead. Refuse before anything is created.
+  if [ "$RELAUNCH" -eq 0 ]; then
+    SPAWN_PROJ_ARG=$(resolve_project_dir_arg "$PROJ")
+    SPAWN_PROJ_PHYS=$(cd "$SPAWN_PROJ_ARG" 2>/dev/null && pwd -P) || SPAWN_PROJ_PHYS=
+    SPAWN_PROJ_TOP=
+    [ -z "$SPAWN_PROJ_PHYS" ] || SPAWN_PROJ_TOP=$(git -C "$SPAWN_PROJ_PHYS" rev-parse --show-toplevel 2>/dev/null) || SPAWN_PROJ_TOP=
+    if [ -z "$SPAWN_PROJ_TOP" ] || [ "$(cd "$SPAWN_PROJ_TOP" && pwd -P)" != "$SPAWN_PROJ_PHYS" ]; then
+      SPAWN_PROJ_HINT=
+      case "$PROJ" in
+      projects/*) ;;
+      */*) ;;
+      *) [ ! -d "$PROJECTS/$PROJ" ] || SPAWN_PROJ_HINT="; did you mean projects/$PROJ?" ;;
+      esac
+      echo "error: spawn refused: project path $PROJ (resolved to $SPAWN_PROJ_ARG) is not a clone root: it does not exist or is not the top level of its own git repository, so no worktree was leased$SPAWN_PROJ_HINT" >&2
+      exit 1
+    fi
+  fi
   PROJ_ABS="$(cd "$(resolve_project_dir_arg "$PROJ")" && pwd)"
   WT=""
   BRIEF="$DATA/$ID/brief.md"
