@@ -1122,6 +1122,68 @@ test_landing_needs_a_handoff_to_another_merger() {
   pass 'a landing task needs its PR handed to another merger: a handoff record, an open handoff decision, or the merger binding'
 }
 
+# set_wip <world> <n>: the navigator's registry line takes wip: <n>.
+set_wip() {
+  sed -i.bak -E "s/wip: [0-9]+; tick: every 2h/wip: $2; tick: every 2h/" "$1/data/offices.md" && rm -f "$1/data/offices.md.bak"
+}
+
+test_two_digit_wip_registers_and_ticks() {
+  local w s out i
+  w=$(source_world wip12)
+  s="$w/navigator/state"
+  set_wip "$w" 12
+  assert_equals "" "$(FM_HOME="$w" bash "$OFFICE" ensure 2>&1 | grep 'wip must be')" "wip: 12 is a valid value"
+  put_backlog "$w" '- [ ] job-a - A (repo: x) (kind: ship)'
+  for i in 1 2 3 4 5 6 7 8 9 10 11; do printf 'kind=ship\nproject=x\n' > "$s/t$i.meta"; done
+  assert_contains "$(nav_check "$w" tick)" "1 of 12 places free, 1 queued" "eleven live tasks leave one of twelve places"
+  printf 'kind=ship\nproject=x\n' > "$s/t12.meta"
+  rm -f "$w/navigator/data/office/tick.seen"
+  assert_equals "" "$(nav_check "$w" tick)" "twelve live tasks fill a wip of twelve"
+  set_wip "$w" 100
+  out=$(FM_HOME="$w" bash "$OFFICE" ensure 2>&1)
+  assert_contains "$out" 'wip must be' "wip: 100 is refused"
+  pass 'a two-digit wip passes ensure and the tick counts places against it'
+}
+
+# The tick fires once a slot; a place freed in between (a task finished,
+# was torn down or had its PR handed off) fires it again at once.
+test_tick_refills_at_once_when_a_place_frees() {
+  local w s out
+  w=$(source_world refill)
+  s="$w/navigator/state"
+  put_backlog "$w" '- [ ] job-a - A (repo: x) (kind: ship)'
+  printf 'kind=ship\nproject=x\n' > "$s/t1.meta"
+  printf 'kind=ship\nproject=x\n' > "$s/t2.meta"
+  assert_equals "" "$(nav_check "$w" tick)" "both places taken: silent"
+  rm "$s/t2.meta"
+  out=$(nav_check "$w" tick)
+  assert_equals "office navigator: tick $SLOT: 1 of 2 places free, 1 queued, place freed" "$out" "a torn-down task refills within the same slot"
+  assert_equals "" "$(nav_check "$w" tick)" "the freed place is reported once"
+  printf 'kind=ship\nproject=x\n' > "$s/t2.meta"
+  assert_equals "" "$(nav_check "$w" tick)" "a place taken again is no refill"
+  put_landing "$w" t2 x
+  out=$(nav_check "$w" tick)
+  assert_contains "$out" "place freed" "a PR handed off frees its place at once"
+  assert_contains "$out" "1 landing" "and the line counts it landing"
+  rm "$s/t1.meta"
+  put_backlog "$w"
+  assert_equals "" "$(nav_check "$w" tick)" "a freed place with nothing queued stays silent"
+  pass 'tick refills at once when a task finishes, is torn down or has its PR handed off, once per freed place'
+}
+
+test_tick_slot_and_freed_place_report_one_line() {
+  local w out
+  w=$(source_world refill-slot)
+  put_backlog "$w" '- [ ] job-a - A (repo: x) (kind: ship)'
+  printf 'kind=ship\nproject=x\n' > "$w/navigator/state/t1.meta"
+  printf 'kind=ship\nproject=x\n' > "$w/navigator/state/t2.meta"
+  nav_check "$w" tick >/dev/null
+  rm "$w/navigator/state/t2.meta"
+  out=$(FM_OFFICE_NOW=$((SRC_NOW + 7200)) FM_HOME="$w/navigator" bash "$OFFICE" check tick)
+  assert_equals 1 "$(printf '%s\n' "$out" | grep -c .)" "a new slot and a freed place together print one line"
+  pass 'a new slot and a freed place together print one tick line'
+}
+
 test_tick_counts_unread_lane_digests() {
   local w out
   w=$(source_world tickdigest)
@@ -1458,6 +1520,9 @@ test_tick_prints_once_per_slot_and_only_when_work_could_start
 test_tick_is_silent_when_places_are_full
 test_tick_leaves_landing_tasks_out_of_wip
 test_landing_needs_a_handoff_to_another_merger
+test_two_digit_wip_registers_and_ticks
+test_tick_refills_at_once_when_a_place_frees
+test_tick_slot_and_freed_place_report_one_line
 test_tick_counts_unread_lane_digests
 test_lane_check_reports_each_new_digest_once
 test_lane_check_reads_a_spaced_sources_list

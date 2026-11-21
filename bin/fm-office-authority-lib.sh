@@ -33,7 +33,7 @@
 #   merge=<project>[,<project>...]        or none, or empty
 #   merge-via=<project>=<home>[,...]      or none, or empty
 #   auto-merge-classes=none               or empty; nothing else is accepted
-#   wip=<1-9>
+#   wip=<1-99>
 #   admission-sha256=<project>:<digest>[,...]   or empty when merge is
 # The version line comes first, then each key exactly once, in any order, and
 # no other line. Names are [A-Za-z0-9._-]. merge and merge-via are subsets of
@@ -146,9 +146,9 @@
 #   - its steering inbox holds no unhandled message and no handled one written
 #     after that done line, so a worker steered back into fix work counts until
 #     it reports done again.
-# A handoff routed by an admission config (route.<class>=handoff:<home>) is
-# recorded only on the office's parent channel, which is not read here, so such
-# a task counts until one of the records above names it.
+# A handoff routed by an admission config (route.<class>=handoff:<home>) also
+# writes state/<id>.merge-handoff when bin/fm-pr-merge.sh refuses the PR, so it
+# frees its place like any other handoff.
 # Project capacity (bin/fm-project-capacity-lib.sh) and landing lag
 # (data/projects.md landing-lag=) still bound every spawn, so leaving landing
 # tasks out of wip= never lifts a project's own limits.
@@ -369,7 +369,7 @@ fm_office_authority_parse() {  # <file> <office-id>
   [ "$via" != none ] || via=
   [ "$auto" != none ] || auto=
   [ -z "$auto" ] || { fm_office_bad "auto-merge-classes must be none (no class auto-merges yet), got '$auto'"; return 1; }
-  [[ "$wip" =~ ^[1-9]$ ]] || { fm_office_bad "wip must be a number from 1 to 9, got '$wip'"; return 1; }
+  [[ "$wip" =~ ^[1-9][0-9]?$ ]] || { fm_office_bad "wip must be a number from 1 to 99, got '$wip'"; return 1; }
   [ -n "$dispatch" ] || { fm_office_bad "dispatch names no project"; return 1; }
   for p in ${dispatch//,/ }; do
     fm_office_name_ok "$p" || { fm_office_bad "dispatch entry '$p' is not a project name"; return 1; }
