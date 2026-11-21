@@ -2995,6 +2995,105 @@ EOF
   pass "a captain call with no routed work, a verified transfer, an open decision, and an answered call all stay silent"
 }
 
+# A second mate relays its captain calls into this home's log for it, and may
+# later close one in its own home by handing it to another owner. That close
+# never reaches this log, so the parent closes the relayed key itself. The close
+# must fold the key shut everywhere the parent reads it, while nothing that
+# reads captain answers - the backlog, `answered`, RECORD DIVERGENCE - sees one.
+mate_open_keys() {  # <status-file>
+  bash -c '. "$1/bin/fm-classify-lib.sh"; status_open_decisions "$2"; printf -- "--cached--\n"; status_open_decisions_cached "$2"' \
+    _ "$ROOT" "$1"
+}
+
+test_handed_back_relay_closes_without_an_answer() {
+  local home f before out drain open note
+  home=$(make_home handed-back)
+  f="$home/state/mate.status"
+  write_origin_meta "$home" mate secondmate
+  write_origin_meta "$home" sample-ship ship
+  run_captain "$home" hold sample-own-call --title "Main's own sample call" \
+    --reason "this home holds this call itself" --repo sample >/dev/null \
+    || fail "could not register this home's own captain call"
+  run_captain "$home" hold mate-decision-sample-legacy --title "Main's legacy-identity sample call" \
+    --reason "this home holds this call under the legacy identity" --repo sample >/dev/null \
+    || fail "could not register this home's legacy-identity captain call"
+  cat > "$f" <<'EOF'
+needs-decision [key=captain-hold-sample-crm-1] [origin-key=sample-crm-call] [at=1795000000]: captain hold sample-crm: choose the feed order
+needs-decision [key=sample-crm-call] [at=1795000001]: choose the feed order
+needs-decision [key=sample-kept-call] [at=1795000002]: still the mate's open call
+blocked [key=sample-blocker] [at=1795000003]: waiting on a sample service
+blocked [key=pending-reply-0123456789abcdef] [at=1795000004]: pending-reply-delivery-unknown: task=mate pending-reply-id=0123456789abcdef
+needs-decision [key=sample-own-call] [at=1795000005]: relayed copy of a call this home holds
+needs-decision [key=sample-legacy] [at=1795000006]: relayed copy of a legacy-identity call
+needs-decision [key=sample-answered-call] [at=1795000007]: already settled
+resolved [key=sample-answered-call] [at=1795000008]: answered: go
+EOF
+  printf 'needs-decision [key=sample-ship-call] [at=1795000009]: a ship worker question\n' > "$home/state/sample-ship.status"
+  cp "$home/data/backlog.md" "$home/backlog.before"
+  drain=$(run_drain "$home") || fail "the drain failed before the hand-back"
+  printf '%s\n' "$drain" | grep -F 'captain-hold-sample-crm-1' >/dev/null \
+    || fail "setup error: the relayed hold should reach OPEN DECISIONS before its close: $drain"
+
+  out=$(run_captain "$home" handed-back mate captain-hold-sample-crm-1 \
+    --reason "handed back to the Navigator office") \
+    || fail "handed-back refused a relayed open hold"
+  [ "$out" = "handed-back: mate captain-hold-sample-crm-1" ] || fail "unexpected handed-back output: $out"
+  run_captain "$home" handed-back mate sample-crm-call --reason "handed back to the Navigator office" >/dev/null \
+    || fail "handed-back refused the relayed plain key"
+  note=$(grep -F '[key=captain-hold-sample-crm-1]' "$f" | tail -n 1)
+  printf '%s\n' "$note" | grep -E '^resolved \[key=captain-hold-sample-crm-1\] \[at=[0-9]+\]: handed-back: mate closed this relayed decision in its own home: handed back to the Navigator office$' >/dev/null \
+    || fail "the hand-back close line has the wrong shape: $note"
+  # The friction officer counts a resolution whose note names the captain as
+  # his answer, so the fixed wording must never do so.
+  if printf '%s\n' "${note#*]: }" | grep -E '\b(Lee|captain|Captain)\b' >/dev/null; then
+    fail "the hand-back note reads as the captain's answer: $note"
+  fi
+
+  open=$(mate_open_keys "$f")
+  if printf '%s\n' "$open" | grep -E '^(captain-hold-sample-crm-1|sample-crm-call)	' >/dev/null; then
+    fail "a handed-back key still folds open: $open"
+  fi
+  printf '%s\n' "$open" | grep -E '^sample-kept-call	needs-decision' >/dev/null \
+    || fail "an unrelated relayed call was closed: $open"
+  cmp -s "$home/backlog.before" "$home/data/backlog.md" || fail "handed-back changed this home's backlog"
+  out=$(run_captain "$home" diverged) || fail "diverged failed after a hand-back"
+  [ -z "$out" ] || fail "a hand-back close produced a divergence signal: $out"
+  drain=$(run_drain "$home") || fail "the drain failed after a hand-back"
+  if printf '%s\n' "$drain" | grep -E 'RECORD DIVERGENCE|sample-crm-call|captain-hold-sample-crm-1' >/dev/null; then
+    fail "the drain still shows a handed-back key or a divergence: $drain"
+  fi
+
+  # An exact rerun is a no-op that appends nothing.
+  cp "$f" "$home/status.before"
+  out=$(run_captain "$home" handed-back mate captain-hold-sample-crm-1 --reason "handed back to the Navigator office") \
+    || fail "a rerun of a finished hand-back refused"
+  [ "$out" = "already handed back: mate captain-hold-sample-crm-1" ] || fail "unexpected rerun output: $out"
+  cmp -s "$home/status.before" "$f" || fail "a rerun appended to the status log"
+
+  refuses() {  # <expected stderr text> <handed-back args...>
+    local want=$1
+    shift
+    if run_captain "$home" handed-back "$@" >/dev/null 2> "$home/err"; then
+      fail "handed-back accepted: $*"
+    fi
+    assert_grep "$want" "$home/err" "handed-back $* refused for the wrong reason: $(cat "$home/err")"
+  }
+  refuses "not a second mate of this home" nomate sample-kept-call --reason r
+  refuses "not a second mate of this home" sample-ship sample-ship-call --reason r
+  refuses "fm-pending-reply-sweep.sh" mate pending-reply-0123456789abcdef --reason r
+  refuses "not an open needs-decision" mate sample-blocker --reason r
+  refuses "not an open needs-decision" mate sample-answered-call --reason r
+  refuses "not an open needs-decision" mate sample-never-raised --reason r
+  refuses "--reason is required" mate sample-kept-call
+  refuses "must not name Lee or the captain" mate sample-kept-call --reason "the captain asked to hand it back"
+  refuses "must not name Lee or the captain" mate sample-kept-call --reason "Lee said hand it back"
+  refuses "must be a non-empty privacy-safe slug" mate 'bad key' --reason r
+  refuses "this home holds captain call sample-own-call" mate sample-own-call --reason r
+  refuses "this home holds captain call mate-decision-sample-legacy" mate sample-legacy --reason r
+  cmp -s "$home/status.before" "$f" || fail "a refused hand-back appended to the status log"
+  pass "a handed-back relayed call folds closed without recording an answer, and every unsafe close refuses"
+}
+
 # The originating work item is itself the captain call, which is what the policy
 # prefers ("hold the work item the question gates"). Cleanup of that finished
 # work must never be the act that closes the captain's own row: the deliverable
@@ -5722,6 +5821,7 @@ test_chat_channel_feeds_the_same_keyed_answer_intake
 test_origin_slug_validation_precedes_path_construction
 test_status_resolution_over_an_open_hold_is_signalled
 test_legitimate_holds_produce_no_divergence_signal
+test_handed_back_relay_closes_without_an_answer
 test_teardown_never_closes_a_captain_held_task
 test_retained_row_artifacts_survive_captain_answers
 test_interrupted_cleanup_keeps_the_captain_call_recoverable

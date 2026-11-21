@@ -30,8 +30,9 @@
 #   truncated  the note was cut by the status-line cap (ends " [truncated]"),
 #              so a PR URL may be shortened or missing; never looked up.
 # Never candidates: keys starting captain-hold- or pending-reply- (those close
-# only through bin/fm-captain-hold.sh answer and the pending-reply owner), and
-# decisions naming no PR URL.
+# only through bin/fm-captain-hold.sh - answer, or handed-back for a relayed call
+# its second mate handed elsewhere - and the pending-reply owner), and decisions
+# naming no PR URL.
 #
 # --settle-only looks up only candidates that could settle - a merge-handoff
 # key matching its one named PR, or a pr dependency - so it costs one gh call
