@@ -1005,15 +1005,32 @@ fi
 # names is refused here, before any forge command, and an unnamed method
 # becomes a merge commit. An unreadable binding refuses rather than falling
 # back to the squash default the binding exists to stop.
-caller_asks_squash_or_rebase() {
-  local arg
+# Prints the first extra argument that asks for a method other than a merge
+# commit, deny by default: any spelling of --squash or --rebase (with or
+# without =value, so --squash=false is refused too), --method with a missing,
+# empty or non-merge value, and gh's short flags -s and -r, bundled with the
+# no-value -d and -m. Nothing is printed for a bare --merge or no method.
+caller_non_merge_method() {
+  local arg pending=false
   for arg in "$@"; do
-    # gh's short flags: -s squash, -r rebase, bundled with the no-value -d, -m.
+    if [ "$pending" = true ]; then
+      [ "$arg" = merge ] || { printf '%s' "--method $arg"; return 0; }
+      pending=false
+      continue
+    fi
+    case "$arg" in
+      --squash|--squash=*|--rebase|--rebase=*) printf '%s' "$arg"; return 0 ;;
+      --method) pending=true ;;
+      --method=merge) ;;
+      --method=*) printf '%s' "$arg"; return 0 ;;
+    esac
     if [[ "$arg" =~ ^-[dmrs]*[sr][dmrs]*$ ]]; then
+      printf '%s' "$arg"
       return 0
     fi
   done
-  return 1
+  [ "$pending" = false ] || printf '%s' '--method (no value)'
+  return 0
 }
 if [ -n "$MERGE_PROJECT" ]; then
   MERGE_BINDING_NAME=$(basename "$MERGE_PROJECT")
@@ -1024,18 +1041,14 @@ if [ -n "$MERGE_PROJECT" ]; then
   if [ "$MERGE_BINDING" = commit ]; then
     if [ "$STACK_MODE" = true ]; then
       asked=$STACK_MERGE_METHOD
-      [ "$STACK_METHOD_EXPLICIT" = true ] || asked=
+      [ "$STACK_METHOD_EXPLICIT" = true ] && [ "$asked" != merge ] || asked=
     else
-      asked=$(caller_merge_method "$@")
-      if caller_asks_squash_or_rebase "$@"; then asked=squash-or-rebase; fi
+      asked=$(caller_non_merge_method "$@")
     fi
-    case "$asked" in
-      ''|merge) ;;
-      *)
-        echo "error: PR merge refused: $MERGE_BINDING_NAME is registered merge=commit and takes merge commits only, so a $asked merge of $URL is refused; merge it with -- --merge (or pass no method), because a squash or rebase destroys the merge commit that promotion reads" >&2
-        exit 1
-        ;;
-    esac
+    if [ -n "$asked" ]; then
+      echo "error: PR merge refused: $MERGE_BINDING_NAME is registered merge=commit and takes merge commits only, so the requested $asked merge of $URL is refused; merge it with -- --merge (or pass no method), because a squash or rebase destroys the merge commit that promotion reads" >&2
+      exit 1
+    fi
     FM_PR_BOUND_METHOD=merge
     [ "$STACK_MODE" != true ] || STACK_MERGE_METHOD=merge
   fi

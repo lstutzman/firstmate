@@ -6668,7 +6668,7 @@ test_merge_commit_project_defaults_to_a_merge_commit() {
 
 test_merge_commit_project_refuses_squash_and_rebase() {
   local case_dir rc spelling label=0
-  for spelling in '--squash' '--rebase' '--method squash' '--method=rebase' '--method rebase' '-s' '-r' '-ms'; do
+  for spelling in '--squash' '--rebase' '--method squash' '--method=rebase' '--method rebase' '-s' '-r' '-ms' '--squash=true' '--rebase=true' '--squash=false' '--method=' '--method=squash'; do
     label=$((label + 1))
     case_dir=$(make_case "merge-commit-refuses-$label")
     add_gh_mocks "$case_dir" deadbeefcafefeed0000000000000000deadbeef
