@@ -1212,6 +1212,21 @@ case "$MODE:$FORGE" in
   *) [ -n "$PR_DRAIN" ] || PR_DRAIN_DOD="
 $PR_DRAIN_RULE" ;;
 esac
+# A project that declares CI slots (config/ci-slots) holds PR openings, never ship starts: the worker checks them
+# just before it opens a PR, unless its class is exempt (bin/fm-pr-drain.py slots-class).
+CI_SLOTS_DOD=
+if [ "$KIND" = ship ]; then
+  case "$MODE:$FORGE" in
+    local-only:* | *:gerrit | *:external) ;;
+    *)
+      if { [ -z "$PR_DRAIN" ] || ! python3 "$SCRIPT_DIR/fm-pr-drain.py" slots-class "$PR_DRAIN"; } &&
+        [ -n "$(FM_HOME="$FM_HOME" FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-project-mode.sh" --ci-slots "$REPO" 2>/dev/null)" ]; then
+        CI_SLOTS_DOD="
+$(fm_ci_slots_gate_rule "$FM_ROOT" "$BRANCH" "$REPO")"
+      fi
+      ;;
+  esac
+fi
 PR_DRAIN_SECTION=
 case "$PR_DRAIN" in
   production-outage | cve | security | restack | red-gate-fix | returned-pr-fix | review) ;;
@@ -1285,7 +1300,7 @@ A project's \`AGENTS.md\` or \`CLAUDE.md\` is loaded into every agent session in
 A correction edits only the wrong text: do not run \`$FM_ROOT/bin/fm-ensure-agents-md.sh\`, create either file, or add sections, headings, or pointers alongside it.
 
 $DOD
-$COMPLAIN_STEP$PR_DRAIN_DOD$PR_DRAIN_SECTION
+$COMPLAIN_STEP$PR_DRAIN_DOD$CI_SLOTS_DOD$PR_DRAIN_SECTION
 EOF
 append_brief_include
 if [ "$PR_TEXT" = manual ]; then

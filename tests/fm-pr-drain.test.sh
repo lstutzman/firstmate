@@ -340,6 +340,86 @@ test_open_count_reads_one_repository() {
   pass "open prints the open PR count, unknown when GitHub is unreadable, and none off github.com"
 }
 
+# A project's open PRs as GitHub reports them: <ready> ready ones numbered 1.., then <drafts> drafts.
+open_prs() {  # <ready> <drafts>
+  python3 -I -c 'import json, sys
+ready, drafts = int(sys.argv[2]), int(sys.argv[3])
+json.dump([{"createdAt": "2026-11-01T00:00:00Z", "isDraft": n > ready, "url": f"https://github.com/o/r/pull/{n}"}
+           for n in range(1, ready + drafts + 1)], open(sys.argv[1], "w"))' "$GHDATA/open.json" "$1" "$2"
+}
+
+test_open_leaves_drafts_out_of_the_count() {
+  peak_then 5
+  open_prs 2 3
+  assert_equals "open o/r 2" "$("$DRAIN" open "$PROJECT")" "drafts were counted in the open PR count"
+  assert_equals "on o/r 5" "$("$DRAIN" state "$PROJECT")" "state must still count every open PR, drafts included, for the 20-PR drain"
+  timeline 1 2 --
+  assert_equals "open o/r 2" "$("$DRAIN" open "$PROJECT")" "a PR with no isDraft field was not counted as ready"
+  pass "open leaves drafts out of the count, and state still counts every PR"
+}
+
+GATE_HOME="$TMP_ROOT/gate-home"
+mkdir -p "$GATE_HOME/config" "$GATE_HOME/state" "$GATE_HOME/data"
+gate() {  # prints the verdict line for project r
+  FM_HOME="$GATE_HOME" "$DRAIN" gate "$PROJECT" r
+}
+
+test_gate_holds_a_pr_opening_at_the_slots_and_at_the_cap() {
+  rm -f "$GATE_HOME/config/ci-slots" "$GATE_HOME/config/open-pr-cap"
+  open_prs 9 9
+  assert_equals "open o/r" "$(gate)" "a project with no CI slots line was held"
+  printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
+  open_prs 3 8
+  assert_equals "open o/r" "$(gate)" "3 ready PRs and 8 drafts were held against 4 slots"
+  open_prs 4 0
+  assert_contains "$(gate)" "hold o/r CI slots full: 4 open PR(s) count against 4 CI slot(s)" "4 ready PRs against 4 slots did not hold the PR opening"
+  open_prs 4 3
+  assert_contains "$(gate)" "3 draft PR(s)" "the hold did not say that drafts were left out"
+  open_prs 3 9
+  assert_contains "$(gate)" "hold o/r open-PR cap reached: 12 open PR(s) against the open-PR cap of 12 (config/open-pr-cap)" \
+    "12 open PRs, drafts included, did not reach the default cap of 12"
+  open_prs 3 8
+  assert_equals "open o/r" "$(gate)" "11 open PRs reached the default cap of 12"
+  printf '%s\n' '# the cap' 'r 5' > "$GATE_HOME/config/open-pr-cap"
+  open_prs 3 2
+  assert_contains "$(gate)" "against the open-PR cap of 5" "a declared cap of 5 was not used"
+  open_prs 3 1
+  assert_equals "open o/r" "$(gate)" "4 open PRs reached a declared cap of 5"
+  printf '%s\n' 'r twelve' > "$GATE_HOME/config/open-pr-cap"
+  assert_contains "$(gate)" "unknown o/r" "a malformed open-pr-cap file did not read as unknown"
+  rm "$GATE_HOME/config/open-pr-cap"
+  printf '%s\n' 'r four' > "$GATE_HOME/config/ci-slots"
+  assert_contains "$(gate)" "unknown o/r" "a malformed ci-slots file did not read as unknown"
+  printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
+  assert_contains "$(FAKE_GH_FAIL=1 gate)" "unknown o/r GitHub unreadable" "an unreadable GitHub did not read as unknown"
+  assert_equals "none" "$(FM_HOME="$GATE_HOME" FAKE_GH_FAIL=1 "$DRAIN" gate "$TMP_ROOT/other" r)" "a non-GitHub origin was queried"
+  pass "gate holds a PR opening at S ready PRs or at the open-PR cap of 12, leaves drafts out of S, and reads unknown or none rather than guessing"
+}
+
+test_brief_carries_the_ci_slots_gate_only_when_slots_are_declared() {
+  local home="$TMP_ROOT/home" id
+  mkdir -p "$home/data" "$home/config"
+  rm -f "$home/config/ci-slots"
+  peak_then 0
+  brief no-slots no-mistakes || fail "the no-slots brief did not scaffold"
+  assert_no_grep "CI slots check" "$home/data/no-slots/brief.md" "a project with no CI slots got the CI slots check"
+  printf '%s\n' 'r 4' > "$home/config/ci-slots"
+  for id in classless:none wolverine:wolverine lee-research:lee-research officer:officer scheduled:scheduled; do
+    if [ "${id#*:}" = none ]; then brief "gate-${id%%:*}" no-mistakes; else brief "gate-${id%%:*}" no-mistakes --pr-drain "${id#*:}"; fi || fail "the ${id%%:*} brief did not scaffold"
+    assert_grep "CI slots check: just before you open a new pull request" "$home/data/gate-${id%%:*}/brief.md" "a ${id%%:*} brief lacks the CI slots check"
+    assert_grep "gate . r" "$home/data/gate-${id%%:*}/brief.md" "the ${id%%:*} brief's gate command does not name the project"
+    assert_grep "no PR (CI slots)" "$home/data/gate-${id%%:*}/brief.md" "the ${id%%:*} brief does not say how to park the branch"
+  done
+  for id in production-outage cve security lee-explicit restack red-gate-fix returned-pr-fix review; do
+    brief "gate-x-$id" no-mistakes --pr-drain "$id" --linear PC-1 2>/dev/null || brief "gate-x-$id" no-mistakes --pr-drain "$id" || continue
+    assert_no_grep "CI slots check" "$home/data/gate-x-$id/brief.md" "a $id brief, exempt from the CI slots, carries the CI slots check"
+  done
+  brief gate-local local-only || fail "the local-only brief did not scaffold"
+  assert_no_grep "CI slots check" "$home/data/gate-local/brief.md" "a local-only brief carries the CI slots check"
+  rm "$home/config/ci-slots"
+  pass "a PR-opening brief carries the CI slots check only when its project declares slots, and the exempt classes and local-only briefs never do"
+}
+
 test_slots_classes_are_the_urgent_and_landing_ones() {
   local value
   for value in production-outage cve security lee-explicit restack red-gate-fix returned-pr-fix review; do
@@ -361,6 +441,9 @@ fm_test_run \
   test_non_github_origin_is_not_applicable \
   test_classes_are_validated \
   test_open_count_reads_one_repository \
+  test_open_leaves_drafts_out_of_the_count \
+  test_gate_holds_a_pr_opening_at_the_slots_and_at_the_cap \
+  test_brief_carries_the_ci_slots_gate_only_when_slots_are_declared \
   test_slots_classes_are_the_urgent_and_landing_ones \
   test_lee_explicit_evidence_needs_a_quote_and_a_timestamp \
   test_security_needs_the_label_and_urgent_or_high_priority \

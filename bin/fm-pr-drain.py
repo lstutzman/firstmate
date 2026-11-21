@@ -3,9 +3,9 @@
 
 Usage: fm-pr-drain.py state <project-dir>
        fm-pr-drain.py open <project-dir>
+       fm-pr-drain.py gate <project-dir> [<project-name>]
        fm-pr-drain.py class <value>
        fm-pr-drain.py slots-class <value>
-       fm-pr-drain.py landing-class <value>
        fm-pr-drain.py evidence < <captain's-intent-text>
        fm-pr-drain.py security <PC-n>
 
@@ -20,21 +20,25 @@ shared marker: the open list gives the count now, and when it is between 1 and 1
 last 14 days are walked back from now (a close adds one PR, a creation removes one) until the count was
 20 or more (on) or 0 (off). Read-only: one `gh pr list` of open PRs, plus one of recently closed PRs only
 in that 1..19 band. FM_PR_DRAIN_TIMEOUT (default 20) bounds each read in seconds.
-open prints one line, the open PR count (P) that bin/fm-spawn.sh and bin/fm-fleet-alarm.py compare with a project's
+open prints one line, the ready open PR count (P, drafts left out) that bin/fm-fleet-alarm.py compares with a project's
 CI slots (config/ci-slots; bin/fm-project-capacity-lib.sh owns it), from one `gh pr list` read:
-  open <owner/repo> <n>        the repository has n open PRs
+  open <owner/repo> <n>        the repository has n ready (non-draft) open PRs
   unknown <owner/repo> <why>   GitHub could not be read
   none                         the clone's origin is not on github.com
+gate is the worker's CI slots check, run just before it opens a pull request (bin/fm-dod-lib.sh writes the step into
+a brief). It prints one line: `hold <owner/repo> <why>` when the opening must wait, `open <owner/repo>` when it may
+go ahead (also for a project with no CI slots), `unknown <owner/repo> <why>` when a declaration or GitHub cannot be
+read, or `none` off github.com. It holds when the ready open PRs, less drafts and the PRs waiting for the captain's
+merge word (bin/fm-ci-slots-held.sh), reach S (config/ci-slots), or when every open PR, drafts and held ones
+included, reaches the open-PR cap (config/open-pr-cap, default 12). <project-name> is the registered name that
+names the project in those files; it defaults to the directory's name. FM_HOME picks the home whose config is read.
 class exits 0 when <value> is a recognised drain declaration: an exemption class (production-outage,
 cve, security, wolverine, lee-research, lee-explicit, officer, scheduled) or a landing job (restack,
 red-gate-fix, returned-pr-fix, review), and 2 otherwise. bin/fm-brief.sh --pr-drain writes it into a
 brief and bin/fm-spawn.sh reads it back.
 slots-class exits 0 when <value> is a drain declaration that also bypasses the CI-slots cap: production-outage, cve,
 security, lee-explicit and the four landing jobs; wolverine, lee-research, officer and scheduled stay held. It is
-bin/fm-spawn.sh's one list of those classes.
-landing-class exits 0 when <value> is one of the four landing jobs (restack, red-gate-fix, returned-pr-fix, review),
-which work on a PR that is already open, and 2 otherwise; bin/fm-project-capacity-lib.sh leaves such a ship out of
-the ships in flight it counts toward the CI slots, since GitHub's open count already holds its PR.
+bin/fm-brief.sh's one list of the classes whose briefs carry no CI slots check.
 evidence reads a brief's `## Captain's intent` section body on stdin (bin/fm-spawn.sh extracts it with
 bin/fm-brief-heading-lib.sh) and exits 0 when it holds a quoted captain instruction with a timestamp,
 the proof a `lee-explicit` brief needs: at least one double-quoted span, and an ISO-8601 UTC timestamp (YYYY-MM-DDTHH:MM:SSZ) on the same line as a quote or on the line before it.
@@ -56,6 +60,7 @@ import subprocess
 import sys
 import urllib.request
 
+BIN = os.path.dirname(os.path.abspath(__file__))
 THRESHOLD = 20
 WINDOW_DAYS = 14
 CLOSED_LIMIT = 1000
@@ -96,16 +101,74 @@ def repo_of(project):
     return match.group(1) if match else None
 
 
-def open_count(project):
-    """The open PR count of the clone's repository, as one line like state: `open <owner/repo> <n>`,
+def open_prs(project):
+    """(repo, [pr dicts with isDraft and url]) for the clone's open PRs, or a one-line answer string:
     `unknown <owner/repo> <why>` when GitHub cannot be read, or `none` off github.com."""
     repo = repo_of(project)
     if not repo:
         return 'none'
     try:
-        return f"open {repo} {len(gh(repo, '--state', 'open', '--limit', '1000', '--json', 'createdAt'))}"
-    except (ValueError, KeyError, TypeError, OSError, subprocess.TimeoutExpired) as error:
+        prs = gh(repo, '--state', 'open', '--limit', '1000', '--json', 'createdAt,isDraft,url')
+        return repo, [{'isDraft': bool(pr.get('isDraft')), 'url': pr.get('url') or ''} for pr in prs]
+    except (ValueError, KeyError, TypeError, OSError, subprocess.TimeoutExpired, AttributeError) as error:
         return f'unknown {repo} GitHub unreadable: {error}'.replace('\n', ' ')
+
+
+def open_count(project):
+    """The ready (non-draft) open PR count of the clone's repository, as one line like state: `open <owner/repo> <n>`."""
+    found = open_prs(project)
+    if isinstance(found, str):
+        return found
+    repo, prs = found
+    return f"open {repo} {sum(1 for pr in prs if not pr['isDraft'])}"
+
+
+def project_mode(flag, name):
+    """What bin/fm-project-mode.sh answers for a project (S or the cap), or raises ValueError when it refuses."""
+    out = subprocess.run([os.path.join(BIN, 'fm-project-mode.sh'), flag, name], stdin=subprocess.DEVNULL,
+                         capture_output=True, text=True, check=False,
+                         timeout=float(os.environ.get('FM_PR_DRAIN_TIMEOUT', 20)))
+    if out.returncode:
+        raise ValueError((out.stderr.strip().splitlines() or ['unreadable'])[0][:160])
+    return out.stdout.strip()
+
+
+def held_count(project, urls):
+    """How many of the ready PR URLs wait for the captain's merge word, 0 when that cannot be read."""
+    try:
+        out = subprocess.run([os.path.join(BIN, 'fm-ci-slots-held.sh'), project], input='\n'.join(urls) + '\n',
+                             capture_output=True, text=True, check=False,
+                             timeout=float(os.environ.get('FM_PR_DRAIN_TIMEOUT', 20)))
+        return int(out.stdout.strip()) if not out.returncode else 0
+    except (ValueError, OSError, subprocess.TimeoutExpired):
+        return 0
+
+
+def gate(project, name):
+    """The worker's CI slots check: `hold`, `open`, `unknown` or `none`, as one line."""
+    found = open_prs(project)
+    if isinstance(found, str):
+        return found
+    repo, prs = found
+    try:
+        slots = project_mode('--ci-slots', name)
+        cap = project_mode('--open-pr-cap', name)
+    except (ValueError, OSError, subprocess.TimeoutExpired) as error:
+        return f'unknown {repo} the CI slots declaration for {name} is unreadable: {error}'.replace('\n', ' ')
+    if not slots:
+        return f'open {repo}'
+    ready = [pr['url'] for pr in prs if not pr['isDraft']]
+    drafts = len(prs) - len(ready)
+    held = held_count(project, ready) if ready else 0
+    counted = len(ready) - held
+    if counted >= int(slots):
+        return (f'hold {repo} CI slots full: {counted} open PR(s) count against {slots} CI slot(s) (config/ci-slots; '
+                f"{drafts} draft PR(s) and {held} PR(s) waiting for the captain's merge word are not counted); "
+                'open no pull request until one merges or closes')
+    if len(prs) >= int(cap):
+        return (f'hold {repo} open-PR cap reached: {len(prs)} open PR(s) against the open-PR cap of {cap} '
+                '(config/open-pr-cap); every open PR counts, drafts included; open no pull request until one merges or closes')
+    return f'open {repo}'
 
 
 def state(project):
@@ -211,10 +274,10 @@ if __name__ == '__main__':
         print(state(sys.argv[2]))
     elif len(sys.argv) == 3 and sys.argv[1] == 'open':
         print(open_count(sys.argv[2]))
+    elif len(sys.argv) in (3, 4) and sys.argv[1] == 'gate':
+        print(gate(sys.argv[2], sys.argv[3] if len(sys.argv) == 4 else os.path.basename(os.path.abspath(sys.argv[2]))))
     elif len(sys.argv) == 3 and sys.argv[1] == 'slots-class':
         sys.exit(0 if sys.argv[2] in SLOTS_EXEMPT else 2)
-    elif len(sys.argv) == 3 and sys.argv[1] == 'landing-class':
-        sys.exit(0 if sys.argv[2] in LANDING else 2)
     elif len(sys.argv) == 3 and sys.argv[1] == 'class':
         sys.exit(0 if sys.argv[2] in EXEMPT + LANDING else 2)
     elif len(sys.argv) == 2 and sys.argv[1] == 'evidence':

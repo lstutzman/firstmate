@@ -45,8 +45,10 @@
 #     are counted, and
 #   - has no recorded PR handoff: the pr= line bin/fm-pr-check.sh records when a
 #     worker's PR is ready, after which the worker waits on review or merge and
-#     no longer uses local resources.
-# A place therefore frees when a PR-based ship records its ready PR, or when any
+#     no longer uses local resources, or the ready_branch= line
+#     bin/fm-ready-branch.sh records when the worker parked a pushed, verified
+#     branch with no PR because the CI slots gate held its opening.
+# A place therefore frees when a PR-based ship records its ready PR or ready branch, or when any
 # task is cleaned up and its record removed. A local-only ship and a scout have
 # no recorded handoff and hold their place until cleanup. A worker that is
 # steered back into work after its PR handoff is not counted again.
@@ -99,13 +101,22 @@
 # the primary by bin/fm-config-inherit-lib.sh, so every dispatching home reads
 # the same file) holds one `<project-name> <slots>` line per project, in the
 # same format as project-capacity, where <slots> (S) is the total concurrent
-# gate and admission slots across every host. bin/fm-spawn.sh defers a fresh
-# ship for such a project, exactly like a capacity deferral, when its open PRs
-# on GitHub (P) plus its ships in flight (fm_ci_slots_inflight below) reach S,
-# so the open-PR queue never outgrows the slots. A project with no line is
-# never held; a malformed file refuses every fresh ship spawn. Ships in flight
-# in remote homes are not walked (a known limit). bin/fm-project-mode.sh
-# --ci-slots reads one project's S back; bin/fm-fleet-alarm.py announces P > S.
+# gate and admission slots across every host. They hold PR openings, never ship
+# starts (Lee, 2026-11-21T20:15:32Z): bin/fm-spawn.sh reads neither S nor the
+# cap, and a ship builds to a finished branch whatever the queue. The check
+# lives in the worker's pre-PR step: `bin/fm-pr-drain.py gate` holds the
+# opening while the project's ready open PRs (drafts and PRs waiting for the
+# captain's merge word left out, fm_ci_slots_held below) reach S, or while every
+# open PR reaches the open-PR cap, and the worker parks the branch pushed with
+# no PR. A project with no line is never held; a malformed file makes the gate
+# read unknown. Waiting for a release day (Wednesday) has no signal, so such a
+# PR counts. bin/fm-project-mode.sh --ci-slots and --open-pr-cap read S and the
+# cap back; bin/fm-fleet-alarm.py announces P > S.
+#
+# Open-PR cap: config/open-pr-cap, same format and inheritance, holds one
+# `<project-name> <cap>` line; a project that declares S and no cap line gets
+# FM_OPEN_PR_CAP_DEFAULT (12, Lee 2026-11-21). The cap counts every open PR, drafts and
+# held ones included, because it bounds rebase debt; a project with no S has none.
 #
 # Requires bin/fm-wake-lib.sh (root home, local homes, project lock path),
 # bin/fm-secondmate-registry-lib.sh (which the local-homes walk reads),
@@ -234,6 +245,29 @@ fm_ci_slots_lookup() {  # <config-dir> <project-name>
   return "$rc"
 }
 
+# The open-PR cap for a project that declares CI slots: its line in
+# <config-dir>/open-pr-cap, else FM_OPEN_PR_CAP_DEFAULT. Sets FM_OPEN_PR_CAP
+# (empty when the project declares no CI slots) and FM_OPEN_PR_CAP_ERROR;
+# returns 1 when either declaration is unreadable.
+FM_OPEN_PR_CAP_DEFAULT=12
+fm_open_pr_cap_lookup() {  # <config-dir> <project-name>
+  local rc=0
+  FM_OPEN_PR_CAP=
+  FM_OPEN_PR_CAP_ERROR=
+  fm_ci_slots_lookup "$1" "$2" || {
+    FM_OPEN_PR_CAP_ERROR=$FM_CI_SLOTS_ERROR
+    return 1
+  }
+  [ -n "$FM_CI_SLOTS" ] || return 0
+  fm_declared_number_lookup "$1/open-pr-cap" "$2" "open-PR cap" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    FM_OPEN_PR_CAP_ERROR=$FM_DECLARED_ERROR
+    return 1
+  fi
+  FM_OPEN_PR_CAP=${FM_DECLARED:-$FM_OPEN_PR_CAP_DEFAULT}
+  return 0
+}
+
 # Collect this machine's worker task records for one project identity.
 # <project-lock> is fm_treehouse_project_lock_path for the project being
 # admitted, and <project-dir> is that project's own directory, which matches
@@ -310,7 +344,7 @@ fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> 
   FM_PROJECT_CAPACITY_OCCUPANT_IDS=
   fm_project_records "$@" || return 1
   while [ "$i" -lt "${#FM_PROJECT_RECORDS[@]}" ]; do
-    if [ -z "$(fm_meta_get "${FM_PROJECT_RECORDS[$i]}" pr)" ]; then
+    if [ -z "$(fm_meta_get "${FM_PROJECT_RECORDS[$i]}" pr)" ] && [ -z "$(fm_meta_get "${FM_PROJECT_RECORDS[$i]}" ready_branch)" ]; then
       FM_PROJECT_CAPACITY_OCCUPANTS=$((FM_PROJECT_CAPACITY_OCCUPANTS + 1))
       FM_PROJECT_CAPACITY_OCCUPANT_IDS="${FM_PROJECT_CAPACITY_OCCUPANT_IDS:+$FM_PROJECT_CAPACITY_OCCUPANT_IDS, }${FM_PROJECT_RECORD_LABELS[$i]}"
     fi
@@ -319,36 +353,58 @@ fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> 
   return 0
 }
 
-# Count one project's ships in flight toward its CI slots: every
-# fm_project_records record that is not a scout (a record with no kind is a ship),
-# has no recorded pr= handoff, and whose brief declares no landing job ("PR
-# drain: <class>" with a bin/fm-pr-drain.py landing-class). A ship whose PR is
-# recorded, or a landing job working on an already open PR, is one of the
-# project's open PRs on GitHub already, so it is never counted twice; scouts and
-# secondmates hold no CI slot. A record in <first-state> reads its brief from
-# <first-data>; one in another local home reads that home's data/.
-# Sets FM_CI_SLOTS_INFLIGHT to the count and FM_CI_SLOTS_INFLIGHT_IDS to a
-# comma-separated list of the task labels. Returns 1 with
+# Count the ready open PRs of one project that wait for the captain's merge
+# word, so they stay out of the CI slots. <urls> is the newline-separated list
+# of the project's ready open PR URLs. A PR is left out only on positive
+# evidence from a task record of this project in a local home (fm_project_records;
+# remote homes are never walked) whose pr= is in <urls> and whose task either
+# recorded yolo that is not on, which waits for the captain's merge word by
+# definition, or has a backlog row held for the captain that is not done. A
+# record or backlog that cannot be read, or a PR no record owns, leaves the PR
+# counted. A record in <first-state> reads the backlog in <first-config> and
+# <first-data>; one in another local home reads that home's config/ and data/.
+# Sets FM_CI_SLOTS_HELD to the number of distinct PRs left out. Returns 1 with
 # FM_PROJECT_CAPACITY_ERROR when fm_project_records does.
-fm_ci_slots_inflight() {  # <project-lock> <project-dir> <first-state> <own-id> <first-data>
-  local first=$3 i=0 meta state data class
-  FM_CI_SLOTS_INFLIGHT=0
-  FM_CI_SLOTS_INFLIGHT_IDS=
-  fm_project_records "$1" "$2" "$3" "$4" || return 1
+fm_ci_slots_held() {  # <project-lock> <project-dir> <first-state> <first-config> <first-data> <urls>
+  local first=$3 urls=$6 i=0 meta pr state config data id rc row seen=$'\n'
+  local wedged=$FM_BACKLOG_ROW_SHOW_WEDGED
+  FM_CI_SLOTS_HELD=0
+  fm_project_records "$1" "$2" "$3" "" || return 1
   while [ "$i" -lt "${#FM_PROJECT_RECORDS[@]}" ]; do
     meta=${FM_PROJECT_RECORDS[$i]}
     i=$((i + 1))
-    [ "$(fm_meta_get "$meta" kind)" != scout ] && [ -z "$(fm_meta_get "$meta" pr)" ] || continue
-    state=$(dirname "$meta")
-    data=$5
-    [ "$state" = "$first" ] || data="$(dirname "$state")/data"
-    class=$(sed -n 's/^PR drain: \([^ ]*\)$/\1/p' "$data/$(basename "$meta" .meta)/brief.md" 2>/dev/null | head -n 1)
-    if [ -n "$class" ] && python3 "$(dirname "${BASH_SOURCE[0]}")/fm-pr-drain.py" landing-class "$class"; then
+    pr=$(fm_meta_get "$meta" pr)
+    [ -n "$pr" ] || continue
+    case "$urls" in
+      "$pr" | "$pr"$'\n'* | *$'\n'"$pr" | *$'\n'"$pr"$'\n'*) ;;
+      *) continue ;;
+    esac
+    case "$seen" in *$'\n'"$pr"$'\n'*) continue ;; esac
+    if [ "$(fm_meta_get "$meta" yolo)" != on ]; then
+      seen="$seen$pr"$'\n'
+      FM_CI_SLOTS_HELD=$((FM_CI_SLOTS_HELD + 1))
       continue
     fi
-    FM_CI_SLOTS_INFLIGHT=$((FM_CI_SLOTS_INFLIGHT + 1))
-    FM_CI_SLOTS_INFLIGHT_IDS="${FM_CI_SLOTS_INFLIGHT_IDS:+$FM_CI_SLOTS_INFLIGHT_IDS, }${FM_PROJECT_RECORD_LABELS[$i - 1]}"
+    state=$(dirname "$meta")
+    if [ "$state" = "$first" ]; then
+      config=$4
+      data=$5
+    else
+      config="$(dirname "$state")/config"
+      data="$(dirname "$state")/data"
+    fi
+    id=$(basename "$meta" .meta)
+    rc=0
+    fm_backlog_transition_applies "$config" "$data" ship || rc=$?
+    [ "$rc" -eq 0 ] || continue
+    fm_backlog_row_probe "$data" "$id" || continue
+    row=${FM_BACKLOG_ROW_STATE%% *}
+    if [ "$row" != "done" ] && [ "$FM_BACKLOG_ROW_HOLD_KIND" = captain ]; then
+      seen="$seen$pr"$'\n'
+      FM_CI_SLOTS_HELD=$((FM_CI_SLOTS_HELD + 1))
+    fi
   done
+  FM_BACKLOG_ROW_SHOW_WEDGED=$wedged
   return 0
 }
 
