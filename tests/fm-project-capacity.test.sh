@@ -1468,6 +1468,44 @@ declare_cap() {  # <home> <line>...
   printf '%s\n' "$@" > "$home/config/open-pr-cap"
 }
 
+remote_mate_with_summary() {  # <case-dir> <ships-json> <age-seconds>
+  local case_dir=$1 ships=$2 age=$3 root key home="$1/remote-home" now
+  root="$case_dir/home"
+  printf -- '- far - a remote mate (host: far.example; root: /srv/fm; home: %s; scope: other; projects: project; added 2026-09-01)\n' \
+    "$home" >> "$root/data/secondmates.md"
+  key=$(printf '%s\n%s\n%s\n' far far.example "$home" | sha256sum | awk '{print $1}')
+  mkdir -p "$root/state/secondmate-summary-cache" && chmod 700 "$root/state/secondmate-summary-cache"
+  now=$(date +%s)
+  jq -n --arg home "$home" --argjson at "$((now - age))" --argjson ships "$ships" \
+    '{schema:"fm-secondmate-home-summary.v1",hold_classifier_schema:"fm-captain-hold-buckets.v1",
+      home:$home,generated:"x",generated_epoch:$at,valid:true,state:"no_active_work",
+      invalidity:{kind:null,ids:[]},active_children:[],decisions_open:[],holds:[],queued:[],landed:[],
+      endpoints:[],counts:{},omitted:[],ships:$ships}' > "$root/state/secondmate-summary-cache/$key.json"
+  chmod 600 "$root/state/secondmate-summary-cache/$key.json"
+}
+
+test_landing_lag_reads_a_remote_homes_ready_pr_from_its_cached_summary() {
+  local case_dir home out rc=0 at
+  case_dir=$(make_case lag-remote task-c task-d)
+  home="$case_dir/home"
+  register_landing_lag "$home" 24
+  at=$(( $(date +%s) - 30 * 3600 - 60 ))
+  remote_mate_with_summary "$case_dir" \
+    "[{\"id\":\"far-r\",\"kind\":\"ship\",\"project\":\"project\",\"yolo\":\"on\",\"pr\":\"https://github.com/o/r/pull/5\",\"pr_at\":$at,\"held\":true},
+      {\"id\":\"far-s\",\"kind\":\"ship\",\"project\":\"project\",\"yolo\":\"off\",\"pr\":\"https://github.com/o/r/pull/6\",\"pr_at\":$at,\"held\":false}]" 60
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "a held or not-yolo remote PR held the spawn: $out"
+
+  remote_mate_with_summary "$case_dir" \
+    "[{\"id\":\"far-r\",\"kind\":\"ship\",\"project\":\"project\",\"yolo\":\"on\",\"pr\":\"https://github.com/o/r/pull/5\",\"pr_at\":$at,\"held\":false}]" 60
+  rc=0
+  out=$(spawn_ship "$case_dir" task-d "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "a lagging remote ready PR did not defer the spawn: $out"
+  assert_contains "$out" "https://github.com/o/r/pull/5 (task far-r on far) has waited 30 hour(s)" \
+    "the deferral did not name the remote home's ready PR: $out"
+  pass "landing lag reads a remote home's landable ready PRs from its cached summary"
+}
+
 test_ci_slots_gate_leaves_captain_held_prs_out() {
   local case_dir home
   if [ "$HAVE_TASKS_AXI" = 0 ]; then
@@ -1506,6 +1544,23 @@ test_ci_slots_gate_counts_a_pr_no_local_record_owns() {
   # A remote home's PR, or a Wednesday pile, leaves no local sign that it waits, so it counts against the slots.
   assert_contains "$(slots_gate "$case_dir")" "hold o/r CI slots full: 4 open PR(s)" "an unowned open PR was left out of the count"
   pass "an open PR no local record shows to be waiting for the captain still counts"
+}
+
+test_ci_slots_gate_leaves_a_remote_captain_held_pr_out() {
+  local case_dir home
+  case_dir=$(make_case slots-remote-held)
+  home="$case_dir/home"
+  declare_slots "$home" "project 4"
+  drain_gh "$case_dir" 0
+  open_prs "$case_dir" 4 0
+  assert_contains "$(slots_gate "$case_dir")" "hold o/r CI slots full: 4 open PR(s)" "no remote summary: every open PR must count"
+  # PR 1 is a remote ship held for the captain, PR 2 a remote yolo-off ship, PR 3 a remote ready ship.
+  remote_mate_with_summary "$case_dir" \
+    '[{"id":"far-a","kind":"ship","project":"project","yolo":"on","pr":"https://github.com/o/r/pull/1","pr_at":1790000000,"held":true},
+      {"id":"far-b","kind":"ship","project":"project","yolo":"off","pr":"https://github.com/o/r/pull/2","pr_at":1790000000,"held":false},
+      {"id":"far-c","kind":"ship","project":"project","yolo":"on","pr":"https://github.com/o/r/pull/3","pr_at":1790000000,"held":false}]' 60
+  assert_equals "open o/r" "$(slots_gate "$case_dir")" "two remote PRs waiting for the captain, of 4 open, still held against 4 slots"
+  pass "a remote ship's PR waiting for the captain's merge word leaves the CI slot count, read from its cached summary"
 }
 
 test_undeclared_capacity_keeps_dispatch_uncapped
@@ -1557,4 +1612,6 @@ test_ci_slots_never_hold_a_ship_start
 test_ci_slots_gate_leaves_captain_held_prs_out
 test_ci_slots_gate_counts_a_pr_no_local_record_owns
 test_ci_slots_gate_counts_every_pr_when_a_record_is_unreadable
+test_ci_slots_gate_leaves_a_remote_captain_held_pr_out
+test_landing_lag_reads_a_remote_homes_ready_pr_from_its_cached_summary
 test_ready_branch_list_shows_parked_branches_only

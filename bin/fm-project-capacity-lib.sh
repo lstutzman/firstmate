@@ -58,7 +58,7 @@
 # and is not capped, though its workers still count as holders for a
 # same-origin clone that is capped.
 # A record whose project directory no longer exists cannot be matched and holds
-# no place. Remote homes are never walked, because their workers run on another
+# no place. Remote homes never hold a place, because their workers run on another
 # machine.
 #
 # Race safety: bin/fm-spawn.sh evaluates admission while holding the shared
@@ -94,8 +94,8 @@
 # spawn, like an unreadable capacity declaration.
 # Known limits, by the captain's decision until firstmate has a signal for
 # them: a paused landing is not read, and a ready PR held for a release day
-# counts like any other. A merged PR also counts until its task is cleaned up,
-# and remote homes are never walked.
+# counts like any other. A merged PR also counts until its task is cleaned up.
+# Remote homes count through their cached summaries (Remote homes, below).
 #
 # CI slots: config/ci-slots in the spawning home's own config/ (inherited from
 # the primary by bin/fm-config-inherit-lib.sh, so every dispatching home reads
@@ -111,12 +111,26 @@
 # no PR. A project with no line is never held; a malformed file makes the gate
 # read unknown. Waiting for a release day (Wednesday) has no signal, so such a
 # PR counts. bin/fm-project-mode.sh --ci-slots and --open-pr-cap read S and the
-# cap back; bin/fm-fleet-alarm.py announces P > S.
+# cap back; bin/fm-fleet-alarm.py announces P > S. Ready PRs of a remote home's
+# ships that wait for the captain's merge word stay out of the slots too (Remote homes, below).
 #
 # Open-PR cap: config/open-pr-cap, same format and inheritance, holds one
 # `<project-name> <cap>` line; a project that declares S and no cap line gets
 # FM_OPEN_PR_CAP_DEFAULT (12, Lee 2026-11-21). The cap counts every open PR, drafts and
 # held ones included, because it bounds rebase debt; a project with no S has none.
+#
+# Remote homes: a remote secondmate's task records live on its own host and are
+# never walked. Its ships reach the CI-slot hold count and the landing-lag check through
+# the ships[] list of the home summary bin/fm-fleet-snapshot.sh caches in the root
+# home's state/secondmate-summary-cache (one copy per registered remote home,
+# refreshed whenever the fleet snapshot runs). Only a copy at most
+# FM_REMOTE_SHIP_MAX_AGE seconds old (default 7200) counts; a copy that is
+# missing, unreadable or older is skipped with one warning line, naming the home,
+# on stderr, and never refuses or defers a spawn, as for an unreadable landing
+# signal. A remote ship counts by its project's directory
+# name, the same way the declaration is matched. Known limits: a remote ship's
+# brief is not read, and the
+# project capacity (a machine-local resource) never counts remote homes.
 #
 # Requires bin/fm-wake-lib.sh (root home, local homes, project lock path),
 # bin/fm-secondmate-registry-lib.sh (which the local-homes walk reads),
@@ -353,6 +367,73 @@ fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> 
   return 0
 }
 
+# The remote ships of one project, from the parent's cached home summaries.
+# Sets FM_REMOTE_SHIP_ROWS to one record per ship of <project-name>, its fields
+# joined by the unit separator in this order: label ("<id> on <mate>"), kind,
+# pr, pr_at, yolo, held (true or false). A remote home that lists the project
+# and has no current summary prints one warning line on stderr, once per
+# process. Never fails: an unreadable signal is a warning, not a refusal.
+FM_REMOTE_SHIP_MAX_AGE=${FM_REMOTE_SHIP_MAX_AGE:-7200}
+FM_REMOTE_SHIP_WARNED=
+fm_remote_ship_rows() {  # <project-name> <now-epoch>
+  local name=$1 now=$2 root reg cache line mate host home projects key file status row why max=$FM_REMOTE_SHIP_MAX_AGE
+  FM_REMOTE_SHIP_ROWS=()
+  root=$(fm_firstmate_root_home "$FM_HOME" 2>/dev/null) || return 0
+  reg="$root/data/secondmates.md"
+  [ -f "$reg" ] && [ ! -L "$reg" ] || return 0
+  cache=${FM_SNAPSHOT_CACHE_DIR:-$root/state/secondmate-summary-cache}
+  command -v jq >/dev/null 2>&1 || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in "- "*) ;; *) continue ;; esac
+    secondmate_registry_parse_line "$line" || continue
+    [ "$SECONDMATE_REGISTRY_REMOTE" -eq 1 ] || continue
+    mate=$SECONDMATE_REGISTRY_ID host=$SECONDMATE_REGISTRY_HOST home=$SECONDMATE_REGISTRY_HOME
+    projects=",$(printf '%s' "$SECONDMATE_REGISTRY_PROJECTS" | tr -d ' '),"
+    if command -v shasum >/dev/null 2>&1; then
+      key=$(printf '%s\n%s\n%s\n' "$mate" "$host" "$home" | shasum -a 256 | awk '{print $1}')
+    else
+      key=$(printf '%s\n%s\n%s\n' "$mate" "$host" "$home" | sha256sum | awk '{print $1}')
+    fi
+    file="$cache/$key.json"
+    status=
+    if [ -f "$file" ] && [ ! -L "$file" ] && [ "$(LC_ALL=C wc -c < "$file" | tr -d ' ')" -le 262144 ]; then
+      status=$(jq -r --arg home "$home" --argjson now "$now" --argjson max "$max" '
+        if .schema == "fm-secondmate-home-summary.v1" and .home == $home
+           and (.generated_epoch | type) == "number" and (.ships | type) == "array"
+        then (if ($now - .generated_epoch) > $max then "stale" else "ok" end) else "" end' "$file" 2>/dev/null) || status=
+    fi
+    if [ "$status" = ok ]; then
+      while IFS= read -r row; do
+        [ -n "$row" ] && FM_REMOTE_SHIP_ROWS+=("$row")
+      done <<EOF
+$(jq -r --arg name "$name" --arg mate "$mate" '
+  .ships[] | select(type == "object" and .project == $name
+      and (.id | type) == "string" and (.id | test("^[A-Za-z0-9._-]+$")))
+  | [(.id + " on " + $mate), (.kind // "ship"), ((.pr // "") | tostring), ((.pr_at // "") | tostring),
+     (.yolo // ""), ((.held // false) | tostring)]
+  | select(all(.[]; test("[[:cntrl:]]") | not))
+  | join("\u001f")' "$file" 2>/dev/null)
+EOF
+    else
+      case "$projects" in *",$name,"*)
+        if [ "$status" = stale ]; then
+          why="summary is older than $max seconds"
+        else
+          why="no readable cached summary"
+        fi
+        # One line per home per process, so a spawn that checks both the slots and the lag warns once.
+        case "$FM_REMOTE_SHIP_WARNED" in *"|$mate|"*) ;; *)
+          FM_REMOTE_SHIP_WARNED="$FM_REMOTE_SHIP_WARNED|$mate|"
+          echo "warning: remote home $mate has no current inventory ($why); its ships are not counted" >&2
+          ;;
+        esac
+        ;;
+      esac
+    fi
+  done < "$reg"
+  return 0
+}
+
 # Count the ready open PRs of one project that wait for the captain's merge
 # word, so they stay out of the CI slots. <urls> is the newline-separated list
 # of the project's ready open PR URLs. A PR is left out only on positive
@@ -404,6 +485,24 @@ fm_ci_slots_held() {  # <project-lock> <project-dir> <first-state> <first-config
       FM_CI_SLOTS_HELD=$((FM_CI_SLOTS_HELD + 1))
     fi
   done
+  # Remote homes: a ready PR of a remote ship that waits for the captain's merge word (yolo not on,
+  # or its remote backlog row held) is left out like a local one.
+  fm_remote_ship_rows "$(basename "$2")" "$(date +%s)"
+  for row in ${FM_REMOTE_SHIP_ROWS[@]+"${FM_REMOTE_SHIP_ROWS[@]}"}; do
+    IFS=$'\037' read -r _ _ pr _ yolo held <<EOF
+$row
+EOF
+    [ -n "$pr" ] || continue
+    case "$urls" in
+      "$pr" | "$pr"$'\n'* | *$'\n'"$pr" | *$'\n'"$pr"$'\n'*) ;;
+      *) continue ;;
+    esac
+    case "$seen" in *$'\n'"$pr"$'\n'*) continue ;; esac
+    if [ "$yolo" != on ] || [ "$held" = true ]; then
+      seen="$seen$pr"$'\n'
+      FM_CI_SLOTS_HELD=$((FM_CI_SLOTS_HELD + 1))
+    fi
+  done
   FM_BACKLOG_ROW_SHOW_WEDGED=$wedged
   return 0
 }
@@ -425,7 +524,7 @@ fm_ci_slots_held() {  # <project-lock> <project-dir> <first-state> <first-config
 # FM_BACKLOG_ROW_SHOW_WEDGED only for the rest of this walk, so another home's
 # slow backlog never refuses the caller's own later backlog reads.
 fm_project_landing_oldest() {  # <project-lock> <project-dir> <first-state> <own-id> <first-config> <first-data> <now-epoch>
-  local first=$3 now=$7 i=0 meta label pr at age state config data id rc row
+  local first=$3 now=$7 i=0 meta label pr at age state config data id rc row rpr_at yolo held
   local wedged=$FM_BACKLOG_ROW_SHOW_WEDGED
   FM_PROJECT_LANDING_AGE=
   FM_PROJECT_LANDING_PR=
@@ -464,6 +563,27 @@ fm_project_landing_oldest() {  # <project-lock> <project-dir> <first-state> <own
       FM_PROJECT_LANDING_UNTIMED_COUNT=$((FM_PROJECT_LANDING_UNTIMED_COUNT + 1))
       FM_PROJECT_LANDING_UNTIMED="${FM_PROJECT_LANDING_UNTIMED:+$FM_PROJECT_LANDING_UNTIMED, }$label (backlog unreadable)"
     elif [ -z "$at" ] || [ -n "${at//[0-9]/}" ]; then
+      FM_PROJECT_LANDING_UNTIMED_COUNT=$((FM_PROJECT_LANDING_UNTIMED_COUNT + 1))
+      FM_PROJECT_LANDING_UNTIMED="${FM_PROJECT_LANDING_UNTIMED:+$FM_PROJECT_LANDING_UNTIMED, }$label"
+    else
+      age=$((now - 10#$at))
+      if [ -z "$FM_PROJECT_LANDING_AGE" ] || [ "$age" -gt "$FM_PROJECT_LANDING_AGE" ]; then
+        FM_PROJECT_LANDING_AGE=$age
+        FM_PROJECT_LANDING_PR=$pr
+        FM_PROJECT_LANDING_TASK=$label
+      fi
+    fi
+  done
+  # Remote homes: a ready PR that can land is one whose remote backlog row is neither held nor blocked
+  # (the summary says so) and whose task has yolo on; its pr_at is read like a local one.
+  fm_remote_ship_rows "$(basename "$2")" "$now"
+  for row in ${FM_REMOTE_SHIP_ROWS[@]+"${FM_REMOTE_SHIP_ROWS[@]}"}; do
+    IFS=$'\037' read -r label _ pr rpr_at yolo held <<EOF
+$row
+EOF
+    [ -n "$pr" ] && [ "$yolo" = on ] && [ "$held" = false ] || continue
+    at=$rpr_at
+    if [ -z "$at" ] || [ -n "${at//[0-9]/}" ]; then
       FM_PROJECT_LANDING_UNTIMED_COUNT=$((FM_PROJECT_LANDING_UNTIMED_COUNT + 1))
       FM_PROJECT_LANDING_UNTIMED="${FM_PROJECT_LANDING_UNTIMED:+$FM_PROJECT_LANDING_UNTIMED, }$label"
     else

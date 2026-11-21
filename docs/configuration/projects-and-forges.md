@@ -35,7 +35,7 @@ A project with no `merger=` token keeps every home's merge authority exactly as 
 
 A project entry may limit how long its oldest ready PR may wait to land with `landing-lag=<hours>`, a positive whole number of hours, for example `- PropertyCompass2 [no-mistakes +yolo merger=slarti landing-lag=48] - ...`.
 While any ready PR for the project on this machine has waited longer than that, `bin/fm-spawn.sh` launches no new ship for it: it creates nothing, leaves the backlog item queued, prints one `deferred:` line naming the oldest ready PR and its age, and exits 75, exactly like a [project capacity](../configuration.md#project-capacity-configproject-capacity) deferral.
-A PR's wait starts when `bin/fm-pr-check.sh` first records it as ready, and ready PRs in every local home on this machine count, while remote homes do not.
+A PR's wait starts when `bin/fm-pr-check.sh` first records it as ready, and ready PRs in every local home on this machine count, as do those a remote home reports in its cached home summary (less than two hours old, otherwise skipped with one `warning:` line).
 Only a ready PR that can land counts: one whose task records `yolo=off` waits for the captain's merge word, so it does not count, and neither does one whose task's row in its home's backlog is held for the captain (`bin/fm-captain-hold.sh`) or has an unresolved `blocked-by` dependency.
 A ship spawned with `--landing-exempt` is never held, and that flag is how a fix or landing work is marked; a relaunch, a scout, and a secondmate are never held either.
 When a ready PR's wait is unknown, because it was recorded before ready times existed or its home's backlog cannot be read, the spawn goes ahead with one `warning:` line, unless another ready PR is already known to exceed the limit.
@@ -73,7 +73,8 @@ Each released worker re-runs its own pre-PR gate check, which is the race guard,
 The gate holds when P, the ready open PRs on the project's GitHub repository less drafts and less PRs waiting for the captain's merge word, reaches S, or when every open PR reaches the open-PR cap.
 A draft PR is left out of P because GitHub says so (`isDraft`).
 A PR waiting for the captain's merge word is left out only on positive evidence from a task record in a local home: the task recorded `yolo` that is not on, which waits for the captain's merge word by definition, or its backlog row is held for the captain and not done.
-A PR no local record shows to be waiting counts, and so does a PR whose task lives in a remote home, which is never walked.
+A PR of a ship in a remote home is read the same way from that home's cached summary, when it is less than two hours old; a missing or older copy is skipped with one `warning:` line and never changes the gate.
+A PR no record shows to be waiting counts.
 A PR held for a release day (Wednesday) counts too: firstmate has no signal for it, so the gate leaves out only the classes it can detect.
 That Wednesday-hold signal is tracked as a follow-up under Linear FLEET-145 (backlog item `wednesday-hold-signal`).
 An unreadable declaration or GitHub reads as `unknown`, and the worker opens the pull request as usual.
