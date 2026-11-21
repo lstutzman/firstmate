@@ -225,6 +225,21 @@ test_oversized_feed_drops_only_the_oversized_lane() {
   pass 'an oversized feed or lane drops only the oversized lane, and publish, feed, the sweep and ensure report the gap'
 }
 
+test_unbuildable_feed_is_recorded_for_the_alarm() {
+  local w rc out
+  w=$(world feederr)
+  publish "$w" >/dev/null || fail "publish failed"
+  cp "$w/data/offices.md" "$w/offices.good"
+  printf '%s\n' "$LINE" >> "$w/data/offices.md"
+  rc=0; out=$(main_env "$w" "$((NOW + 100))" bash "$OFFICE" feed nav 2>&1) || rc=$?
+  assert_present "$w/state/office-feed.nav.error" "a feed that cannot be built is recorded for the fleet alarm"
+  assert_contains "$(cat "$w/state/office-feed.nav.error")" "missing, repeated or malformed" "with its reason"
+  cp "$w/offices.good" "$w/data/offices.md"
+  main_env "$w" "$((NOW + 200))" bash "$OFFICE" feed nav >/dev/null 2>&1 || fail "feed failed after the registry was repaired"
+  assert_absent "$w/state/office-feed.nav.error" "and the record is cleared once the feed builds"
+  pass 'a feed that cannot be built leaves a record for the fleet alarm until it builds again'
+}
+
 test_officer_run_sends_its_digest_to_a_remote_office() {
   local w spec
   w=$(world officer)
@@ -247,4 +262,5 @@ test_sweep_pushes_only_what_changed
 test_sweep_backs_off_after_a_failed_push
 test_stale_or_absent_copy_is_silent
 test_oversized_feed_drops_only_the_oversized_lane
+test_unbuildable_feed_is_recorded_for_the_alarm
 test_officer_run_sends_its_digest_to_a_remote_office

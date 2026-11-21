@@ -537,6 +537,12 @@ feed_stage() {
   stage=$(mktemp "${TMPDIR:-/tmp}/fm-office-feed.XXXXXX") || return 0
   if secondmate_registry_line_for_id "$DATA/secondmates.md" "$id"; then
     fm_office_feed_payload "$FM_HOME" "$DATA" "$id" "$SECONDMATE_REGISTRY_HOME" "$stage" "$(now_epoch)" || rc=$?
+    if [ "$rc" -eq 1 ] || [ "$rc" -eq 2 ]; then
+      # bin/fm-fleet-alarm.py raises this record, so a feed that cannot be built is not silent.
+      mkdir -p "$STATE" 2>/dev/null && printf '%s\n' "$FM_OFFICE_ERROR" > "$STATE/$FEED_CHECK_ID.$id.error" 2>/dev/null || true
+    else
+      rm -f "$STATE/$FEED_CHECK_ID.$id.error" 2>/dev/null || true
+    fi
     if [ "$rc" -eq 2 ]; then
       FEED_OVER=$FM_OFFICE_FEED_OVER
       FEED_REASON=$FM_OFFICE_ERROR

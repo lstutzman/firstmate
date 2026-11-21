@@ -1728,3 +1728,13 @@ kill "$orphan_pid" 2>/dev/null || true
 [ "$young_after" -eq "$((young_before + 1))" ] || fail "a real orphan older than the setting must be counted once ($young_before -> $young_after)"
 [ "$old_after" -eq "$old_before" ] || fail "a real orphan younger than the setting must not be counted ($old_before -> $old_after)"
 pass 'the scan counts a real process whose session leader exited, and only once it is older than the setting'
+
+# An office feed that cannot be built is recorded by bin/fm-office.sh as state/office-feed.<id>.error;
+# the alarm raises it, and drops it once the record is gone.
+printf 'its line in data/offices.md is missing, repeated or malformed\n' > "$HOME_FIX/state/office-feed.nav.error"
+assert_contains "$(run_alarm check)" 'Office feed not built for nav: its line in data/offices.md is missing, repeated or malformed' \
+  'a recorded feed build failure must raise an alarm naming the office and the reason'
+rm -f "$HOME_FIX/state/office-feed.nav.error"
+assert_not_contains "$(run_alarm check)" 'Office feed not built for nav' \
+  'a cleared feed build failure must not be raised again'
+pass 'the alarm raises an office feed build failure and drops it once cleared'
