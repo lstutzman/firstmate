@@ -43,7 +43,7 @@ EOF
 ## 3. Write the master admission configs
 
 The Quartermaster merges only what its classifier clears, and the seed copies these master files into its home.
-Write each home path in a master as the literal token `@OFFICE_HOME@`: the seed replaces it with the office home it copies into, so the same master serves the Quartermaster and any other office that merges the project, such as the Librarian.
+Write each home path in a master as the literal token `@OFFICE_HOME@`: the seed replaces it with the office home it copies into, so the same master serves the Quartermaster and any other office that merges the project.
 
 ```sh
 mkdir -p "$MAIN/config/admission"
