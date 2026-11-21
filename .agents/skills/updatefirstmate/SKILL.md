@@ -66,7 +66,7 @@ This touches only the firstmate repo and its own worktrees, never anything under
    ```
    Include `FM_HOME=<this-firstmate-home>` unless `FM_HOME` is already set to the active firstmate home.
    This is automatic and needs no per-mate confirmation from the captain.
-   Local and remote mates go in the same list; the command owns the transport, the profile each replacement runs on, and the wait.
+   Local and remote mates go in the same list; the command owns the transport, the profile each replacement runs on, the push of the parent's current inherited local material (such as `data/captain-shared.md`) to each mate just before its relaunch, and the wait.
 
    It asks every listed mate first to write down the open work it holds only in its conversation, and restarts one only after that mate's own answer comes back.
    A mate that is mid-turn queues the request behind that turn.

@@ -29,7 +29,10 @@
 #      All requests go out before any restart, so a slow mate delays only its own
 #      restart instead of serializing the fleet behind it.
 #   B. RESTART. Only after that mate's own correlated answer lands on the parent
-#      channel. The gate is that answer, never a wall clock, so a mate that is
+#      channel, and after the parent's current inherited local material (for
+#      example data/captain-shared.md) is pushed to that one mate through
+#      bin/fm-config-push.sh --only, so the replacement reads current bytes; a
+#      failed push keeps the running agent and falls back to the re-read nudge. The gate is that answer, never a wall clock, so a mate that is
 #      mid-turn queues the request behind that turn; the bound below exists to
 #      end the wait, not to authorize a restart without the answer. A timeout
 #      deliberately leaves that unanswered expectation open: it is a genuine
@@ -72,7 +75,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 
 usage() {
-  sed -n '2,65{s/^# \{0,1\}//;p;}' "$0"
+  sed -n '2,71{s/^# \{0,1\}//;p;}' "$0"
 }
 
 case "${1:-}" in
@@ -165,6 +168,11 @@ report_unreached() {  # <id> <reason>
 restart_mate() {  # <array-index>
   local i=$1 id restart_out restart_rc restart_reason ran_on
   id=${IDS[$i]}
+  if ! restart_out=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
+    "$SCRIPT_DIR/fm-config-push.sh" --only "$id" 2>&1 < /dev/null); then
+    fall_back_to_nudge "$id" "its inherited local material could not be refreshed before the restart: $(first_reported_line "$(printf '%s\n' "$restart_out" | grep -i 'error' || printf '%s\n' "$restart_out")")"
+    return
+  fi
   if [ "${PLACEMENT[i]}" = remote ]; then
     restart_out=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" \
       "$SCRIPT_DIR/fm-remote-secondmate-relaunch.sh" \
