@@ -800,11 +800,38 @@ test_teardown_leaves_item_open_when_project_is_not_a_clone_root() {
     || fail "teardown closed the backlog item although landed work could not be checked"
   printf '%s\n' "$out" | grep -F "left open because landed work could not be checked" >/dev/null \
     || fail "teardown did not say the item was left open: $out"
+  printf '%s\n' "$out" | grep -F "left open" | grep -F 'https://github.com/example/repo/pull/7' >/dev/null \
+    || fail "the left-open line dropped the task's PR, the only link left once the record is removed: $out"
   printf '%s\n' "$out" | grep -F 'is closed in' >/dev/null \
     && fail "teardown still reported the item closed: $out"
   assert_absent "$case_dir/state/task-x1.backlog-close" \
     "an unclosed item left a pending-close record behind"
   pass "teardown leaves the backlog item open when the project is not a clone root"
+}
+
+# A captain-held item keeps its retain transition, which closes nothing, so the
+# not-a-clone-root guard must not replace it with advice to close the item.
+test_teardown_keeps_captain_hold_when_project_is_not_a_clone_root() {
+  local case_dir out
+  case_dir=$(make_case tasks-axi-not-clone-root-held)
+  write_meta "$case_dir" no-mistakes ship
+  mkdir -p "$case_dir/project/sub"
+  sed -i "s|^project=.*|project=$case_dir/project/sub|" "$case_dir/state/task-x1.meta"
+  printf '%s\n' 'pr=https://github.com/example/repo/pull/7' >> "$case_dir/state/task-x1.meta"
+  seed_backlog_in_flight "$case_dir"
+  FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$case_dir/state" \
+    FM_DATA_OVERRIDE="$case_dir/data" FM_CONFIG_OVERRIDE="$case_dir/config" \
+    "$ROOT/bin/fm-captain-hold.sh" hold task-x1 --reason "captain must decide" >/dev/null 2>&1 \
+    || fail "could not hold the fixture item for the captain"
+
+  out=$(run_teardown "$case_dir" 2>&1) || fail "teardown failed for a held task whose project is not a clone root: $out"
+  [ "$(backlog_row_state "$case_dir")" != "done" ] \
+    || fail "teardown closed a captain-held item"
+  printf '%s\n' "$out" | grep -F 'still held for the captain' >/dev/null \
+    || fail "teardown dropped the captain hold for a project that is not a clone root: $out"
+  printf '%s\n' "$out" | grep -F 'left open because landed work could not be checked' >/dev/null \
+    && fail "teardown told the operator to close a captain-held item with tasks-axi: $out"
+  pass "teardown keeps the captain hold when the project is not a clone root"
 }
 
 # The task's gate-edit grant (bin/fm-gate-grant.sh) ends with its cleanup; the
@@ -7256,6 +7283,7 @@ test_retained_sources_still_reach_the_ordinary_refusal
 test_local_only_fork_remote_allows
 test_teardown_closes_the_backlog_item_itself
 test_teardown_leaves_item_open_when_project_is_not_a_clone_root
+test_teardown_keeps_captain_hold_when_project_is_not_a_clone_root
 test_teardown_removes_the_gate_grant
 test_teardown_logs_edits_made_after_the_pr_registered
 test_teardown_writes_the_dispatch_outcome_receipt

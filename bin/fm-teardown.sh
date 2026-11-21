@@ -1984,7 +1984,7 @@ backlog_refresh_reminder() {
     backlog_display="${DATA%/}/backlog.md"
   fi
   if [ "$BACKLOG_LEFT_OPEN" = 1 ]; then
-    printf '%s\n' "Backlog: $ID left open because landed work could not be checked (project $PROJ is not a clone root). Confirm what landed, then close it in $backlog_display with bin/fm-tasks-axi.sh."
+    printf '%s\n' "Backlog: $ID left open because landed work could not be checked (project $PROJ is not a clone root)${PR_URL:+; its PR is $PR_URL}. Confirm what landed, then close it in $backlog_display with bin/fm-tasks-axi.sh."
   elif [ "$BACKLOG_CLOSED" = 1 ] && [ "$BACKLOG_TRANSITION" = retain ]; then
     printf '%s\n' "Backlog: $ID stays open in $backlog_display, still held for the captain with its deliverable recorded. Relay the question and close it only with bin/fm-captain-hold.sh answer."
   elif [ "$BACKLOG_CLOSED" = 1 ]; then
@@ -4083,11 +4083,12 @@ BACKLOG_SKIP_REASON=
 # An ordinary ship task whose recorded project is not a clone root (the same test
 # bin/fm-fleet-sync.sh applies) has no repository the landed-work check could
 # have read, so teardown must not report the work done: it leaves the backlog
-# item as it is and says so. A forced or local-only teardown, a scout and a
-# secondmate keep their own close rules.
+# item as it is and says so. A forced or local-only teardown, a scout, a
+# secondmate and a captain-held item (its retain transition closes nothing) keep
+# their own rules.
 BACKLOG_LEFT_OPEN=0
-if [ "$TEARDOWN_BACKLOG_APPLIES" = 1 ] && [ "$KIND" != scout ] && [ "$KIND" != secondmate ] \
-   && [ "$MODE" != local-only ] && [ "$FORCE" != "--force" ]; then
+if [ "$TEARDOWN_BACKLOG_APPLIES" = 1 ] && [ "$BACKLOG_TRANSITION" = close ] \
+   && [ "$KIND" != scout ] && [ "$KIND" != secondmate ] && [ "$MODE" != local-only ] && [ "$FORCE" != "--force" ]; then
   proj_top=$(git -C "$PROJ" rev-parse --show-toplevel 2>/dev/null) || proj_top=
   proj_abs=$(cd "$PROJ" 2>/dev/null && pwd -P) || proj_abs=
   if [ -z "$proj_top" ] || [ -z "$proj_abs" ] || ! [ "$proj_top" -ef "$proj_abs" ]; then
