@@ -782,16 +782,6 @@ esac
 # so an interrupted run announces again rather than never. A project this home
 # merges, a task held for the captain, and the merge-time re-record
 # (fm-pr-merge.sh prints its own handoff) hand nothing off.
-# Deliver the merge handoff <line> for <merger> straight into the merger's
-# durable inbox, through fm-send.sh run in the parent home where the merger is a
-# recorded secondmate (local or remote, as that home's fm-send routes it), and
-# leave only a silent working line on the parent channel <dest>. The delivery
-# id is a hash of <sent> ("<url> <head>"), so a retry of one PR head is
-# idempotent, and --fire-and-forget arms no reply expectation. Returns non-zero
-# without sending when the route cannot do this (a remote parent route, a
-# merger the parent home has no secondmate record for, such as the main home),
-# and after a failed send or ledger write, so the caller falls back to the
-# keyed needs-decision line that wakes the parent.
 # pr_check_send_budget prints the FM_SEND_REMOTE_BUDGET for a handoff send. A
 # scan registration is killed at its scan bound, so its send gets half the time
 # left before FM_DOD_REFRESH_DEADLINE (fm-send may retry a lost transport once)
@@ -809,6 +799,16 @@ pr_check_send_budget() {
   printf '%s\n' "$left"
 }
 
+# Deliver the merge handoff <line> for <merger> straight into the merger's
+# durable inbox, through fm-send.sh run in the parent home where the merger is a
+# recorded secondmate (local or remote, as that home's fm-send routes it), and
+# leave only a silent working line on the parent channel <dest>. The delivery
+# id is a hash of <sent> ("<url> <head>"), so a retry of one PR head is
+# idempotent, and --fire-and-forget arms no reply expectation. Returns non-zero
+# without sending when the route cannot do this (a remote parent route, a
+# merger the parent home has no secondmate record for, such as the main home),
+# and after a failed send or ledger write, so the caller falls back to the
+# keyed needs-decision line that wakes the parent.
 pr_check_handoff_direct() {  # <merger> <line> <sent> <channel-path>
   local merger=$1 line=$2 sent=$3 dest=$4 parent id budget
   budget=$(pr_check_send_budget) || return 1
