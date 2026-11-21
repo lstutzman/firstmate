@@ -2172,8 +2172,28 @@ EOF
   assert_contains "$out" "(21 more queued - raise FM_SESSION_START_QUEUED_LIMIT or read data/backlog.md for the rest)" \
     "manual compact rendering did not disclose an exact queued remainder"
   assert_contains "$out" "or data/backlog.md" "manual compact digest omitted the data/backlog.md full-body pointer"
+  assert_contains "$out" "queue: 27 queued, 26 unheld" "the digest did not state the whole queue depth past its listing bound"
 
   pass "manual backlog rendering drops done rows, keeps every held or blocked title line, and bounds the rest"
+}
+
+test_backlog_queue_line_states_depth_and_oldest_age() {
+  local rec root home fakebin out
+  rec=$(new_world backlog-queue-line)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  printf '%s\n' manual > "$home/config/backlog-backend"
+  printf '## In flight\n\n## Queued\n- [ ] a - A (repo: x) (kind: task) (since 2999-01-02)\n- [ ] b - B (repo: x) (kind: task) (since 2020-01-01) (hold: waits) (hold-kind: external)\n- [ ] c - C (repo: x) (kind: task) (since 2020-03-04)\n\n## Done\n' > "$home/data/backlog.md"
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_contains "$out" "queue: 3 queued, 2 unheld, oldest unheld since 2020-03-04 (" "the queue line must skip the held row's older date"
+  assert_contains "$out" " days old)" "the queue line must state the oldest age"
+  printf '## In flight\n\n## Queued\n\n## Done\n' > "$home/data/backlog.md"
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_not_contains "$out" "queue: " "an empty queue prints no queue line"
+  pass "the startup digest states queue depth and the oldest unheld item's age"
 }
 
 test_backlog_compact_tasks_axi_unavailable_uses_manual_fallback() {
@@ -3146,6 +3166,7 @@ test_session_start_seeds_the_outcome_display_tail_while_away
 test_backlog_compact_tasks_axi_omits_bodies_and_keeps_metadata
 test_backlog_queued_bound_discloses_its_remainder
 test_backlog_compact_manual_backend_skips_indented_bodies
+test_backlog_queue_line_states_depth_and_oldest_age
 test_backlog_compact_tasks_axi_unavailable_uses_manual_fallback
 test_fleet_digest_empty_fleet
 test_next_step_sources_x_mode_cadence

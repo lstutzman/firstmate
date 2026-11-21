@@ -93,6 +93,46 @@ out=$(run_alarm check)
 [ -z "$out" ] || fail "idle mates and healthy quota must be silent: $out"
 pass 'idle secondmate never alarms, regardless of silence'
 
+# A home that only holds a deep or old queue still alarms: the summary's untruncated counts decide,
+# not the bounded queued rows, and a queue of held rows is nothing to reconcile.
+set_mate_queue() { # queued_unheld oldest_since_days_ago|none
+  python3 - "$TMP_ROOT/mate/state/home-summary.json" "$@" <<'PY_QUEUE'
+from pathlib import Path
+import datetime,json,sys
+path=Path(sys.argv[1])
+value=json.loads(path.read_text())
+value['counts']['queued']=int(sys.argv[2])
+value['counts']['queued_unheld']=int(sys.argv[2])
+value['counts'].pop('queued_oldest_since',None)
+if sys.argv[3] != 'none':
+    day=datetime.date.today()-datetime.timedelta(days=int(sys.argv[3]))
+    value['counts']['queued_oldest_since']=day.isoformat()
+path.write_text(json.dumps(value))
+PY_QUEUE
+}
+mate 0 0 9000
+set_mate_queue 30 14
+[ -z "$(run_alarm check)" ] || fail 'a queue at the depth and age limits is not yet an alarm'
+set_mate_queue 31 2
+out=$(run_alarm check)
+assert_contains "$out" 'Queue depth 31' 'a queue deeper than 30 unheld rows alarms on an otherwise idle home'
+assert_contains "$out" 'mate' 'the queue-depth alarm names the home'
+set_mate_queue 3 15
+assert_contains "$(run_alarm check)" 'Oldest unheld queued item 15 days' 'a queued item older than 14 days alarms'
+set_mate_queue 3 none
+[ -z "$(run_alarm check)" ] || fail 'a summary without queue fields (older producer) raises nothing'
+python3 - "$TMP_ROOT/mate/state/home-summary.json" <<'PY_HELD'
+from pathlib import Path
+import json,sys
+path=Path(sys.argv[1])
+value=json.loads(path.read_text())
+value['counts'].update(queued=260,queued_unheld=0)
+path.write_text(json.dumps(value))
+PY_HELD
+[ -z "$(run_alarm check)" ] || fail 'a deep queue of held rows (queued_unheld 0) is not an alarm'
+mate 0 0 9000
+pass 'queue depth and age alarm from the summary counts, held rows excepted'
+
 # Child liveness can be unknown while the structured in-flight count is complete.
 python3 - "$TMP_ROOT/mate/state/home-summary.json" <<'PY_PARTIAL'
 from pathlib import Path

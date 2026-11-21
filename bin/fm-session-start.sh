@@ -430,6 +430,38 @@ print_file_or_absent() {
   fi
 }
 
+# One line for the whole queue. The listing above is bounded and newest-first, so depth and the
+# oldest unheld item's age are stated here: an unheld row is one with no "(hold" marker. Printed only
+# when the queue has rows. Age uses today's UTC date and a days-from-civil count, so no GNU or BSD
+# date flag is involved.
+print_queue_line() {
+  local path=$1 today
+  today=$(date -u +%Y-%m-%d)
+  awk -v today="$today" '
+    function days(d,   p, y, m, dd, a, mm) {
+      split(d, p, "-"); y = p[1] + 0; m = p[2] + 0; dd = p[3] + 0
+      a = int((14 - m) / 12); y -= a; mm = m + 12 * a - 3
+      return dd + int((153 * mm + 2) / 5) + 365 * y + int(y / 4) - int(y / 100) + int(y / 400)
+    }
+    /^##[[:space:]]+/ { in_queue = ($0 ~ /^##[[:space:]]+Queued[[:space:]]*$/); next }
+    in_queue && /^[-*][[:space:]]+/ {
+      total++
+      if ($0 ~ /[(]hold/) next
+      unheld++
+      if (match($0, /[(]since [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]/)) {
+        d = substr($0, RSTART + 7, 10)
+        if (oldest == "" || d < oldest) oldest = d
+      }
+    }
+    END {
+      if (total == 0) exit
+      printf "queue: %d queued, %d unheld", total, unheld
+      if (oldest != "") printf ", oldest unheld since %s (%d days old)", oldest, days(today) - days(oldest)
+      printf "\n"
+    }
+  ' "$path"
+}
+
 print_backlog_pointer() {
   printf 'Full task bodies remain available on demand: bin/fm-tasks-axi.sh show <id> --full when compatible tasks-axi is available, or data/backlog.md.\n'
 }
@@ -559,6 +591,7 @@ print_backlog_compact() {
       else
         print_backlog_manual_compact "$path" "tasks-axi unavailable or incompatible"
       fi
+      print_queue_line "$path"
       print_backlog_pointer
     else
       printf '(present, empty)\n'
