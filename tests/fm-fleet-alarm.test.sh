@@ -30,6 +30,7 @@ SH
 cat > "$BIN_FIX/fm-on.sh" <<'SH'
 #!/usr/bin/env bash
 [ ! -f "$FM_HOME/remote-slow" ] || sleep 10
+[ ! -f "$FM_HOME/remote-delay" ] || sleep "$(cat "$FM_HOME/remote-delay")"
 [ ! -f "$FM_HOME/remote-refused" ] || exit 1
 [ -f "$FM_HOME/remote-summary" ] || exit 255
 cat "$FM_HOME/remote-summary"
@@ -311,6 +312,37 @@ printf '%s\n' '{"persist_polls":1}' > "$HOME_FIX/config/fleet-alarm.json"
 mate 0 0 0
 run_alarm check >/dev/null
 pass 'slow remote summary reads do not starve the silent-mate check'
+
+# A remote read that takes a few seconds must not be cut short because many local mates are registered:
+# the budget is shared among the remote reads still to come, not among every mate (FLEET-142).
+python3 - "$HOME_FIX" "$TMP_ROOT" <<'PY_MANY'
+from pathlib import Path
+import json,sys,time
+home,root=map(Path,sys.argv[1:])
+rows=['- far - test domain (host: far.invalid; root: /remote/code; home: /remote/far; scope: test; projects: alpha; added 2026-10-26)']
+base=dict(schema='fm-secondmate-home-summary.v1',hold_classifier_schema='fm-captain-hold-buckets.v1',valid=True)
+for n in range(9):
+    mate=root/f'idle{n}'
+    (mate/'state').mkdir(parents=True,exist_ok=True)
+    (mate/'state/home-summary.json').write_text(json.dumps(dict(base,home=str(mate),generated_epoch=int(time.time()),
+        counts=dict(in_flight=0,active_children=0,decisions_open=0,holds=0))))
+    rows.append(f'- idle{n} - test domain (home: {mate}; scope: test; projects: alpha; added 2026-10-26)')
+(home/'data/secondmates.md').write_text('\n'.join(rows)+'\n')
+(home/'remote-summary').write_text(json.dumps(dict(base,home='/remote/far',generated_epoch=int(time.time()),
+    counts=dict(in_flight=1,active_children=1,decisions_open=0,holds=0))))
+now=int(time.time())
+(home/'state/far.status').write_text(f'done [at={now-7200}]: old line\n')
+(home/'state/far.meta').write_text('spawn_gen=s1\n')
+PY_MANY
+printf '3\n' > "$HOME_FIX/remote-delay"
+printf '%s\n' '{"persist_polls":1}' > "$HOME_FIX/config/fleet-alarm.json"
+out=$(run_alarm check)
+assert_contains "$out" 'holding work silent over 60 minutes: far' 'a 3-second remote read finishes among many registered mates'
+assert_not_contains "$out" 'inventory unavailable' 'a slow remote read is read, not cached or dropped'
+jq -e '(.not_collected.far // null) == null' "$HOME_FIX/state/.fleet-alarm.json" >/dev/null \
+  || fail 'remote read was cut short by the shared budget'
+rm -f "$HOME_FIX/remote-delay" "$HOME_FIX/remote-summary"
+pass 'remote reads share the budget among remote reads, not among every registered mate'
 
 cat > "$HOME_FIX/accounts" <<'ROWS'
 accounts[2]{account,provider,used_5h,reset_5h,used_7d,reset_7d,observed,age_min,tokens_this_5h}:

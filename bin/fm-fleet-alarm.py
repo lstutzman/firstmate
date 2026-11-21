@@ -18,7 +18,8 @@ nothing else of that secret-bearing file is returned, logged or stored. Unreadab
 seven_day setting is the fallback and the alarm text says so.
 Both readers share FM_CHECK_TIMEOUT (default 30); budget must leave 5 seconds.
 Secondmate inventory reads published home summaries (bounded remote reads fall
-back to the parent cache); no full fleet snapshot runs here. Unreachable homes
+back to the parent cache, each remote read getting an equal share of the budget left among the remote
+reads still to come); no full fleet snapshot runs here. Unreachable homes
 without usable cached inventory are recorded quietly as not_collected.
 Partial child observations retain independently complete in-flight counts;
 other incomplete inventories alert with their reason, but only after the same
@@ -444,9 +445,12 @@ done < "$2"
         try:
             if host:
                 try:
+                    # Local mates never wait on a reader, so the budget left is shared among the remote
+                    # reads still to come, plus one share for the readers that run after the mates.
+                    remote_left = sum(1 for later in routes[index:] if later[1])
                     summary = json.loads(read([BIN / 'fm-on.sh', name, 'fm-remote-file.sh',
                                                'get', 'state/home-summary.json', '262144'],
-                                              len(routes) - index + 1))
+                                              remote_left + 1))
                 except ReaderUnavailable as error:
                     remote_unavailable = error.returncode in (124, 137, 255)
                     if not remote_unavailable:
