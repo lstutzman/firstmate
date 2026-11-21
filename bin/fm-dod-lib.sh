@@ -656,6 +656,22 @@ If your branch already has an open pull request, skip this check and finish thro
 EOF
 }
 
+# The CI slots check a ship worker runs just before it opens a new pull request,
+# for a project that declares CI slots (config/ci-slots); bin/fm-brief.sh decides
+# when a brief carries it. The slots hold PR openings, never ship starts.
+fm_ci_slots_gate_rule() {  # <fm-root> <branch> <project-name>
+  local root=$1 branch=$2 name=$3 root_q branch_q name_q
+  printf -v root_q '%q' "$root/bin/fm-pr-drain.py"
+  printf -v branch_q '%q' "$branch"
+  printf -v name_q '%q' "$name"
+  cat <<EOF
+CI slots check: just before you open a new pull request (in no-mistakes mode, before you run /no-mistakes, which opens one), run \`python3 $root_q gate . $name_q\` from your worktree.
+While it prints \`hold\`, the project's CI slots or open-PR cap are full, and this overrides the rest of the Definition of done: open no pull request and do not run /no-mistakes; push the branch with \`git push -u origin $branch_q\`, append \`done [at=<epoch>]: branch $branch pushed, no PR (CI slots)\` and stop; firstmate opens the pull request when a place frees.
+When it prints \`open\`, \`unknown\` or \`none\`, open the pull request as the Definition of done says.
+If your branch already has an open pull request, skip this check and finish through the Definition of done, /no-mistakes included.
+EOF
+}
+
 fm_dod_block() {  # <mode> <task-id> [branch] [<forge>] [<base>] [<consent>] [<pr>]
   local mode=$1 id=$2 forge=${4:-none} base=${5:-} consent=${6:-} pr=${7:-auto}
   local branch=${3:-fm/$id} pr_base='' nm_base='' base_q contract_forge='' contract_consent='' forge_cli=gh-axi draft_check adapter

@@ -59,19 +59,29 @@ A brief declaring `security` (a high or critical security fix, which starts at o
 
 ## CI slots (config/ci-slots)
 
-The optional local, gitignored `config/ci-slots` declares, per project, the total concurrent gate and admission slots across every host (S), so the open-PR queue (P) never outgrows them, because a longer queue drains slower as its branches fall behind staging.
+The optional local, gitignored `config/ci-slots` declares, per project, the total concurrent gate and admission slots across every host (S), so the ready open-PR queue (P) never outgrows them, because a longer queue drains slower as its branches fall behind staging.
 It holds one `<project> <slots>` line per project, in the same format as [project capacity](../configuration.md#project-capacity-configproject-capacity): the project's registered name, then a positive whole number, with `#` comments and blank lines ignored.
 The main home writes it (for PropertyCompass2 today, `PropertyCompass2 4`, Slarti's 2 slots plus Deep Thought's 2; to be confirmed with Slarti), and the inherited-local-material push copies it to every second-mate home, local and remote, so each dispatching home reads its own copy.
 A project with no line is never held.
-For a fresh ship of a project with S, `bin/fm-spawn.sh` counts P as the open PRs on the project's GitHub repository plus the ships in flight with no PR recorded yet in every local home on this machine, and a ship whose PR is recorded is counted once, through GitHub.
-When P is at or above S it prints one `deferred:` line naming the repository, the open count, the in-flight count and S, creates nothing and exits 75, exactly like a [project capacity](../configuration.md#project-capacity-configproject-capacity) deferral, so the item stays queued.
-A brief declaring one of these `bin/fm-brief.sh --pr-drain` classes is exempt: `production-outage`, `cve`, `security` (the same Linear label and priority check, read only when the cap would otherwise defer the ship), `lee-explicit` (the same quote and timestamp check), and the landing jobs `restack`, `red-gate-fix`, `returned-pr-fix` and `review`, which open no new PR.
-The other drain classes (`wolverine`, `lee-research`, `officer`, `scheduled`) are held by the cap, and a scout, a relaunch and a second mate never are.
-When GitHub or this machine's task records cannot be read, the spawn launches with one `warning:` line.
-A malformed file refuses every fresh ship spawn for the project until it is fixed, as landing lag does.
-Ships in flight in remote homes are not counted, a known limit.
-The fleet alarm announces a change only: a `working [key=ci-slots-over-<owner>-<repo>]` line when P exceeds S and a `resolved` line with that key once P is back at or under S, each naming P and S ([Fleet quota and secondmate alarm](away-and-alarms.md#fleet-quota-and-secondmate-alarm-configfleet-alarmjson)).
-[`bin/fm-project-capacity-lib.sh`](../../bin/fm-project-capacity-lib.sh) owns the file format and the in-flight count, [`bin/fm-pr-drain.py`](../../bin/fm-pr-drain.py) owns the open count and the exempt classes, and `bin/fm-project-mode.sh --ci-slots <name>` reads S back.
+The slots hold PR openings, never ship starts (captain, 2026-11-21): `bin/fm-spawn.sh` reads neither S nor the cap, so a ship always starts and builds to a finished, verified branch.
+A brief for a ship of a project that declares S carries a CI slots check that the worker runs just before it opens a pull request, as it does the [PR drain](#pr-drain-open-pr-drain-rule) check: `python3 bin/fm-pr-drain.py gate . <project>`.
+While it prints `hold`, the worker opens no pull request and does not run `/no-mistakes`, pushes the branch, reports `done: branch <branch> pushed, no PR (CI slots)` and stops, and firstmate opens the pull request when a place frees.
+Firstmate records that parked branch with `bin/fm-ready-branch.sh <task> <branch>`, which appends `ready_branch=<branch>` to the task record, and a recorded ready branch frees the ship's [project capacity](../configuration.md#project-capacity-configproject-capacity) place exactly as a recorded ready PR does, so parked branches never fill the places.
+The gate holds when P, the ready open PRs on the project's GitHub repository less drafts and less PRs waiting for the captain's merge word, reaches S, or when every open PR reaches the open-PR cap.
+A draft PR is left out of P because GitHub says so (`isDraft`).
+A PR waiting for the captain's merge word is left out only on positive evidence from a task record in a local home: the task recorded `yolo` that is not on, which waits for the captain's merge word by definition, or its backlog row is held for the captain and not done.
+A PR no local record shows to be waiting counts, and so does a PR whose task lives in a remote home, which is never walked.
+A PR held for a release day (Wednesday) counts too: firstmate has no signal for it, so the gate leaves out only the classes it can detect.
+An unreadable declaration, record or GitHub reads as `unknown`, and the worker opens the pull request as usual.
+The open-PR cap is separate from S because drafts and held PRs still fall behind staging and cost rebase work.
+`config/open-pr-cap` holds one `<project> <cap>` line per project in the same format and is inherited the same way; a project that declares S and no cap line gets a cap of 12 (captain, 2026-11-21), and a project with no S has none.
+The cap counts every open PR, drafts and held ones included, and the gate reports it as `open-PR cap reached`.
+A brief declaring one of these `bin/fm-brief.sh --pr-drain` classes carries no CI slots check: `production-outage`, `cve`, `security`, `lee-explicit`, and the landing jobs `restack`, `red-gate-fix`, `returned-pr-fix` and `review`, which open no new PR.
+The other drain classes (`wolverine`, `lee-research`, `officer`, `scheduled`) carry it, and a scout never does.
+A promoted scout's instructions carry it too.
+A malformed file makes the gate read `unknown`; it never refuses a spawn.
+The fleet alarm announces a change only: a `working [key=ci-slots-over-<owner>-<repo>]` line when P, drafts left out, exceeds S and a `resolved` line with that key once P is back at or under S, each naming P and S ([Fleet quota and secondmate alarm](away-and-alarms.md#fleet-quota-and-secondmate-alarm-configfleet-alarmjson)).
+[`bin/fm-project-capacity-lib.sh`](../../bin/fm-project-capacity-lib.sh) owns the file formats, the cap default and the held signal, [`bin/fm-pr-drain.py`](../../bin/fm-pr-drain.py) owns the open count, the gate and the exempt classes, [`bin/fm-ci-slots-held.sh`](../../bin/fm-ci-slots-held.sh) reads the held signal, [`bin/fm-ready-branch.sh`](../../bin/fm-ready-branch.sh) records a parked ready branch, and `bin/fm-project-mode.sh --ci-slots <name>` and `--open-pr-cap <name>` read S and the cap back.
 
 ## Admission by class (data/projects.md admission= token, config/admission/)
 
