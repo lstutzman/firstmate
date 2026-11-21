@@ -90,7 +90,7 @@ The reserved classes below are fixed in the code, so no line here can admit one.
   The line is whole sentences and carries a safe form only where the source states one.
 - Patterns are deduped by their normalised title, then by local-jev above 0.85 (same pattern, count goes up).
 - Every pattern is stored and counted, but one leaves only once it has a stated safe form and has been seen on at least two findings. It then leaves in three ways.
-  One batched start request goes to the Navigator, asking for the lines to be appended to PropertyCompass2 `.agents/skills/sdlc-review/references/quality-patterns.md` through a normal PR.
+  One batched start request goes to the Navigator, asking for the lines to be appended to PropertyCompass2 `.claude/skills/sdlc-review/references/quality-patterns.md` through a normal PR.
   The Surgeon never writes PropertyCompass2 itself.
   The digest lists them for the office to capture to the memory tier, tagged pattern plus the project, because no scriptable path to the memory service exists yet.
   A pattern that a tool could check (an unchecked null, SQL built from input) also gets a proposed analyzer or lint rule in the digest.
