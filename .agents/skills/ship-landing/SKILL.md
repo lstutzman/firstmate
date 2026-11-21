@@ -22,9 +22,10 @@ A no-mistakes worker re-validates it with /no-mistakes so the pipeline stays the
 In no-mistakes mode the earlier `done [at=<epoch>]: {summary}` is the pipeline handoff and is not gated.
 Tell the captain the PR's full `https://...` URL copied from the worker's ready line, the resolved checks-green crew-state line, or the task's `pr=` metadata, a concise outcome summary, and the no-mistakes risk level when applicable.
 When a worker reports `done: branch <branch> pushed, no PR (CI slots)`, run `bin/fm-ready-branch.sh <task> <branch>`.
-On every heartbeat and after any PR of that project lands, run `bin/fm-ready-branch.sh list` and re-run `python3 bin/fm-pr-drain.py gate <project-dir> <project-name>` once for each project that has a parked branch.
-When it prints `open`, steer one parked branch's worker, or relaunch it, to run /no-mistakes on the branch, which validates it and opens the PR.
-Release only one parked branch per project at a time: release no other branch of that project until the released one's PR is registered with `bin/fm-pr-check.sh` (its `pr=` is recorded, so it leaves the list and counts in the gate), because the gate does not count a PR that is still being opened.
+On every heartbeat and after any PR of that project lands, run `bin/fm-ready-branch.sh list` and re-run `python3 bin/fm-pr-drain.py gate <project-dir> <project-name>` for each project that has a parked branch.
+While it prints `open`, release parked branches: steer each one's worker, or relaunch it, to run /no-mistakes on the branch, which validates it and opens the PR.
+Each released worker re-runs its own pre-PR gate check, which is the race guard, and on `hold` simply parks again.
+A brief overshoot of S by a PR opened at the same time from another home is accepted.
 A captain instruction to merge is explicit authority; `yolo` is the only standing routine merge authority, and it holds only in the project's registered `merger=` home when the registry names one, because `bin/fm-pr-merge.sh` refuses every other home and prints the command that sends the merger a `[handoff=<home>]` line instead: through the parent channel in a secondmate home, where the main home relays it, or `bin/fm-send.sh fm-<home>` in a home with no parent.
 A ready PR with no task record in this home (`task metadata is unavailable`) is adopted with `bin/fm-pr-adopt.sh` before `bin/fm-pr-merge.sh`, never by hand-writing a record.
 A project registered with `admission=` also needs the captain's recorded answer for each class its classifier flags before any merge, `yolo` included; follow the hold and answer commands `bin/fm-pr-merge.sh` prints, and raise the call with the captain rather than answering it (`docs/configuration/projects-and-forges.md` "Admission by class").
