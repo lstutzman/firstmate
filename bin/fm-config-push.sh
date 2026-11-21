@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 # Push declared inherited local material to live secondmate homes.
-# Usage: fm-config-push.sh [--help]
+# Usage: fm-config-push.sh [--only <secondmate-id>] [--help]
+#
+# --only limits the push to one live secondmate (bin/fm-secondmate-restart.sh
+# uses it to deliver current inherited material to the mate it is about to
+# relaunch); each home it does reach is handled exactly as without it.
 #
 # Mid-session convergence for inherited local material such as
 # config/crew-dispatch.json, config/backend, or data/captain-shared.md updates.
@@ -20,7 +24,7 @@ set -u
 
 usage() {
   cat <<'EOF'
-Usage: fm-config-push.sh [--help]
+Usage: fm-config-push.sh [--only <secondmate-id>] [--help]
 
 Push the primary firstmate home's declared inherited local material into each
 live secondmate home.
@@ -33,6 +37,8 @@ This is local-material-only:
   - reports each live home and each inheritable item as pushed, unchanged,
     skipped, or error
   - exits non-zero for real propagation errors or reread-send failures
+
+--only <id> limits the push to that one live secondmate.
 
 Live homes come from state/*.meta records with kind=secondmate.
 data/secondmates.md is only a fallback for missing home= fields in older or
@@ -47,6 +53,7 @@ Environment overrides follow the rest of firstmate:
 EOF
 }
 
+ONLY_ID=""
 case "${1:-}" in
   -h|--help)
     usage
@@ -54,8 +61,12 @@ case "${1:-}" in
     ;;
   "")
     ;;
+  --only)
+    [ "$#" -eq 2 ] && [ -n "$2" ] || { echo "usage: fm-config-push.sh [--only <secondmate-id>] [--help]" >&2; exit 2; }
+    ONLY_ID=$2
+    ;;
   *)
-    echo "usage: fm-config-push.sh [--help]" >&2
+    echo "usage: fm-config-push.sh [--only <secondmate-id>] [--help]" >&2
     exit 2
     ;;
 esac
@@ -117,6 +128,7 @@ seen_homes=""
 errors=0
 while IFS='|' read -r id home _window meta; do
   [ -n "$id" ] || continue
+  [ -z "$ONLY_ID" ] || [ "$id" = "$ONLY_ID" ] || continue
   if [ -z "$home" ]; then
     printf 'secondmate %s: skipped - no home= in %s and no registry home\n' "$id" "$meta"
     continue
