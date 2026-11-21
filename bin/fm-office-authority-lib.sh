@@ -152,6 +152,7 @@
 # record also lets the release sweep (bin/fm-pr-check.sh release) run
 # `no-mistakes axi handoff` for the worker, and lets the tree-park sweep
 # (bin/fm-tree-park.sh) return the ship's copy to the pool.
+# tests/fm-tree-park.test.sh covers both effects for a routed record.
 # Project capacity (bin/fm-project-capacity-lib.sh) and landing lag
 # (data/projects.md landing-lag=) still bound every spawn, so leaving landing
 # tasks out of wip= never lifts a project's own limits.
