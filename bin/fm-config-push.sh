@@ -63,7 +63,7 @@ case "${1:-}" in
     ;;
   --only)
     [ "$#" -eq 2 ] && [ -n "$2" ] || { echo "usage: fm-config-push.sh [--only <secondmate-id>] [--help]" >&2; exit 2; }
-    ONLY_ID=${2#fm-}
+    ONLY_ID=$2
     ;;
   *)
     echo "usage: fm-config-push.sh [--only <secondmate-id>] [--help]" >&2

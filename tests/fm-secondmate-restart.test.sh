@@ -1037,6 +1037,28 @@ test_remote_restart_pushes_inherited_material_before_relaunch() {
   pass "T18b a remote restart pushes inherited material before relaunching"
 }
 
+test_restart_pushes_only_to_the_restarted_mate() {
+  local dir out rc
+  dir=$(new_case inherit-only)
+  add_local_mate "$dir" sm2
+  add_local_mate "$dir" sm1
+  arm_answer "$dir" sm1
+  printf 'old preferences\n' > "$dir/sm1-home/data/captain-shared.md"
+  printf 'old preferences\n' > "$dir/sm2-home/data/captain-shared.md"
+  chmod 444 "$dir/sm1-home/data/captain-shared.md" "$dir/sm2-home/data/captain-shared.md"
+  printf '%s%s\n' '# main-authoritative: read-only in secondmate homes and must not be edited there; ask the main firstmate through a marked status or document pointer.'$'\n' 'new preferences' > "$dir/home/data/captain-shared.md"
+
+  out=$(run_restart "$dir" sm1); rc=$?
+
+  expect_code 0 "$rc" "the restart should succeed"$'\n'"$out"
+  [ "$(tail -n 1 "$dir/sm1-home/data/captain-shared.md")" = "new preferences" ] \
+    || fail "the restarted mate did not get the current captain-shared.md"
+  [ "$(cat "$dir/sm2-home/data/captain-shared.md")" = "old preferences" ] \
+    || fail "restarting sm1 pushed inherited material into sm2's home"$'\n'"$out"
+  assert_not_contains "$out" "secondmate sm2" "restarting sm1 must not touch sm2"
+  pass "T18d a restart pushes inherited material only to the mate it restarts"
+}
+
 test_failed_inherited_push_keeps_the_agent_running() {
   local dir out rc
   dir=$(new_case inherit-fail)
@@ -1081,5 +1103,6 @@ test_t3_mate_stays_on_the_nudge_path
 test_local_restart_delivers_current_captain_shared
 test_remote_restart_pushes_inherited_material_before_relaunch
 test_failed_inherited_push_keeps_the_agent_running
+test_restart_pushes_only_to_the_restarted_mate
 
 echo "# all fm-secondmate-restart tests passed"
