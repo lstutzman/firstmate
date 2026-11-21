@@ -1024,10 +1024,14 @@ caller_non_merge_method() {
       --method=merge) ;;
       --method=*) printf '%s' "$arg"; return 0 ;;
     esac
-    if [[ "$arg" =~ ^-[dmrs]*[sr][dmrs]*$ ]]; then
-      printf '%s' "$arg"
-      return 0
-    fi
+    case "$arg" in
+      --*) ;;
+      -?*)
+        case "${arg%%=*}" in
+          *[sr]*) printf '%s' "$arg"; return 0 ;;
+        esac
+        ;;
+    esac
   done
   [ "$pending" = false ] || printf '%s' '--method (no value)'
   return 0
