@@ -153,11 +153,12 @@
 # in rank order, by running this code root's fm-inbox.sh with the request's
 # recorded note arguments (never the program the file names), with FM_HOME set to
 # this home. It delivers nothing from a digest whose generated_at is over 36 hours
-# old, stops at the first request it will not run or that fails, and retries on
+# old, skips a request it will not run or that fails (its reason goes to
+# data/office/lane-<officer>-starts.err) and still delivers the requests after it, and retries on
 # later checks; request-id replay keeps each request one note. The outcome is
 # appended to the line as "; <n> start request(s) delivered to this office's
 # inbox", "; digest older than 36 hours, ...", or "; start request <r> of <n>
-# could not be delivered; ...", once per digest content, recorded in
+# could not be delivered (reason in ...); <m> delivered; ...", once per digest content, recorded in
 # data/office/lane-<officer>-starts.seen.
 # The seen-records are data/office/tick.seen and data/office/lane-<officer>[-high].seen
 # in the office home. An unreadable file, an unregistered
@@ -935,9 +936,9 @@ check_weight() {
 deliver_starts() {
   mkdir -p "$DATA/office" 2>/dev/null || return 0
   python3 -I - "${LANE_PATH%.md}.json" "$FM_HOME" "$SCRIPT_DIR/fm-inbox.sh" \
-    "$DATA/office/lane-$1-starts.seen" "$LANE_KEY" "$(now_epoch)" <<'PY' 2>/dev/null || true
+    "$DATA/office/lane-$1-starts.seen" "$LANE_KEY" "$(now_epoch)" "$DATA/office/lane-$1-starts.err" <<'PY' 2>/dev/null || true
 import datetime, hashlib, json, os, re, subprocess, sys
-path, home, inbox, seen_path, key, now = sys.argv[1:7]
+path, home, inbox, seen_path, key, now, err_path = sys.argv[1:8]
 try:
     raw = open(path, "rb").read()
     doc = json.loads(raw)
@@ -972,6 +973,7 @@ except (KeyError, AttributeError, ValueError):
 if generated is None or int(now) - generated > 36 * 3600:
     record("stale", "digest older than 36 hours, %d start request(s) for this office not delivered" % len(mine))
     sys.exit()
+failed = []
 for n, execute in enumerate(mine, 1):
     rid, argv = execute.get("request_id"), execute.get("argv")
     # Run this office's own intake with the recorded arguments, never a program named in the file.
@@ -979,13 +981,31 @@ for n, execute in enumerate(mine, 1):
           and re.fullmatch(r"(?:progress|surgeon|friction|corpus|library|page-check)-\d{4}-\d{2}-\d{2}-[0-9a-f]{16}", rid) and isinstance(argv, list)
           and len(argv) == 7 and all(isinstance(a, str) for a in argv)
           and os.path.basename(argv[0]) == "fm-inbox.sh" and argv[1:6] == ["note", "--request-id", rid, "--json", "--"])
-    if ok:
-        ok = subprocess.run([inbox] + argv[1:], env=dict(os.environ, FM_HOME=home),
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
     if not ok:
-        if last != "failed " + stamp:
-            record("failed", "start request %d of %d could not be delivered; the next check retries it" % (n, len(mine)))
-        sys.exit()
+        failed.append((n, "request %d of %d: not a start request this office will run" % (n, len(mine))))
+        continue
+    done = subprocess.run([inbox] + argv[1:], env=dict(os.environ, FM_HOME=home),
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if done.returncode != 0:
+        detail = (done.stderr or done.stdout).strip()[:500]
+        failed.append((n, "request %d of %d: fm-inbox.sh exited %d: %s" % (n, len(mine), done.returncode, detail)))
+# One bad request never blocks the independent requests after it; its reason goes to a per-lane log.
+if not failed:
+    try:
+        os.remove(err_path)
+    except OSError:
+        pass
+else:
+    try:
+        with open(err_path, "w") as fh:
+            fh.write("".join(reason + "\n" for _, reason in failed))
+    except OSError:
+        pass
+    if last != "failed " + stamp:
+        numbers = ", ".join(str(n) for n, _ in failed)
+        record("failed", "start request%s %s of %d could not be delivered (reason in %s); %d delivered; the next check retries it"
+               % ("s" if len(failed) > 1 else "", numbers, len(mine), os.path.basename(err_path), len(mine) - len(failed)))
+    sys.exit()
 record("delivered", "%d start request(s) delivered to this office's inbox" % len(mine))
 PY
 }
