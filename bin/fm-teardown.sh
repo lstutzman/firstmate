@@ -25,6 +25,9 @@
 # data/backlog.md; those cases print the manual follow-up. A configured
 # non-markdown adapter remains active without a markdown file; any active
 # automatic backend without compatible tasks-axi refuses before cleanup.
+# An ordinary ship task whose recorded project is not a clone root leaves its
+# backlog item open (no close) and prints the PR and the manual follow-up, since
+# the landed-work check had no repository to read.
 # None of this loosens the landed-work gates below: the transition runs only on
 # the paths that already proceed to remove the record.
 # The close - and only the close - is replaced by `tasks-axi reopen` with the
