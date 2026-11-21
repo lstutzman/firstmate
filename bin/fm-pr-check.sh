@@ -787,21 +787,39 @@ esac
 # merger the parent home has no secondmate record for, such as the main home),
 # and after a failed send or ledger write, so the caller falls back to the
 # keyed needs-decision line that wakes the parent.
+# pr_check_send_budget prints the FM_SEND_REMOTE_BUDGET for a handoff send. A
+# scan registration is killed at its scan bound, so its send gets half the time
+# left before FM_DOD_REFRESH_DEADLINE (fm-send may retry a lost transport once)
+# and fails when none is left, which keeps the fallback and the record inside
+# the bound.
+pr_check_send_budget() {
+  local deadline=${FM_DOD_REFRESH_DEADLINE:-} left
+  if [ "${FM_PR_CHECK_SCAN:-}" != 1 ]; then
+    printf '%s\n' "${FM_SEND_REMOTE_BUDGET:-30}"
+    return 0
+  fi
+  case "$deadline" in ''|*[!0-9]*) return 1 ;; esac
+  left=$(( (deadline - $(date +%s)) / 2 ))
+  [ "$left" -ge 1 ] || return 1
+  printf '%s\n' "$left"
+}
+
 pr_check_handoff_direct() {  # <merger> <line> <sent> <channel-path>
-  local merger=$1 line=$2 sent=$3 dest=$4 parent id
+  local merger=$1 line=$2 sent=$3 dest=$4 parent id budget
+  budget=$(pr_check_send_budget) || return 1
   fm_secondmate_parent_record_parse "$FM_HOME/.fm-secondmate-parent" || return 1
   [ "$FM_SECONDMATE_PARENT_ROUTE" = local ] || return 1
   parent=$FM_SECONDMATE_PARENT_HOME
   grep -qx 'kind=secondmate' "$parent/state/$merger.meta" 2>/dev/null || return 1
   id=$(printf '%s' "$sent" | LC_ALL=C sha256sum | cut -c1-16) || return 1
   [ -n "$id" ] || return 1
-  env -u FM_STATE_OVERRIDE -u FM_CONFIG_OVERRIDE FM_HOME="$parent" \
+  env -u FM_STATE_OVERRIDE -u FM_CONFIG_OVERRIDE FM_HOME="$parent" FM_SEND_REMOTE_BUDGET="$budget" \
     "$FM_ROOT/bin/fm-send.sh" "fm-$merger" --fire-and-forget "$id" "$line" >/dev/null 2>&1 || return 1
   fm_parent_channel_append "$dest" "$(status_stamp_line "working: merge handoff delivered to home $merger inbox: $URL")" || true
 }
 
 pr_check_merge_handoff() {
-  local name merger self rc=0 record sent line dest tmp
+  local name merger self rc=0 record sent line dest tmp budget
   [ "${KIND:-ship}" = ship ] && [ "${FM_PR_CHECK_MERGE:-}" != 1 ] && [ -n "$PROJECT" ] || return 0
   name=$(basename "$PROJECT")
   merger=$("$SCRIPT_DIR/fm-project-mode.sh" --merger "$name" 2>/dev/null) \
@@ -838,7 +856,12 @@ pr_check_merge_handoff() {
         fm_parent_channel_append "$dest" "$line" || rc=4
       fi
       ;;
-    1) rc=0; "$FM_ROOT/bin/fm-send.sh" "fm-$merger" "$line" >/dev/null 2>&1 || rc=4 ;;
+    1)
+      rc=0
+      budget=$(pr_check_send_budget) || rc=4
+      [ "$rc" -ne 0 ] || FM_SEND_REMOTE_BUDGET="$budget" \
+        "$FM_ROOT/bin/fm-send.sh" "fm-$merger" "$line" >/dev/null 2>&1 || rc=4
+      ;;
   esac
   if [ "$rc" -ne 0 ]; then
     printf 'actionable: PR %s is registered but its handoff to home %s could not be written; report this line by hand: %s\n' "$URL" "$merger" "$line" >&2
