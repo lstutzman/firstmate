@@ -2127,6 +2127,162 @@ SH
   pass "fm-pr-check hands a ready PR to its project's merger home once per head, and never with no merger, from the merger, or while held"
 }
 
+# Builds a secondmate home with a local parent route whose parent records slarti
+# as a secondmate, and a stub fm-send that logs its argument count, FM_HOME and
+# arguments to FM_TEST_SEND_LOG and FM_STATE_OVERRIDE and FM_SEND_REMOTE_BUDGET
+# to FM_TEST_SEND_ENV_LOG. With FM_TEST_SEND_HANG=1 it acts like a hung remote
+# merger host: it waits out both transport attempts fm-send.sh makes within
+# FM_SEND_REMOTE_BUDGET and exits 3 (unconfirmed).
+merger_direct_case() {  # <name>
+  local dir parent
+  dir=$(make_case "$1")
+  write_task_meta "$dir"
+  parent="$dir/parent"
+  mkdir -p "$parent/state"
+  printf '%s\n' kind=secondmate > "$parent/state/slarti.meta"
+  printf '%s\n' mate-x > "$dir/home/.fm-secondmate-home"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$parent" > "$dir/home/.fm-secondmate-parent"
+  fm_test_tasks_toml "$dir/home/.tasks.toml"
+  printf '%s\n' '## In flight' '' '## Queued' '' '## Done' > "$dir/home/data/backlog.md"
+  printf '%s\n' '- project [no-mistakes +yolo merger=slarti] - fixture (added 2026-01-01)' > "$dir/home/data/projects.md"
+  cat > "$dir/root/bin/fm-send.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$#" "${FM_HOME:-}" "$@" >> "$FM_TEST_SEND_LOG"
+printf '%s %s\n' "${FM_STATE_OVERRIDE-unset}" "${FM_SEND_REMOTE_BUDGET-unset}" >> "$FM_TEST_SEND_ENV_LOG"
+if [ "${FM_TEST_SEND_HANG:-}" = 1 ]; then
+  sleep $((2 * FM_SEND_REMOTE_BUDGET))
+  exit 3
+fi
+exit "${FM_TEST_SEND_RC:-0}"
+SH
+  chmod +x "$dir/root/bin/fm-send.sh"
+  printf '%s\n' "$dir"
+}
+
+# A secondmate home with a local parent route delivers the handoff straight
+# into the merger's durable inbox, resolved in the parent home (where the
+# merger is a recorded secondmate), as a fire-and-forget request so no reply
+# expectation is armed. The parent channel gets only a silent working line,
+# and the keyed needs-decision wake is reserved for a failed delivery.
+test_ready_pr_handoff_goes_straight_to_the_merger_inbox() {
+  local dir parent chan url=https://github.com/o/r/pull/51 head2=2222222222222222222222222222222222222222
+  local tasks_path id1 id2
+  tasks_path=$(command -v tasks-axi) || fail "these cases read captain holds through tasks-axi, which was not found"
+  tasks_path=$(dirname "$tasks_path")
+  dir=$(merger_direct_case merger-direct)
+  parent="$dir/parent"
+  chan="$parent/state/mate-x.status"
+  sends() { grep -c '^fm-slarti$' "$dir/send.log" 2>/dev/null || true; }
+  register() {  # <head> [send-rc]
+    FM_TEST_SEND_RC=${2:-0} FM_TEST_SEND_LOG="$dir/send.log" FM_TEST_SEND_ENV_LOG="$dir/send-env.log" FM_TEST_GH_HEAD=$1 \
+      BASE_PATH="$BASE_PATH:$tasks_path" run_check_entry "$dir" task-a "$url" >/dev/null 2>"$dir/err"
+  }
+  wakes() { grep -c 'needs-decision.*merge-handoff-51' "$chan" 2>/dev/null || true; }
+
+  register "$head2" || fail "merger-direct: registering failed: $(cat "$dir/err")"
+  [ "$(sends)" -eq 1 ] || fail "merger-direct: expected one direct send, got: $(cat "$dir/send.log" 2>/dev/null)"
+  [ "$(sed -n 1p "$dir/send.log")" = 4 ] || fail "merger-direct: wrong send argument count: $(cat "$dir/send.log")"
+  [ "$(sed -n 2p "$dir/send.log")" = "$parent" ] \
+    || fail "merger-direct: the send did not resolve the merger in the parent home: $(cat "$dir/send.log")"
+  [ "$(cat "$dir/send-env.log")" = "unset 30" ] \
+    || fail "merger-direct: the send leaked the child state or lost the default budget: $(cat "$dir/send-env.log")"
+  [ "$(sed -n 4p "$dir/send.log")" = --fire-and-forget ] \
+    || fail "merger-direct: the send armed a reply expectation: $(cat "$dir/send.log")"
+  id1=$(sed -n 5p "$dir/send.log")
+  printf '%s' "$id1" | grep -Eq '^[a-f0-9]{16}$' || fail "merger-direct: delivery id is not 16 hex: $id1"
+  case "$(sed -n 6p "$dir/send.log")" in
+    "needs-decision [key=merge-handoff-51] [cause=external] [at="*"]: [handoff=slarti] $url is ready to merge") ;;
+    *) fail "merger-direct: wrong handoff line: $(cat "$dir/send.log")" ;;
+  esac
+  [ "$(wakes)" -eq 0 ] || fail "merger-direct: a delivered handoff still woke the parent: $(cat "$chan")"
+  assert_grep "merge handoff delivered to home slarti inbox: $url" "$chan" \
+    "merger-direct: no silent ledger line was recorded for the parent"
+  bash -c '. "$1/bin/fm-classify-lib.sh"; status_open_decisions "$2"' _ "$ROOT" "$chan" > "$dir/open"
+  assert_no_grep 'merge-handoff' "$dir/open" "merger-direct: the ledger line opened a decision"
+
+  register "$head2" || fail "merger-direct: re-registering the same head failed"
+  [ "$(sends)" -eq 1 ] || fail "merger-direct: the same head was sent twice"
+  [ "$(grep -c 'slarti inbox: ' "$chan")" -eq 1 ] || fail "merger-direct: the same head wrote two ledger lines"
+
+  register 3333333333333333333333333333333333333333 || fail "merger-direct: a new head failed"
+  [ "$(sends)" -eq 2 ] || fail "merger-direct: a new head was not sent once"
+  id2=$(sed -n 11p "$dir/send.log")
+  [ "$id2" != "$id1" ] || fail "merger-direct: two heads shared one delivery id"
+
+  # A failed delivery wakes the parent with the keyed handoff line instead,
+  # so the PR still reaches its merger by the old route, and the failure is
+  # not retried on every registration.
+  register 4444444444444444444444444444444444444444 1 || fail "merger-direct: a failed send failed the registration: $(cat "$dir/err")"
+  [ "$(wakes)" -eq 1 ] || fail "merger-direct: a failed delivery did not wake the parent: $(cat "$chan")"
+  register 4444444444444444444444444444444444444444 || fail "merger-direct: re-registering after a failed send failed"
+  [ "$(wakes)" -eq 1 ] || fail "merger-direct: the failed delivery woke the parent twice"
+  [ "$(sends)" -eq 3 ] || fail "merger-direct: a recorded fallback was sent again"
+
+  # Merger main has no inbox to deliver into: the parent channel carries it.
+  printf '%s\n' '- project [no-mistakes +yolo merger=main] - fixture (added 2026-01-01)' > "$dir/home/data/projects.md"
+  register 5555555555555555555555555555555555555555 || fail "merger-direct: merger main failed to register"
+  [ "$(sends)" -eq 3 ] || fail "merger-direct: a merger main was sent a direct handoff"
+  [ "$(wakes)" -eq 2 ] || fail "merger-direct: a merger main did not use the parent channel: $(cat "$chan")"
+  pass "fm-pr-check delivers a merger handoff straight to the merger's inbox once per head, records a silent ledger line, and wakes the parent only on a failed delivery"
+}
+
+# A watcher scan kills each registration at its scan bound. A hung remote
+# merger host must not hold the direct send past that bound: the send is given
+# only the time left, so the run still writes the keyed wake for the parent and
+# its handoff record instead of being killed with neither.
+test_scan_handoff_to_a_hung_merger_falls_back_inside_the_bound() {
+  local dir chan tasks_path url=https://github.com/o/r/pull/52 budget
+  tasks_path=$(command -v tasks-axi) || fail "these cases read captain holds through tasks-axi, which was not found"
+  tasks_path=$(dirname "$tasks_path")
+  dir=$(merger_direct_case merger-direct-scan-hang)
+  chan="$dir/parent/state/mate-x.status"
+  printf '%s\n' "done [at=2]: PR $url checks green" > "$dir/home/state/task-a.status"
+  FM_CHECK_TIMEOUT=20 FM_TEST_SEND_HANG=1 FM_TEST_SEND_LOG="$dir/send.log" FM_TEST_SEND_ENV_LOG="$dir/send-env.log" \
+    FM_TEST_GH_HEAD=6666666666666666666666666666666666666666 BASE_PATH="$BASE_PATH:$tasks_path" \
+    run_check_entry "$dir" scan > /dev/null 2> "$dir/stderr" || fail "merger-scan-hang: the scan failed: $(cat "$dir/stderr")"
+  grep -qxF "pr=$url" "$dir/home/state/task-a.meta" || fail "merger-scan-hang: the PR was not recorded: $(cat "$dir/stderr")"
+  [ "$(grep -c '^fm-slarti$' "$dir/send.log" 2>/dev/null || true)" -le 1 ] \
+    || fail "merger-scan-hang: the send was retried: $(cat "$dir/send.log")"
+  if [ -s "$dir/send-env.log" ]; then
+    read -r _ budget < "$dir/send-env.log"
+    case "$(cut -d' ' -f1 "$dir/send-env.log")" in unset) ;; *) fail "merger-scan-hang: the send kept the child state override: $(cat "$dir/send-env.log")" ;; esac
+    [ "$budget" -ge 1 ] && [ "$budget" -lt 10 ] || fail "merger-scan-hang: the send budget was not bounded by the scan: $budget"
+  fi
+  [ "$(grep -c 'needs-decision.*merge-handoff-52' "$chan" 2>/dev/null || true)" -eq 1 ] \
+    || fail "merger-scan-hang: a hung merger send did not fall back to waking the parent: $(cat "$chan" 2>/dev/null)"
+  [ "$(cat "$dir/home/state/task-a.merge-handoff" 2>/dev/null)" = "$url 6666666666666666666666666666666666666666" ] \
+    || fail "merger-scan-hang: the handoff record was not written inside the bound"
+  pass "a scan registration bounds a hung merger send by its scan budget and still wakes the parent"
+}
+
+# A home with no parent sends the handoff to its merger itself and has no
+# keyed fallback. When that send fails during a watcher scan, the PR is still
+# armed, so no later scan retries it: the failure must reach the scan's wake
+# queue and output, not only the registration's discarded stderr.
+test_scan_reports_a_failed_handoff_from_a_home_with_no_parent() {
+  local dir state tasks_path url=https://github.com/o/r/pull/53 out
+  tasks_path=$(command -v tasks-axi) || fail "these cases read captain holds through tasks-axi, which was not found"
+  tasks_path=$(dirname "$tasks_path")
+  dir=$(merger_direct_case merger-no-parent-scan-fail)
+  state="$dir/home/state"
+  rm -f -- "$dir/home/.fm-secondmate-parent" "$dir/home/.fm-secondmate-home"
+  printf '%s\n' "done [at=2]: PR $url checks green" > "$state/task-a.status"
+  out=$(FM_TEST_SEND_RC=1 FM_TEST_SEND_LOG="$dir/send.log" FM_TEST_SEND_ENV_LOG="$dir/send-env.log" \
+    FM_TEST_GH_HEAD=7777777777777777777777777777777777777777 BASE_PATH="$BASE_PATH:$tasks_path" \
+    run_check_entry "$dir" scan 2> "$dir/stderr") || fail "merger-no-parent: the scan failed: $(cat "$dir/stderr")"
+  grep -qxF "pr=$url" "$state/task-a.meta" || fail "merger-no-parent: the PR was not recorded: $(cat "$dir/stderr")"
+  [ "$(grep -c '^fm-slarti$' "$dir/send.log" 2>/dev/null || true)" -eq 1 ] \
+    || fail "merger-no-parent: the handoff was not sent to the merger: $(cat "$dir/send.log" 2>/dev/null)"
+  [ ! -e "$state/task-a.merge-handoff" ] || fail "merger-no-parent: a failed handoff was recorded as delivered"
+  case "$out" in
+    *"task-a registered $url, but PR $url is registered but its handoff to home slarti could not be written"*) ;;
+    *) fail "merger-no-parent: the scan did not report the failed handoff: $out" ;;
+  esac
+  [ "$(grep -c "check: pr-register: task-a registered $url, but .*handoff to home slarti could not be written" "$state/.wake-queue" 2>/dev/null || true)" -eq 1 ] \
+    || fail "merger-no-parent: the failed handoff did not wake the home: $(cat "$state/.wake-queue" 2>/dev/null)"
+  pass "a scan reports a failed merger handoff from a home with no parent through its wake queue"
+}
+
 # A no-mistakes ship whose PR another home merges has its run released with
 # `no-mistakes axi handoff` once that PR is handed off and the worker reports it
 # checks green, so the run stops holding a pipeline slot until the merge. The
@@ -6117,6 +6273,9 @@ test_watcher_sweep_records_a_reported_pr
 test_valid_recording_and_merge_derivation
 test_ready_time_is_recorded_once_per_pr
 test_ready_pr_is_handed_to_its_merger_once_per_head
+test_ready_pr_handoff_goes_straight_to_the_merger_inbox
+test_scan_handoff_to_a_hung_merger_falls_back_inside_the_bound
+test_scan_reports_a_failed_handoff_from_a_home_with_no_parent
 test_handed_off_nm_run_is_released_once_at_green
 test_rejected_metacharacter_bytes_are_inert
 test_static_poll_contract
