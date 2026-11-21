@@ -42,6 +42,7 @@
 #   fm-captain-hold.sh reconcile list
 #   fm-captain-hold.sh reconcile close <task-id> --evidence-file <path>
 #   fm-captain-hold.sh reconcile note <task-id> --note-file <path>
+#   fm-captain-hold.sh handed-back <secondmate-id> <key> --reason <reason>
 #
 # `hold` places an existing task under an active captain hold, or creates the
 # task first when no work item exists to hold (--title required to create; the
@@ -265,6 +266,28 @@
 # `diverged` is the read-only guard over the seam between the two records of
 # one captain call. See "record divergence" beside command_diverged below.
 #
+# `handed-back` is the parent home's close for a decision a second mate relayed
+# into this home's state/<secondmate-id>.status and later closed in its own home
+# by handing it to another owner, so no resolution ever reached this log. It is
+# never the captain's answer: it touches no backlog row and records no decision.
+# It appends one line, stamped and self-announced the way
+# bin/fm-decision-sweep.sh appends, then recorded in the fleet ledger when
+# config/fleet-ledger exists:
+#   resolved [key=<key>] [at=<epoch>]: handed-back: <secondmate-id> closed this relayed decision in its own home: <reason>
+# The `resolved` verb is what folds the key shut; the `handed-back:` note keeps
+# the wording free of the captain, so nothing reads the close as his word.
+# It refuses, writing nothing, unless state/<secondmate-id>.meta records
+# kind=secondmate, the key is open as needs-decision in the whole-file fold, the
+# key is outside a reserved namespace (a `pending-reply-` key closes only through
+# bin/fm-pending-reply-sweep.sh), and this home holds no open captain call named
+# by the key or by its legacy `<secondmate-id>-decision-<key>` identity, because
+# that call is settled through `answer` or `reconcile`, and closing its status
+# twin would raise a record divergence. --reason is required. A rerun on a key
+# whose latest line is already a hand-back close prints `already handed back`
+# and appends nothing; a key closed any other way refuses. After the append the
+# fold is read again, and a key still open fails. Exit 0 closed or already
+# handed back, 1 refused or failed, 2 usage.
+#
 # With config/hold-pr-settle present, pr-policy declares which forge events
 # answer this particular hold. It adds the structured PR link and atomically
 # records data/<task>/hold-pr-policy.json: schema fm-hold-pr.v1, task, url, on,
@@ -350,6 +373,9 @@ CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 # shellcheck source=bin/fm-afk-contract.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-afk-contract.sh"
+# shellcheck source=bin/fm-line-cap-lib.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/fm-line-cap-lib.sh"
 
 PARENT_HOLD_PUBLISHED=0
 publish_parent_hold() {  # <task-id> <occurrence> <verb> <note> [<cause>] [until-date] [origin-key]
@@ -2810,6 +2836,72 @@ EOF
   done
 }
 
+# Close a decision a second mate relayed here and handed back in its own home.
+# The header owns the contract; this never reads or writes the backlog beyond
+# the read-only `open` predicate.
+command_handed_back() {
+  local mate=${1:-} key=${2:-} reason='' f open line verb='' prefix id rc close_max
+  [ "$#" -ge 2 ] || { usage >&2; exit 2; }
+  shift 2
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --reason) [ "$#" -ge 2 ] || { usage >&2; exit 2; }; shift; reason=$1 ;;
+      *) usage >&2; exit 2 ;;
+    esac
+    shift
+  done
+  validate_slug secondmate-id "$mate"
+  validate_slug key "$key"
+  [ -n "$reason" ] || fail "--reason is required; say where the decision went"
+  validate_one_line reason "$reason"
+  for prefix in ${FM_CLASSIFY_RESERVED_KEY_PREFIXES:-$FM_CLASSIFY_RESERVED_KEY_PREFIXES_DEFAULT}; do
+    case "$key" in
+      "$prefix"*) fail "$key is a reserved $prefix key; only its owner closes it (bin/fm-pending-reply-sweep.sh for pending-reply keys)" ;;
+    esac
+  done
+  f="$STATE/$mate.status"
+  [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] && [ "$(_fm_status_kind "$f")" = secondmate ] \
+    || fail "$mate is not a second mate of this home (state/$mate.meta must record kind=secondmate beside its status log)"
+  open=$(status_open_decisions "$f")
+  while IFS=$'\t' read -r line verb _; do
+    [ "$line" = "$key" ] && break
+    verb=''
+  done <<EOF
+$open
+EOF
+  if [ -z "$verb" ]; then
+    line=$(grep -aF -- "[key=$key]" "$f" | tail -n 1)
+    case "$line" in
+      resolved*"]: handed-back: "*)
+        printf 'already handed back: %s %s\n' "$mate" "$key"
+        return 0
+        ;;
+    esac
+  fi
+  [ "$verb" = needs-decision ] \
+    || fail "$key is not an open needs-decision in $mate's relayed log${verb:+ (it is open as $verb)}"
+  for id in "$key" "$mate-decision-$key"; do
+    rc=0
+    ( command_open "$id" --distinguish-absent ) >/dev/null 2>&1 || rc=$?
+    case "$rc" in
+      1|3) ;;
+      0) fail "this home holds captain call $id for $key; settle it with answer or reconcile, which close its status twin" ;;
+      *) fail "could not tell whether this home holds captain call $id; nothing was written" ;;
+    esac
+  done
+  close_max=$((FM_LINE_CAP_DEFAULT - $(status_stamp_width)))
+  fm_cap_line_var "resolved [key=$key]: handed-back: $mate closed this relayed decision in its own home: $reason" "$close_max"
+  rc=0
+  fm_wake_status_append_self_announced "$STATE" "$f" "$FM_LINE_CAP_LINE" || rc=$?
+  [ "$rc" -ne 2 ] || fail "could not append the hand-back close to $f"
+  [ ! -e "$CONFIG/fleet-ledger" ] \
+    || "$SCRIPT_DIR/fm-fleet-ledger.sh" appended "$CONFIG" "$f" >/dev/null 2>&1 || true
+  case $'\n'"$(status_open_decisions "$f")" in
+    *$'\n'"$key"$'\t'*) fail "$key is still open in $f after its hand-back close" ;;
+  esac
+  printf 'handed-back: %s %s\n' "$mate" "$key"
+}
+
 # Calls whose deadline default has come due, one tab-separated row each:
 # <task-id> <deadline> <recommendation> <class> <mode> <logged> <title>.
 # Read-only on a per-wake path, like `diverged`: what it cannot read stays undue.
@@ -2948,6 +3040,7 @@ case "${1:-}" in
   open) shift; command_open "$@" ;;
   answered) shift; command_answered "$@" ;;
   diverged) shift; command_diverged "$@" ;;
+  handed-back) shift; command_handed_back "$@" ;;
   defaults-due) shift; command_defaults_due "$@" ;;
   reconcile) shift; command_reconcile "$@" ;;
   pr-policy) shift; command_pr_policy "$@" ;;

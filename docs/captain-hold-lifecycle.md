@@ -45,6 +45,7 @@ It never reads report bodies, review artifacts, terminal output, or chat.
 | `reconcile-requests` | Internal intake that records a reconcile request from a board selection. | [Reconcile](#reconcile-re-check-reality-never-a-blind-close) |
 | `reconcile close`, `reconcile note`, `reconcile list` | Retire or list pending reconcile requests. | [Verifying and retiring a request](#verifying-and-retiring-a-request) |
 | `diverged` | Read-only report of a call whose two records disagree. | [Record divergence](#record-divergence) |
+| `handed-back` | Parent-home close of a call a second mate relayed and then handed to another owner, recording no answer. | The script header |
 | `defaults-due` | Read-only list of open calls whose deadline default has come due. | [Deadline defaults](#deadline-defaults) |
 | `pr-policy`, `settle-pr` | Declare and apply opt-in forge settlement. | [PR settlement](#pr-settlement) |
 
@@ -578,6 +579,8 @@ The suite does not test the accepted merge-to-cleanup re-hold window or asynchro
   The backlog task, its hold, and the status log all survive the report unchanged, and the printed hint names both reconciliation directions.
 - The false-signal boundary holds.
   A captain call with no routed work item, a verified `captain-held` transfer, a still-open status decision, an already answered call, and an ordinary task whose keyed question was answered all stay silent.
+- `test_handed_back_relay_closes_without_an_answer` closes a relayed hold and its plain key with `handed-back`.
+  Both leave the whole-file and cached folds and OPEN DECISIONS, the backlog is unchanged, `diverged` stays silent, a rerun appends nothing, and every guard in the script header refuses without writing.
 
 ### Completion and verification
 

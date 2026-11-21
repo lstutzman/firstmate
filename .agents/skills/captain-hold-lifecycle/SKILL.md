@@ -66,6 +66,7 @@ A retirement failure makes the command fail without reversing the already-durabl
 `reconcile list` names every request still outstanding.
 Never use `answer` for an evidence-only moot call: `answer` records what the captain said, while `reconcile close` records verified evidence.
 A captain-held task closed outside this owner leaves no durable answer, so the completion gate keeps failing until `answer` records the decision the captain actually gave.
+A call a second mate relayed to this home and then closed in its own home by handing it to another owner is no answer either: close the relayed key with `bin/fm-captain-hold.sh handed-back <secondmate-id> <key> --reason <reason>`, never a hand-written `resolved` line or `fm-send --resolve-key`; the script header owns its guards.
 Resolved findings, recommendations that need no captain choice, and prose that merely sounds decision-like do not create held tasks.
 Bearings reads the resulting structured state and must never compensate by scraping historical reports, visual-review artifacts, terminal output, chat, or other prose.
 
