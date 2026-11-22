@@ -908,6 +908,38 @@ test_interrupt_and_exit_lock_before_task_state_resolution() {
   pass "fm-control: interrupt and exit lock before task-state resolution"
 }
 
+# A caller that holds the task's lifecycle lock (bin/fm-tree-park.sh) runs a verb
+# under it by naming its pid. Only the lock's own record vouches for the claim:
+# a pid that does not hold the lock, or a dead one, never skips a held lock, and
+# the verb never releases a lock it did not take.
+test_lifecycle_lock_claim_is_honored_only_for_its_holder() {
+  local case_dir out rc lock holder other i
+  case_dir=$(new_case lock-claim)
+  add_task "$case_dir" t1 claude
+  alive_as "$case_dir" claude
+  lock="$case_dir/home/state/.control-t1.lock"
+  hold_lifecycle_lock "$lock" &
+  holder=$!
+  sleep 30 &
+  other=$!
+  i=0
+  while [ ! -e "$lock" ] && [ "$i" -lt 100 ]; do sleep 0.1; i=$((i + 1)); done
+  [ -e "$lock" ] || fail "could not stage the lifecycle lock for the claim test"
+  out=$(FM_CONTROL_LOCK_HELD_BY=$other run_control "$case_dir" t1 exit); rc=$?
+  expect_code 1 "$rc" "a claim by a process that does not hold the lock must be refused"
+  assert_contains "$out" "another lifecycle action is already running" "a false claim must not skip the held lock"
+  out=$(FM_CONTROL_LOCK_HELD_BY=999999 run_control "$case_dir" t1 exit); rc=$?
+  assert_contains "$out" "another lifecycle action is already running" "a claim by a dead pid must not skip the held lock"
+  out=$(FM_CONTROL_LOCK_HELD_BY=$holder run_control "$case_dir" t1 exit 2>&1) || true
+  case "$out" in
+    *"another lifecycle action is already running"*) kill "$holder" "$other" 2>/dev/null || true; fail "the lock's holder was refused its own lock: $out" ;;
+  esac
+  [ -e "$lock" ] || { kill "$holder" "$other" 2>/dev/null || true; fail "a verb run under a caller's lock released it"; }
+  kill "$holder" "$other" 2>/dev/null || true
+  wait "$holder" "$other" 2>/dev/null || true
+  pass "fm-control: a lifecycle lock claim is honored only for the process the lock records, and the verb leaves the lock held"
+}
+
 # --- 4. verb allowlist ------------------------------------------------------
 
 test_verb_allowlist_is_closed() {
@@ -1697,6 +1729,7 @@ test_unknown_task_is_refused
 test_record_bound_to_another_task_is_refused
 test_remote_secondmate_is_refused_by_placement
 test_interrupt_and_exit_lock_before_task_state_resolution
+test_lifecycle_lock_claim_is_honored_only_for_its_holder
 test_verb_allowlist_is_closed
 test_resume_is_refused_with_its_reason
 test_relaunch_only_flags_are_rejected_on_other_verbs

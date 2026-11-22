@@ -47,16 +47,27 @@
 # state/<id>.park-attempt so a later sweep tries again; one that names unsafe
 # work in the copy keeps the attempt spent. The sweep also waits while the
 # agent reads busy rather than starting a park that would refuse.
-# It then stops the agent with `bin/fm-control.sh <id> exit --stop-background`,
-# the control plane's verified stop for a finished agent, and refuses if that
-# stop is not proven. Holding the project Treehouse lock, the task's control
-# lock, and its record lock (bin/fm-teardown.sh's order), it re-checks the copy,
-# removes the harness wiring teardown removes, returns the slot with
-# `treehouse return --force`, drops the slot claim, and rewrites the record:
+# It then takes the task's lifecycle lock (the control lock bin/fm-control.sh
+# uses) and keeps it until the park ends: a busy lock leaves the agent running
+# and frees the attempt for a later sweep. Under it, park stops the agent with
+# `bin/fm-control.sh <id> exit --stop-background`, the control plane's verified
+# stop for a finished agent, naming itself in FM_CONTROL_LOCK_HELD_BY so the
+# control plane runs under park's lock; it refuses if the stop is not proven.
+# Holding the project Treehouse lock and its record lock as well
+# (bin/fm-teardown.sh's order; the project lock wait is FM_PARK_PROJECT_LOCK_WAIT,
+# 60 s), it re-checks the copy, removes the harness wiring teardown removes,
+# returns the slot with `treehouse return --force`, drops the slot claim, and
+# rewrites the record:
 # worktree= is removed (every slot-ownership scan reads that field, so a parked
 # record must stop naming the slot) and parked=1, parked_branch=,
 # parked_head=, parked_worktree=, and parked_at= are added. The task record,
 # its backlog item, its merge poll, and its status are left as they were.
+# A step that refuses after the stop (a busy project or record lock, a copy that
+# changed while the agent exited, a return that failed with the copy intact)
+# relaunches the agent in its own copy under the lifecycle lock with a note, so
+# the task is back where it was, and writes state/<id>.park-report with the
+# reason; a reason that can clear by itself frees the attempt. A relaunch that
+# fails is reported with the command that finishes it.
 #
 # A ready branch parks the same way. A ship whose worker finished as a pushed
 # branch with no PR (the CI slots gate held its opening; bin/fm-ready-branch.sh
@@ -298,18 +309,54 @@ park_unlock_all() {
 }
 trap park_unlock_all EXIT
 
+# The control lock is already held (cmd_park takes it before the stop); this
+# adds the project Treehouse lock and the record lock, in teardown's order.
 park_take_locks() {
   local project_lock
   project_lock=$(fm_treehouse_project_lock_path "$PARK_PROJ") || { PARK_WHY="the project Treehouse lock cannot be resolved"; return 1; }
-  fm_lock_acquire_wait_max "$project_lock" 60 || { PARK_WHY="another slot allocation or return holds the project lock"; return 1; }
+  fm_lock_acquire_wait_max "$project_lock" "${FM_PARK_PROJECT_LOCK_WAIT:-60}" || { PARK_WHY="another slot allocation or return holds the project lock"; PARK_TRANSIENT=1; return 1; }
   LOCKS_HELD+=("$project_lock")
-  park_lock "$STATE/.control-$ID.lock" try || { PARK_WHY="another lifecycle action is running for the task"; return 1; }
-  park_lock "$(fm_meta_lock_path "$META")" wait || { PARK_WHY="the task record cannot be locked"; return 1; }
+  park_lock "$(fm_meta_lock_path "$META")" wait || { PARK_WHY="the task record cannot be locked"; PARK_TRANSIENT=1; return 1; }
+}
+
+# Release every lock above the control lock (LOCKS_HELD[0]): the control plane's
+# relaunch takes the record lock itself.
+park_release_above_control() {
+  local i
+  for ((i=${#LOCKS_HELD[@]} - 1; i >= 1; i--)); do
+    fm_lock_release "${LOCKS_HELD[$i]}" || true
+  done
+  LOCKS_HELD=("${LOCKS_HELD[0]}")
 }
 
 park_report() {  # <text>: an actionable failure for the next sweep to print once
   printf '%s\n' "$*" >> "$STATE/$ID.park-report" 2>/dev/null || true
   printf 'error: %s\n' "$*" >&2
+}
+
+# The agent was stopped for a park that cannot finish. Under the control lock
+# still held, relaunch it in its own copy so the task is back where it was, and
+# report why for the next sweep. <retry> is 1 for a reason that can clear by
+# itself, which frees the handoff's park attempt. When the relaunch fails, say
+# so with the command that finishes it.
+park_restore_agent() {  # <why> <retry>
+  local why=$1 retry=$2 note out
+  park_release_above_control
+  [ "$retry" != 1 ] || rm -f "$STATE/$ID.park-attempt"
+  note=$(mktemp "${TMPDIR:-/tmp}/fm-tree-park-note.XXXXXX") \
+    || { park_report "$ID's agent was stopped to park its copy, but $why, and it could not be relaunched (no note file); relaunch it with bin/fm-control.sh $ID relaunch --note <text>"; exit 1; }
+  printf '%s\n' \
+    "You were stopped so your copy could be returned to the pool, but that did not finish: $why." \
+    "Nothing in your copy changed, and your branch stays pushed; your earlier conversation is gone." \
+    "Read your steering inbox now. If it holds nothing new, your last done line stands: stop." > "$note"
+  if out=$(FM_CONTROL_LOCK_HELD_BY="$PARK_SELF_PID" "$SCRIPT_DIR/fm-control.sh" "$ID" relaunch --note-file "$note" 2>&1); then
+    rm -f "$note"
+    park_report "$ID was not parked: $why; its agent was relaunched in its copy"
+  else
+    rm -f "$note"
+    park_report "$ID's agent was stopped to park its copy, but $why, and it could not be relaunched ($(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)); relaunch it with bin/fm-control.sh $ID relaunch --note <text>"
+  fi
+  exit 1
 }
 
 park_remove_wiring() {  # <worktree>
@@ -335,21 +382,31 @@ cmd_park() {
     refuse "$ID: $PARK_WHY"
   fi
   park_no_live_run || retry_later "$ID: $PARK_WHY"
-  out=$("$SCRIPT_DIR/fm-control.sh" "$ID" exit --stop-background 2>&1) \
+  # The task's lifecycle lock comes before the stop and is held until the park
+  # ends, so no other action can start between the stop and the return (the
+  # control plane runs its stop and any relaunch under it, FM_CONTROL_LOCK_HELD_BY).
+  # A busy lock leaves the agent running and the park for a later sweep.
+  fm_current_pid PARK_SELF_PID || die "cannot read this process's pid"
+  park_lock "$STATE/.control-$ID.lock" try || retry_later "$ID: another lifecycle action is running for the task, so its agent was left running"
+  out=$(FM_CONTROL_LOCK_HELD_BY="$PARK_SELF_PID" "$SCRIPT_DIR/fm-control.sh" "$ID" exit --stop-background 2>&1) \
     || retry_later "$ID: the control plane could not prove its agent stopped: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"
-  if ! park_take_locks; then
-    park_report "$ID's agent was stopped to park its copy, but $PARK_WHY; relaunch it with bin/fm-control.sh $ID relaunch --note <text> or retry the park"
-    exit 1
-  fi
+  # From here the agent is stopped: any refusal relaunches it (park_restore_agent).
+  PARK_TRANSIENT=0
+  park_take_locks || park_restore_agent "$PARK_WHY" "$PARK_TRANSIENT"
   # Everything is re-read under the locks: a steer, a commit made while the
   # agent exited, or a new head all keep today's behaviour.
   if ! park_candidate || ! park_copy_preserved; then
-    park_report "$ID's agent was stopped to park its copy, but the copy can no longer be released ($PARK_WHY); relaunch it with bin/fm-control.sh $ID relaunch --note <text>"
-    exit 1
+    park_restore_agent "the copy can no longer be released ($PARK_WHY)" "${PARK_TRANSIENT:-0}"
   fi
   park_remove_wiring "$PARK_WT"
   if ! out=$( (cd "$PARK_PROJ" && fm_run_timed 120 treehouse return --force "$PARK_WT") 2>&1 ); then
-    park_report "$ID's agent was stopped to park its copy, but treehouse return failed for $PARK_WT, so the slot is still its: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"
+    out="treehouse return failed for $PARK_WT, so the slot is still its: $(printf '%s' "$out" | tr '\n' ' ' | cut -c1-200)"
+    # A copy the failed return left intact takes its agent back; one it did not
+    # is reported as it was, for a person to look at.
+    if park_candidate && park_copy_preserved; then
+      park_restore_agent "$out" 0
+    fi
+    park_report "$ID's agent was stopped to park its copy, but $out"
     exit 1
   fi
   fm_treehouse_slot_owner_release "$PARK_WT" "$ID"

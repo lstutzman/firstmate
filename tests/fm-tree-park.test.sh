@@ -57,8 +57,15 @@ make_lab() {
 # given so a case can check the replacement starts on the right head.
 printf '%s\n' "$*" >> "$FM_TEST_LAB/control.log"
 case "${2:-}" in
-  exit) exit "${FM_TEST_CONTROL_EXIT_RC:-0}" ;;
+  exit)
+    printf 'exit lock-owner=%s held-by=%s\n' "$(cat "$FM_TEST_LAB/home/state/.control-$1.lock/pid" 2>/dev/null)" \
+      "${FM_CONTROL_LOCK_HELD_BY:-}" >> "$FM_TEST_LAB/control-lock.log"
+    [ -z "${FM_TEST_CONTROL_EXIT_HOOK:-}" ] || eval "$FM_TEST_CONTROL_EXIT_HOOK"
+    exit "${FM_TEST_CONTROL_EXIT_RC:-0}"
+    ;;
   relaunch)
+    printf 'relaunch lock-owner=%s held-by=%s\n' "$(cat "$FM_TEST_LAB/home/state/.control-$1.lock/pid" 2>/dev/null)" \
+      "${FM_CONTROL_LOCK_HELD_BY:-}" >> "$FM_TEST_LAB/control-lock.log"
     wt=$(grep '^worktree=' "$FM_TEST_LAB/home/state/$1.meta" | tail -1 | cut -d= -f2-)
     printf 'relaunch worktree=%s head=%s branch=%s\n' "$wt" "$(git -C "$wt" rev-parse HEAD)" \
       "$(git -C "$wt" symbolic-ref --quiet --short HEAD)" >> "$FM_TEST_LAB/control.log"
@@ -261,6 +268,7 @@ test_sweep_reports_a_failure_after_the_agent_stopped_once() {
   out=$(lab_env "$dir" "$dir/root/bin/fm-tree-park.sh" sweep 2>&1) || true
   case "$out" in *"treehouse return failed"*) fail "sweep-report: the failure was reported twice: $out" ;; esac
   [ "$(meta_value "$dir" worktree)" = "$dir/pool/1/project" ] || fail "sweep-report: a failed return dropped the copy from the record"
+  grep -q "^relaunch " "$dir/control.log" || fail "sweep-report: the agent stopped for a return that failed was not relaunched: $(cat "$dir/control.log")"
   pass "a park that fails after it stopped the agent is reported once and keeps the record naming its copy"
 }
 
@@ -846,6 +854,93 @@ test_teardown_of_a_parked_ready_branch_matches_an_unparked_one() {
   pass "cleanup of a parked ready branch leaves the pushed branch and the pool alone, as for a held copy"
 }
 
+# hold_lock <lock-path>: a live process that holds the lock until killed. Sets
+# HELD_PID. The holder is a bash that execs sleep, so the pid the lock records
+# stays the pid to kill.
+hold_lock() {
+  local lock=$1 i=0
+  bash -c '. "$1/bin/fm-wake-lib.sh"; fm_lock_try_acquire "$2" || exit 1; exec sleep 120' _ "$ROOT" "$lock" &
+  HELD_PID=$!
+  until [ -e "$lock" ] || [ "$i" -ge 100 ]; do sleep 0.1; i=$((i + 1)); done
+  [ -e "$lock" ] || fail "could not hold $lock"
+}
+
+release_held() {
+  kill "$HELD_PID" 2>/dev/null || true
+  wait "$HELD_PID" 2>/dev/null || true
+}
+
+# The lifecycle lock is taken before the agent is stopped: a task whose lock
+# another action holds keeps its running agent and its copy for this sweep.
+test_busy_lifecycle_lock_leaves_the_agent_running() {
+  local dir
+  dir=$(make_lab lock-busy)
+  cp "$dir/home/state/$ID.merge-handoff" "$dir/home/state/$ID.park-attempt"
+  hold_lock "$dir/home/state/.control-$ID.lock"
+  park "$dir" >/dev/null 2>"$dir/err" && { release_held; fail "lock-busy: a task whose lifecycle lock was held was parked"; }
+  release_held
+  grep -q "another lifecycle action is running" "$dir/err" || fail "lock-busy: park did not say why it skipped: $(cat "$dir/err")"
+  [ ! -s "$dir/control.log" ] || fail "lock-busy: the agent was stopped or relaunched while the lock was busy: $(cat "$dir/control.log")"
+  assert_not_parked "$dir" lock-busy
+  [ ! -e "$dir/home/state/$ID.park-attempt" ] || fail "lock-busy: a busy lock spent the handoff's park attempt"
+  [ ! -e "$dir/home/state/$ID.park-report" ] || fail "lock-busy: a skipped park left a failure report: $(cat "$dir/home/state/$ID.park-report")"
+  pass "a busy lifecycle lock skips the park before the agent is stopped and frees the attempt for a later sweep"
+}
+
+# The stop runs under the lock park took, so no other action can start in the
+# gap between the stop and the return.
+test_park_holds_the_lifecycle_lock_across_the_stop() {
+  local dir owner held
+  dir=$(make_lab lock-held)
+  park "$dir" >/dev/null 2>"$dir/err" || fail "lock-held: park failed: $(cat "$dir/err")"
+  owner=$(sed -n 's/^exit lock-owner=\([0-9]*\) .*/\1/p' "$dir/control-lock.log")
+  held=$(sed -n 's/^exit .* held-by=\([0-9]*\)$/\1/p' "$dir/control-lock.log")
+  [ -n "$owner" ] || fail "lock-held: the lifecycle lock was not held while the agent was stopped: $(cat "$dir/control-lock.log")"
+  [ "$owner" = "$held" ] || fail "lock-held: the stop was not told which process holds the lock ($owner vs $held)"
+  [ ! -e "$dir/home/state/.control-$ID.lock" ] || fail "lock-held: park left the lifecycle lock behind"
+  pass "park holds the task's lifecycle lock across the agent stop and hands the stop its holder"
+}
+
+# A step that refuses after the stop must not leave the task stopped: the copy
+# is still held, so the agent comes back in it with a note, and the reason is
+# reported once.
+test_refusal_after_the_stop_relaunches_the_agent() {
+  local dir out
+  # A project lock another slot allocation holds past the bounded wait.
+  dir=$(make_lab after-lock)
+  cp "$dir/home/state/$ID.merge-handoff" "$dir/home/state/$ID.park-attempt"
+  # shellcheck disable=SC2016 # $1 and $2 expand in the inner shell
+  hold_lock "$(lab_env "$dir" bash -c '. "$1/bin/fm-wake-lib.sh"; fm_treehouse_project_lock_path "$2"' _ "$dir/root" "$dir/project")"
+  FM_PARK_PROJECT_LOCK_WAIT=1 park "$dir" >/dev/null 2>"$dir/err" && { release_held; fail "after-lock: a park with the project lock held succeeded"; }
+  release_held
+  grep -q "^relaunch " "$dir/control.log" || fail "after-lock: the stopped agent was not relaunched: $(cat "$dir/control.log")"
+  grep -q "^relaunch lock-owner=[0-9][0-9]* held-by=[0-9][0-9]*$" "$dir/control-lock.log" || fail "after-lock: the relaunch did not run under the lifecycle lock"
+  grep -q "waited for a CI slot\|returned to the pool" "$dir/relaunch-note" 2>/dev/null || fail "after-lock: the relaunched worker got no note about the park"
+  assert_not_parked "$dir" after-lock
+  [ ! -e "$dir/home/state/$ID.park-attempt" ] || fail "after-lock: a busy project lock spent the park attempt"
+  out=$(lab_env "$dir" "$dir/root/bin/fm-tree-park.sh" sweep 2>&1) || true
+  case "$out" in *"$ID"*"project lock"*"relaunched"*) ;; *) fail "after-lock: the reason was not reported: $out" ;; esac
+
+  # A copy that changed while the agent was exiting is unsafe work: relaunch,
+  # keep the attempt spent.
+  dir=$(make_lab after-dirty)
+  cp "$dir/home/state/$ID.merge-handoff" "$dir/home/state/$ID.park-attempt"
+  FM_TEST_CONTROL_EXIT_HOOK="printf 'late\n' >> '$dir/pool/1/project/change.txt'" park "$dir" >/dev/null 2>"$dir/err" \
+    && fail "after-dirty: a copy that changed during the stop was parked"
+  grep -q "^relaunch " "$dir/control.log" || fail "after-dirty: the stopped agent was not relaunched: $(cat "$dir/control.log")"
+  assert_not_parked "$dir" after-dirty
+  [ -e "$dir/home/state/$ID.park-attempt" ] || fail "after-dirty: unsafe work freed its attempt for endless retries"
+
+  # A relaunch that fails is reported with the command that finishes it.
+  dir=$(make_lab after-relaunch-fails)
+  FM_TEST_CONTROL_RELAUNCH_RC=1 FM_TEST_CONTROL_EXIT_HOOK="printf 'late\n' >> '$dir/pool/1/project/change.txt'" park "$dir" >/dev/null 2>"$dir/err" \
+    && fail "after-relaunch-fails: a copy that changed during the stop was parked"
+  { grep -q "could not be relaunched" "$dir/err" && grep -q "fm-control.sh $ID relaunch" "$dir/err"; } \
+    || fail "after-relaunch-fails: the failed relaunch was not named with its command: $(cat "$dir/err")"
+  pass "a refusal after the stop relaunches the agent in its copy, reports why, and names the command when that fails"
+}
+
+
 fm_test_run \
   test_parks_a_clean_handed_off_task \
   test_routed_handoff_record_releases_and_parks \
@@ -867,4 +962,7 @@ fm_test_run \
   test_recording_a_ready_branch_returns_the_copy_or_says_why \
   test_ready_branch_direct_park_spends_the_sweep_attempt \
   test_ready_branch_sweep_parks_again_after_a_new_done_line \
-  test_teardown_of_a_parked_ready_branch_matches_an_unparked_one
+  test_teardown_of_a_parked_ready_branch_matches_an_unparked_one \
+  test_busy_lifecycle_lock_leaves_the_agent_running \
+  test_park_holds_the_lifecycle_lock_across_the_stop \
+  test_refusal_after_the_stop_relaunches_the_agent

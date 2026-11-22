@@ -2477,8 +2477,9 @@ spawn_require_relocated_queued_work() {
 }
 if [ "$RELAUNCH" -eq 1 ]; then
   SPAWN_CONTROL_LOCK="$STATE/.control-$ID.lock"
-  control_owner=$(cat "$SPAWN_CONTROL_LOCK/pid" 2>/dev/null || true)
-  if [ "$control_owner" = "$PPID" ] && fm_pid_alive "$control_owner"; then
+  if fm_lifecycle_lock_held_by "$SPAWN_CONTROL_LOCK" "$PPID" \
+     || { [ -n "${FM_CONTROL_RELAUNCH_TX:-}" ] \
+          && fm_lifecycle_lock_held_by "$SPAWN_CONTROL_LOCK" "${FM_CONTROL_LOCK_HELD_BY:-}"; }; then
     SPAWN_CONTROL_PARENT=1
   elif [ "$(fm_lease_actor)" = branch ]; then
     # Role partition refinement: branch recovery relaunches only through the

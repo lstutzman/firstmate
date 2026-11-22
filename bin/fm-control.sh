@@ -189,6 +189,9 @@
 #   FM_CONTROL_EXIT_RETRIES      Enter retries for the exit command (3)
 #   FM_CONTROL_PENDING_WAIT      wait for a submitted or cleared doorbell to
 #                                leave the composer (5)
+#   FM_CONTROL_LOCK_HELD_BY      pid of a caller that already holds the task's
+#                                lifecycle lock; honored only while the lock
+#                                records that live pid (bin/fm-tree-park.sh)
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -399,9 +402,18 @@ ID=$RAW_ID
 fm_lease_guard "$ID" "lifecycle control (fm-control)"
 CONTROL_LOCK="$STATE/.control-$ID.lock"
 trap control_cleanup EXIT
-fm_lock_try_acquire "$CONTROL_LOCK" \
-  || die "another lifecycle action is already running for task $ID"
-CONTROL_LOCK_HELD=1
+# A caller that already holds this task's lock (bin/fm-tree-park.sh, which must
+# keep it across a stop and a possible relaunch) names its pid in
+# FM_CONTROL_LOCK_HELD_BY. The claim is honored only while the lock's own record
+# names that live pid, so it can never skip a lock somebody else holds; the
+# caller keeps the lock and releases it itself, never this process.
+if fm_lifecycle_lock_held_by "$CONTROL_LOCK" "${FM_CONTROL_LOCK_HELD_BY:-}"; then
+  :
+else
+  fm_lock_try_acquire "$CONTROL_LOCK" \
+    || die "another lifecycle action is already running for task $ID"
+  CONTROL_LOCK_HELD=1
+fi
 # do_exit runs in a command substitution. That subshell does not run this
 # EXIT trap, so the parent has to hold the path the trap removes. Set it
 # only once the lock is held: a process that loses the lock runs the same

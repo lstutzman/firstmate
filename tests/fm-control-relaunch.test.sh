@@ -2480,6 +2480,39 @@ test_direct_spawn_relaunch_participates_in_the_lifecycle_lock() {
   pass "fm-spawn relaunch: direct entry participates in lifecycle serialization"
 }
 
+# A caller that holds the task's lifecycle lock (bin/fm-tree-park.sh) relaunches
+# through fm-control under its own hold, naming its pid. The real fm-control and
+# fm-spawn chain must start the replacement and leave the caller's lock held.
+# shellcheck disable=SC2031
+test_relaunch_under_a_callers_lifecycle_lock_starts_the_replacement() {
+  local dir out rc lock holder i=0
+  dir=$(new_case heldby rl80)
+  add_ship_task "$dir" rl80 claude
+  lock="$dir/home/state/.control-rl80.lock"
+  (
+    . "$ROOT/bin/fm-wake-lib.sh"
+    fm_lock_try_acquire "$lock" || exit 1
+    sleep 30
+  ) &
+  holder=$!
+  while [ ! -e "$lock/pid" ] && [ "$i" -lt 100 ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [ "$(cat "$lock/pid" 2>/dev/null)" = "$holder" ] \
+    || { kill "$holder" 2>/dev/null; fail "could not stage the caller's lifecycle lock"; }
+  out=$(FM_CONTROL_LOCK_HELD_BY=$holder run_control "$dir" rl80 relaunch --note "parked copy kept"); rc=$?
+  local lock_owner
+  lock_owner=$(cat "$lock/pid" 2>/dev/null || true)
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  expect_code 0 "$rc" "a relaunch under the caller's own lock should succeed"$'\n'"$out"
+  assert_contains "$out" "relaunched rl80 harness=claude from=claude" "the replacement should be confirmed"
+  assert_grep "Firstmate operational input waiting: read" "$dir/fake/literal" "the replacement should have been launched"
+  [ "$lock_owner" = "$holder" ] || fail "the caller's lifecycle lock must stay held by the caller, got '$lock_owner'"
+  pass "fm-control relaunch: a relaunch under a caller's lifecycle lock starts the replacement and leaves the lock held"
+}
+
 # shellcheck disable=SC2031
 test_promotion_participates_in_the_lifecycle_lock_before_metadata_resolution() {
   local dir out rc lock holder i=0
@@ -3358,6 +3391,7 @@ test_secondmate_checkpoint_refuses_unreadable_child_state
 test_secondmate_checkpoint_ignores_a_vanished_scratch_find_walk
 test_concurrent_relaunch_is_refused
 test_direct_spawn_relaunch_participates_in_the_lifecycle_lock
+test_relaunch_under_a_callers_lifecycle_lock_starts_the_replacement
 test_promotion_participates_in_the_lifecycle_lock_before_metadata_resolution
 test_spawn_relaunch_refuses_a_live_agent
 test_spawn_relaunch_refuses_a_symlinked_task_record_before_inspection

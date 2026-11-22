@@ -74,6 +74,16 @@ fm_pid_alive() {
   kill -0 "$pid" 2>/dev/null
 }
 
+# Succeed when <lockdir> is a lifecycle lock that <pid>, a live process, holds:
+# the lock's own record names it. A caller that already holds a task's lock
+# (bin/fm-tree-park.sh, or fm-control for its fm-spawn --relaunch child) runs
+# under it only while this holds, so a claim never skips somebody else's lock.
+fm_lifecycle_lock_held_by() {  # <lockdir> <pid>
+  [ -n "$2" ] || return 1
+  [ "$(cat "$1/pid" 2>/dev/null || true)" = "$2" ] || return 1
+  fm_pid_alive "$2"
+}
+
 # Store field 22 of a Linux-compatible /proc stat file (the process start in
 # clock ticks since boot) in the named variable.
 # Locals carry a private prefix so printf -v reaches the caller's variable.
