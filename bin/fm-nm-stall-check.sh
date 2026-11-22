@@ -14,15 +14,13 @@
 #   pending  the run is pending and no step has started, for 5 minutes or more
 #            (FM_NM_STALL_PENDING_SECS), while a run slot is free. A slot counts as
 #            free unless the running runs, counted machine-wide, reach
-#            max_concurrent_runs in $NM_HOME/config.yaml (default ~/.no-mistakes).
-#            The count sums `no-mistakes axi` overviews over every repo this
-#            home has a no-mistakes ship in (run ids counted once), because the
-#            cap is machine-wide; no supported daemon-wide read exists. A run
-#            queued behind full slots stays silent and its clock does not start.
-#            When the count or the cap cannot be read the wake still goes out and
-#            says the slot state is unknown. Runs of repos this home has no task
-#            in are invisible to the count, so a wake can still fire for a run
-#            queued behind them; inspect before acting.
+#            max_concurrent_runs. Both are read once per sweep from the no-mistakes
+#            home (NM_HOME, default ~/.no-mistakes): the runs with status running
+#            across every repo from its state.sqlite, opened read-only, and the cap
+#            from its config.yaml. A run queued behind full slots stays silent and
+#            its clock does not start. When the count or the cap cannot be read the
+#            wake still goes out and says the run slot state is unknown; it never
+#            claims a slot is free.
 #   gate     the run is parked at a gate for 30 minutes or more
 #            (FM_NM_STALL_GATE_SECS) with no answer. The wake names the gate and
 #            routes it: a finding whose action column is ask-user is owed by the
@@ -110,57 +108,40 @@ gate_name() {  # <toon-output>
   printf '%s' "${name:-gate}"
 }
 
-# Running runs in one repo's overview, read from <worktree>. Prints one run id per
-# line (possibly none); returns 1 when the overview cannot be read.
-repo_running_ids() {  # <worktree>
-  local overview ids statuses i=0 s
-  overview=$(fm_nm_run "$1" "$READ_SECS" axi)
-  [ -n "$overview" ] || return 1
-  if printf '%s\n' "$overview" | grep -q '^runs\['; then
-    ids=$(fm_nm_table_column "$overview" runs id)
-    statuses=$(fm_nm_table_column "$overview" runs status)
-    while IFS= read -r s; do
-      i=$((i + 1))
-      [ "$s" = running ] && printf '%s\n' "$ids" | sed -n "${i}p"
-    done <<< "$statuses"
-    return 0
-  fi
-  # A repo with no runs prints its repo line and no runs table.
-  printf '%s\n' "$overview" | grep -q '^repo:' || return 1
-  return 0
-}
-
-# 0 when the machine's run slots are provably full. Prints the running/cap note.
-# The cap is machine-wide, so the count is too: running runs summed over every
-# repo this home has a no-mistakes ship in (plus the pending run's own), each read
-# once and each run id counted once. Any repo that cannot be read leaves the state
-# unknown, never free.
+# 0 when the machine's run slots are provably full. Sets SLOT_NOTE to the phrase
+# the pending wake uses. The cap is machine-wide, so the count is too: runs with
+# status running over every repo, from no-mistakes' state database (opened
+# read-only) beside the config that holds the cap, read once per sweep for each
+# database. A count or cap that cannot be read leaves the state unknown, never
+# free.
 SLOT_NOTE=
+SLOT_RC=
+SLOT_DB=
 slots_full() {  # <worktree>
-  local wt=$1 meta d common seen='' repos='' all='' ids running cap cfg
-  SLOT_NOTE="run slot state unknown"
-  for d in "$wt" $(for meta in "$STATE"/*.meta; do
-    [ -f "$meta" ] || continue
-    [ "$(fm_meta_get "$meta" kind)" = ship ] || continue
-    [ "$(fm_meta_get "$meta" mode)" = no-mistakes ] || continue
-    [ -z "$(fm_meta_get "$meta" remote_host)" ] || continue
-    printf '%s\n' "$(fm_meta_get "$meta" worktree)"
-  done); do
-    [ -d "$d" ] || continue
-    common=$(cd "$d" 2>/dev/null && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P) || common=
-    [ -n "$common" ] || common=$d
-    case "$seen" in *"|$common|"*) continue ;; esac
-    seen="$seen|$common|"
-    [ "$SECONDS" -lt "$BUDGET_SECS" ] || return 1
-    ids=$(repo_running_ids "$d") || return 1
-    [ -z "$ids" ] || all="$all$ids"$'\n'
-  done
-  running=$(printf '%s' "$all" | sort -u | grep -c .)
-  cfg="${NM_HOME:-$HOME/.no-mistakes}/config.yaml"
-  cap=$(sed -n 's/^max_concurrent_runs:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$cfg" 2>/dev/null | head -1)
+  local wt=$1 db running cap
+  db=$(fm_nm_state_db "$wt")
+  [ -z "$SLOT_RC" ] || [ "$db" != "$SLOT_DB" ] || return "$SLOT_RC"
+  SLOT_DB=$db
+  SLOT_RC=1
+  SLOT_NOTE="the run slot state is unknown"
+  [ "$SECONDS" -lt "$BUDGET_SECS" ] || return 1
+  running=$(fm_nm_bounded "$wt" "$READ_SECS" python3 -I - "$db" "$READ_SECS" 2>/dev/null <<'PY'
+import sqlite3
+import sys
+from contextlib import closing
+from pathlib import Path
+
+database, timeout = sys.argv[1], float(sys.argv[2])
+with closing(sqlite3.connect(Path(database).as_uri() + "?mode=ro", uri=True, timeout=timeout)) as db:
+    print(db.execute("SELECT COUNT(*) FROM runs WHERE status = 'running'").fetchone()[0])
+PY
+  ) || return 1
+  case "$running" in ''|*[!0-9]*) return 1 ;; esac
+  cap=$(sed -n 's/^max_concurrent_runs:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "${db%/*}/config.yaml" 2>/dev/null | head -1)
   [ -n "$cap" ] || return 1
-  SLOT_NOTE="$running of $cap run slots in use machine-wide"
-  [ "$running" -ge "$cap" ]
+  SLOT_NOTE="a run slot is free ($running of $cap run slots in use machine-wide)"
+  [ "$running" -lt "$cap" ] || SLOT_RC=0
+  return "$SLOT_RC"
 }
 
 # Who owes the gate's answer.
@@ -242,7 +223,7 @@ cmd_sweep() {
         fi ;;
       pending)
         if [ "$notified" = 0 ] && [ "$age" -ge "$PENDING_SECS" ]; then
-          lines="${lines:+$lines; }$id run $run_id pending with no step started for $(mins "$age")m while a run slot is free ($SLOT_NOTE); inspect it, nothing was cancelled or restarted"
+          lines="${lines:+$lines; }$id run $run_id pending with no step started for $(mins "$age")m while $SLOT_NOTE; inspect it, nothing was cancelled or restarted"
           notified=1
         fi ;;
     esac
