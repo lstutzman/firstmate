@@ -1098,6 +1098,99 @@ test_first_sight_skips_a_landing_task() {
   pass "first sight skips a landing task's repaint, and every other finished pane still surfaces"
 }
 
+# A finished ship whose PR waits on the captain's admission word: the landing
+# fixture's PR (148), plus a backlog holding <task>-admit-<pr>-<class> for the
+# captain, as bin/fm-pr-merge.sh asks. <hold-id> "none" leaves the backlog empty
+# of any hold. <handoff> is as landing_fixture's.
+admit_hold_fixture() {  # <name> <hold-id|none> [handoff]
+  local dir
+  dir=$(landing_fixture "$1" "${3:-none}") || return 1
+  mkdir -p "$dir/data"
+  fm_test_tasks_toml "$dir/.tasks.toml" || return 1
+  printf '## In flight\n\n## Queued\n\n## Done\n' > "$dir/data/backlog.md"
+  if [ "$2" != none ]; then
+    (cd "$dir" && tasks-axi add "$2" 'admit the PR' --file data/backlog.md) >/dev/null 2>&1 || return 1
+    run_hold "$dir" hold "$2" --reason 'the PR changes a reserved class' || return 1
+  fi
+  printf '%s\n' "$dir"
+}
+
+test_admit_hold_and_merger_handoff_raise_no_stale_wake() {
+  local dir state fakebin out capture window key n
+  local working='state: working · source: run-step · ci running'
+  local idle='state: done · source: status-log'
+  command -v tasks-axi >/dev/null 2>&1 \
+    || { echo "skip: tasks-axi not found (admit hold landing skip)"; return 0; }
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
+
+  # Shape 1: an open wedge-admit-148-authority call and no merger handoff. The
+  # wedge ladder and the first sight of a repaint both stay silent.
+  dir=$(admit_hold_fixture admit-held wedge-admit-148-authority) \
+    || fail "could not build an admit-hold fixture"
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  n=1
+  while [ "$n" -le 3 ]; do
+    FM_HOME="$dir" FM_DATA_OVERRIDE="$dir/data" \
+      wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" absorb \
+      || fail "a PR waiting on an admit hold woke the watcher at threshold $n: $(cat "$out")"
+    n=$((n + 1))
+  done
+  [ "$(wedge_stale_wakes "$state" "$window")" -eq 0 ] \
+    || fail "a PR waiting on an admit hold queued a stale wake: $(cat "$state/.wake-queue")"
+  [ ! -e "$state/.wedge-escalations-$key" ] \
+    || fail "a PR waiting on an admit hold counted a wedge escalation"
+  dir=$(admit_hold_fixture admit-held-first wedge-admit-148-authority) \
+    || fail "could not build an admit-hold fixture"
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  printf '%s' "older-hash" > "$state/.stale-$key"
+  rm -f "$state/.stale-since-$key"
+  FM_HOME="$dir" FM_DATA_OVERRIDE="$dir/data" \
+    wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$idle" absorb \
+    || fail "a PR waiting on an admit hold woke the watcher on first sight: $(cat "$out")"
+  [ "$(wedge_stale_wakes "$state" "$window")" -eq 0 ] \
+    || fail "a PR waiting on an admit hold queued a first-sight stale wake: $(cat "$state/.wake-queue")"
+
+  # Shape 2: the PR handed to a merger home (state/<id>.merge-handoff), with no
+  # admit hold in the backlog.
+  dir=$(admit_hold_fixture merger-handoff none record) \
+    || fail "could not build a merger-handoff fixture"
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  FM_HOME="$dir" FM_DATA_OVERRIDE="$dir/data" \
+    wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" absorb \
+    || fail "a merger-handed PR woke the watcher: $(cat "$out")"
+  [ "$(wedge_stale_wakes "$state" "$window")" -eq 0 ] \
+    || fail "a merger-handed PR queued a stale wake: $(cat "$state/.wake-queue")"
+
+  # A done lane with no hold and no handoff still goes stale as today.
+  dir=$(admit_hold_fixture admit-none none) || fail "could not build a no-hold fixture"
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  FM_HOME="$dir" FM_DATA_OVERRIDE="$dir/data" \
+    wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" exit \
+    || fail "a done lane with no hold and no handoff stopped alarming"
+  grep -F 'possible wedge, escalation 1' "$out" >/dev/null \
+    || fail "a done lane with no hold and no handoff lost its wedge alarm: $(cat "$out")"
+
+  # A hold for another PR's admission does not cover this one.
+  dir=$(admit_hold_fixture admit-other-pr wedge-admit-149-authority) \
+    || fail "could not build an other-PR fixture"
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  FM_HOME="$dir" FM_DATA_OVERRIDE="$dir/data" \
+    wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" exit \
+    || fail "a hold on another PR silenced this PR's alarm"
+
+  # An answered hold (closed) no longer holds the lane.
+  dir=$(admit_hold_fixture admit-answered wedge-admit-148-authority) \
+    || fail "could not build an answered-hold fixture"
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  printf 'go\n' > "$dir/answer.txt"
+  run_hold "$dir" answer wedge-admit-148-authority --decision-file "$dir/answer.txt" \
+    || fail "could not answer the admit hold"
+  FM_HOME="$dir" FM_DATA_OVERRIDE="$dir/data" \
+    wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" exit \
+    || fail "an answered admit hold kept silencing the alarm"
+  pass "an open admit-<pr> hold or a merger handoff raises no stale wake; no hold, another PR's hold or an answered hold still alarms"
+}
+
 if [ -n "${FM_TEST_ONLY:-}" ]; then
   "$FM_TEST_ONLY"
   exit 0
@@ -1168,4 +1261,5 @@ fm_test_run \
   test_wedge_threshold_validating_run_is_off_until_armed \
   test_wedge_threshold_skips_a_landing_task \
   test_first_sight_skips_a_landing_task \
-  test_wedge_threshold_skips_a_parked_ready_branch
+  test_wedge_threshold_skips_a_parked_ready_branch \
+  test_admit_hold_and_merger_handoff_raise_no_stale_wake
