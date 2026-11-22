@@ -304,6 +304,7 @@ Every presented row is claimed to exactly one actor under the durable queue lock
   The grant is bound to the live branch process and extension generation recorded in `state/.branch-eligible-owner`.
   Publication is refused if main already claimed any requested row.
   Activation, publication, release, and deactivation exit nonzero if queue-lock acquisition fails, preserving both grant records and leaving another owner's lock intact.
+  The supervision host's exit path bounds that wait (`FM_SUPERVISION_HOST_EXIT_LOCK_WAIT`, default 10 seconds), so a lock held by another live process cannot keep a terminated host alive; the grant it leaves names a dead owner, which a main drain reclaims.
 - A main drain validates that owner evidence under the queue lock and reclaims the grant when its process is gone or its identity no longer matches.
   A branch drain never reclaims: it drains the grant just published for its turn, and its sandbox may be unable to inspect the host pid.
 - A main drain claims every currently unclaimed row and excludes an active branch grant from both presentation and acknowledgement.
