@@ -783,6 +783,7 @@ tests/fm-backend.test.sh 34807
 tests/fm-backlog-atomicity.test.sh 307084
 tests/fm-backlog-handoff.test.sh 80612
 tests/fm-backlog-read-bound.test.sh 26063
+tests/fm-backlog-reconcile.test.sh 3000
 tests/fm-bearings-board-lavish-live-e2e.test.sh 296
 tests/fm-bearings-board-render.test.sh 24735
 tests/fm-bearings-board.test.sh 52376

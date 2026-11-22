@@ -1500,6 +1500,34 @@ test_home_summary_child_holds_count_survives_truncation() {
   pass "home-summary counts child-state holds separately from truncated backlog holds"
 }
 
+# Queue depth and age are untruncated counts: the queued array is capped and newest-first, so the
+# alarm cannot read the oldest row from it. A held row is waiting, not stale, and counts only in queued.
+test_home_summary_queue_counts_survive_truncation() {
+  local home fakebin out n
+  home=$(make_home summary-queue-counts)
+  fakebin=$(make_fakebin "$home")
+  {
+    printf '## In flight\n\n## Queued\n'
+    for n in 1 2 3; do
+      printf -- '- [ ] new-%s - New %s (repo: alpha) (kind: ship) (since 2026-11-1%s)\n' "$n" "$n" "$n"
+    done
+    printf -- '- [ ] old-1 - Old (repo: alpha) (kind: ship) (since 2026-10-02)\n'
+    printf -- '- [ ] held-old - Held old (repo: alpha) (kind: ship) (since 2026-09-01) (hold: waits on PC-1) (hold-kind: external)\n'
+    printf -- '- [ ] reason-only - Reason only (repo: alpha) (kind: ship) (since 2026-08-01) (hold: waits on vendor)\n'
+    printf -- '- [ ] undated - Undated (repo: alpha) (kind: ship)\n'
+    printf '\n## Done\n'
+  } > "$home/data/backlog.md"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_SECONDMATE_QUEUED=2 "$SNAPSHOT" --secondmate-home-summary)
+  printf '%s' "$out" | jq -e '.counts.queued == 7 and (.queued | length) == 2
+    and .counts.queued_unheld == 5 and .counts.queued_oldest_since == "2026-10-02"' >/dev/null \
+    || fail "queued_unheld and queued_oldest_since must cover every unheld row, not the capped array: $out"
+  printf '## In flight\n\n## Queued\n- [ ] undated - Undated (repo: alpha) (kind: ship)\n\n## Done\n' > "$home/data/backlog.md"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
+  printf '%s' "$out" | jq -e '.counts.queued_unheld == 1 and .counts.queued_oldest_since == null' >/dev/null \
+    || fail "an undated queue has no oldest date: $out"
+  pass "home-summary counts unheld queued rows and their oldest filing date past the cap"
+}
+
 # A no-mistakes done: written while the daemon still reports the branch's run
 # unfinished is a pipeline handoff, not finished work; without that live run,
 # or with only a worker note that mentions a handoff, it still flags.
@@ -1658,6 +1686,7 @@ fm_test_run \
   test_home_summary_external_hold_done_is_declared_wait \
   test_home_summary_external_wait_in_flight_is_counted \
   test_home_summary_child_holds_count_survives_truncation \
+  test_home_summary_queue_counts_survive_truncation \
   test_home_summary_pipeline_handoff_done_is_live_work \
   test_home_summary_ready_for_no_mistakes_done_is_not_terminal \
   test_undated_captain_hold_phrasing_and_aging \

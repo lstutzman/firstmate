@@ -93,6 +93,9 @@
 #     counts.child_holds is the untruncated number of child-state holds rows (the
 #     holds array is capped, so backlog rows can push child rows out of it). A
 #     child-state holds row also carries the child's state (parked, paused or blocked).
+#     counts.queued_unheld is the untruncated number of queued rows with no hold, and
+#     counts.queued_oldest_since the earliest `since` date among them (null when none is
+#     dated); the queued array is capped and newest-first, so neither can be read from it.
 #     provenance.summary_source
 #     distinguishes "local-ledger", "remote-ledger", and "remote-ledger-cache";
 #     freshness is "cached" only for the cache source, and observed_at/age_seconds
@@ -1095,6 +1098,7 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
               (.state == "in_flight" and .current_role == "held"
                and (.id as $id
                     | any($tasks[]; .id == $id and .current_state.state == "working") | not)))) ]) as $queued_all
+    | ([ $queued_all[] | select(.state == "queued" and .hold_reason == null and .hold_kind == null) ]) as $queued_unheld
     | ([ $queued_all[]
          | select(.captain_actionable == true)
          | {id,key:.id,verb:"captain-hold",summary:(.title | trunc(160)),
@@ -1265,6 +1269,8 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
           waiting_on_merge:($waiting_on_merge | length),
           external_wait_in_flight:($external_wait_ids | length),
           queued:($queued_all | length),
+          queued_unheld:($queued_unheld | length),
+          queued_oldest_since:([ $queued_unheld[] | .since | select(type == "string") | .[:10] ] | min),
           landed:($landed_all | length),
           endpoints:($tasks | length)
         },

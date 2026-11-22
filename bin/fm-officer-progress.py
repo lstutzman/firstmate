@@ -565,14 +565,23 @@ def verify_start(identifier, rows, clear, home, discovery):
     return None
 
 
-def load_home(source):
-    remote = re.fullmatch(r"([A-Za-z0-9][A-Za-z0-9._@-]*):(/.+)", source)
-    if not remote:
-        return scan_home(source)
+REMOTE_HOME = re.compile(r"([A-Za-z0-9][A-Za-z0-9._@-]*):(/.+)")
+
+
+def run_remote(source, action, *args):
+    """This program's `action` run on a host:/path home over ssh, with the program itself on stdin."""
+    remote = REMOTE_HOME.fullmatch(source)
     with open(os.path.abspath(__file__), "rb") as fh:
         program = fh.read()
-    doc = json.loads(command(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
-                              remote[1], "python3 -I - scan --home " + shlex.quote(remote[2])], program))
+    return command(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", remote[1],
+                    ("python3 -I - %s --home %s %s" % (action, shlex.quote(remote[2]), " ".join(shlex.quote(a) for a in args))).strip()], program)
+
+
+def load_home(source):
+    remote = REMOTE_HOME.fullmatch(source)
+    if not remote:
+        return scan_home(source)
+    doc = json.loads(run_remote(source, "scan"))
     doc["home"] = source
     for row in doc["rows"]:
         row["owner_home"] = source
@@ -1375,8 +1384,18 @@ def declined_items(home, now):
     """{item key: (evidence digest, reply time)} of notes this home declined less than DECLINE_DAYS ago.
 
     A decline is an `fm-inbox.sh reply` whose body starts with `declined:`; any other reply is not a decline.
-    shortcut: only a local home's inbox is read; a remote start-home is never skipped.
+    A remote start-home (host:/path) is read over ssh with this program's `declines` action, as load_home reads
+    its backlog; an unreadable one reports no declines, so its requests are still sent.
     """
+    if REMOTE_HOME.fullmatch(home):
+        try:
+            return {key: tuple(value) for key, value in json.loads(run_remote(home, "declines", "--now", str(now))).items()}
+        except (RuntimeError, ValueError, OSError, subprocess.SubprocessError):
+            return {}
+    return scan_declines(home, now)
+
+
+def scan_declines(home, now):
     inbox = os.path.join(home, "state", "inbox")
     declined = {}
     for name in sorted(os.listdir(os.path.join(inbox, "handled"))) if os.path.isdir(os.path.join(inbox, "handled")) else []:
@@ -1411,9 +1430,6 @@ def executable_requests(doc, home, start_homes=(), team="PC", jev=None, now=0):
         work.append(doc["filler"])
     for row in work:
         evidence = {k: v for k, v in row.items() if k != "execute"}
-        identity = row.get("linear_id") or row.get("id") or row["kind"]
-        digest = hashlib.sha256((row.get("owner_home", home) + ":" + identity).encode("utf-8")).hexdigest()[:16]
-        request_id = "progress-" + doc["date"] + "-" + digest
         body = ("Progress officer automatic start under Lee's recorded 2026-10-26 standing authority. "
                 "Start this work without another prioritization or approval question. "
                 "Recheck current holds, work in flight, and open PRs before dispatch; apply ordinary "
@@ -1427,8 +1443,11 @@ def executable_requests(doc, home, start_homes=(), team="PC", jev=None, now=0):
         if unrouted:
             row["unrouted"] = unrouted
         if target not in declined:
-            declined[target] = declined_items(target, now) if os.path.isdir(target) else {}
+            declined[target] = declined_items(target, now)
         key, digest = item_digest(row)
+        # One id per (target home, item, evidence): the inbox deduplicates on it, so an unchanged request
+        # is not re-delivered every day, and changed evidence mints a new id.
+        request_id = "progress-" + hashlib.sha256("\n".join((target, key, digest)).encode("utf-8")).hexdigest()[:16]
         decline = declined[target].get(key)
         if decline and decline[0] == digest:
             doc["declined"] += 1
@@ -1722,7 +1741,7 @@ def write(path, value):
 
 def main(argv):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["run", "scan"])
+    parser.add_argument("action", choices=["run", "scan", "declines"])
     parser.add_argument("--home", action="append", default=[])
     parser.add_argument("--start-home", action="append", default=[], help="<home>=<project,project>[=<role>[=<mandate>]]: start requests for those projects, a role's source, or what local-jev labels for that office go to that office home")
     parser.add_argument("--out")
@@ -1739,6 +1758,9 @@ def main(argv):
     args = parser.parse_args(argv)
     if args.action == "scan":
         print(json.dumps(scan_home(args.home[0]), sort_keys=True))
+        return 0
+    if args.action == "declines":
+        print(json.dumps(scan_declines(args.home[0], args.now if args.now is not None else int(time.time())), sort_keys=True))
         return 0
     if not args.home or not args.out or not args.date:
         parser.error("run requires --home, --out, and --date")

@@ -1451,6 +1451,60 @@ test_declined_filler_is_not_resent() {
   pass 'progress: a declined filler is not re-sent'
 }
 
+read_declines() {  # <home-source>: the declined_items JSON for a start-home
+  PROGRESS_WORLD="$WORLD" PATH="$FAKEBIN:$PATH" python3 -I - "$ROOT/bin/fm-officer-progress.py" "$1" "$NOW" <<'PYREAD'
+import importlib.util, json, sys
+spec = importlib.util.spec_from_file_location("progress", sys.argv[1])
+mod = importlib.util.module_from_spec(spec); spec.loader.exec_module(mod)
+print(json.dumps(mod.declined_items(sys.argv[2], int(sys.argv[3])), sort_keys=True))
+PYREAD
+}
+
+request_ids() { grep -o 'progress-[0-9a-f-]*' "$1" | sort -u | tr '\n' ' '; }
+
+test_request_ids_are_stable_across_days() {
+  make_world reqid
+  local lane="$WORLD_HOME/data/officers/progress" first second third
+  printf '## Queued\n\n- [ ] pc-crash - Fix a crash (kind: bug) (repo: firstmate)\n' > "$WORLD_HOME/data/backlog.md"
+  run_progress >/dev/null || fail 'first run failed'
+  first=$(request_ids "$lane/$DATE.start-requests.sh")
+  [ -n "$first" ] || fail 'the handoff carries a request id'
+  DATE=2026-10-26 run_progress >/dev/null || fail 'next-day run failed'
+  second=$(request_ids "$lane/2026-10-26.start-requests.sh")
+  assert_equals "$first" "$second" 'the same item with the same evidence keeps one request id on the next day, so the inbox deduplicates it'
+  printf '## Queued\n\n- [ ] pc-crash - Fix a crash (kind: bug) (repo: firstmate) (pr: https://example.test/pull/9)\n' > "$WORLD_HOME/data/backlog.md"
+  DATE=2026-10-27 run_progress >/dev/null || fail 'changed-evidence run failed'
+  third=$(request_ids "$lane/2026-10-27.start-requests.sh")
+  [ -n "$third" ] && [ "$third" != "$first" ] || fail "changed evidence must mint a new request id ($first -> $third)"
+  pass 'progress: a start request keeps its id across days until its evidence changes'
+}
+
+test_remote_decline_is_read_over_ssh() {
+  make_world remotedecline
+  local remote="$WORLD/remote-home" out
+  officer_home "$remote"
+  mkdir -p "$remote/state/inbox/handled" "$remote/state/inbox/.replies"
+  printf 'body\nnot a quotation from Lee:\n%s' '{"id":"pc-crash","evidence":["e"],"linear_ids":[],"link":""}' > "$remote/state/inbox/handled/n1.note"
+  printf 'at=%s\n--\ndeclined: not ours\n' "$(date -u -d "@$NOW" +%Y-%m-%dT%H:%M:%SZ)" > "$remote/state/inbox/.replies/n1"
+  cat > "$FAKEBIN/ssh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$PROGRESS_WORLD/calls"
+for arg in "$@"; do remote=$arg; done
+case "$remote" in
+  'python3 -I - declines --home '*) exec bash -c "$remote" ;;
+  *) exit 99 ;;
+esac
+SH
+  chmod +x "$FAKEBIN/ssh"
+  out=$(read_declines "fixture:$remote") || fail 'a remote decline read must not raise'
+  assert_contains "$out" '"pc-crash"' 'a decline recorded in a remote start-home is read over ssh'
+  assert_contains "$(cat "$WORLD/calls")" 'declines --home' 'the remote read goes through the declines scan'
+  printf '#!/usr/bin/env bash\nexit 255\n' > "$FAKEBIN/ssh"
+  out=$(read_declines "unreachable:$remote") || fail 'an unreadable remote must not raise'
+  assert_equals '{}' "$out" 'an unreachable remote start-home is never skipped'
+  pass 'progress: a remote start-home decline is read over ssh, and an unreadable one skips nothing'
+}
+
 test_start_home_decline_is_not_resent() {
   make_world startdecline
   local nav="$WORLD/navigator" lane="$WORLD_HOME/data/officers/progress" id
@@ -2217,6 +2271,8 @@ test_open_pr_discovery_is_per_repo
 test_declined_requests_are_not_resent
 test_start_home_decline_is_not_resent
 test_declined_filler_is_not_resent
+test_request_ids_are_stable_across_days
+test_remote_decline_is_read_over_ssh
 test_start_home_routes_requests_by_project
 test_non_work_and_duplicates_are_dropped_and_reported
 test_top_of_mind_start

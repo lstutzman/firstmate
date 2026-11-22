@@ -7,7 +7,8 @@ FM_HOME selects the primary home. config/fleet-alarm.json accepts seven_day
 read), pool_remaining (.1, mean remaining
 weekly capacity across non-stale Claude readings), silent_minutes
 (60), stale_minutes (120), persist_polls (2), budget_seconds (24), carrying_reset_hours (6),
-carrying_pool_floor (.4), working_ceiling_multiple (6), and external_wait_ceiling_hours (24).
+carrying_pool_floor (.4), working_ceiling_multiple (6), external_wait_ceiling_hours (24),
+queue_depth (30) and queue_age_days (14).
 cpa-usage-host selects local
 or SSH quota reads, as in dispatch resolution. A missing host uses local CLI.
 Each Claude account's carrying threshold comes from the proxy config's routing.quota-threshold
@@ -69,6 +70,11 @@ and mean remaining weekly capacity across non-stale readings stays above carryin
 later polls neither repeat it nor list it on other alarms. It re-alerts when either condition
 stops holding, and the pool-near-empty alarm is unaffected.
 Registry and summary inputs are bounded at 64/256 KiB.
+Queue alarms: a secondmate summary whose counts.queued_unheld exceeds queue_depth raises
+queue-depth:<mate>, and whose counts.queued_oldest_since is more than queue_age_days old raises
+queue-age:<mate>, each named after the home and pointing at bin/fm-backlog-reconcile.py. Held queued
+rows are not counted, a summary without those counts raises nothing, and a home with nothing but a
+queue is still checked (the check runs before the idle-home exit).
 Parent-channel age uses the shared classifier, excluding parent appends.
 One alert per condition/reset window, rearmed on clear. check and timer share a
 locked record, but independent delivery receipts, so a check cannot consume the
@@ -123,7 +129,7 @@ STATE = Path(os.environ.get('FM_STATE_OVERRIDE', HOME / 'state'))
 CONFIG = Path(os.environ.get('FM_CONFIG_OVERRIDE', HOME / 'config'))
 ID = 'fleet-alarm'
 # First matching prefix of a current alarm names the cause on the timer's needs-decision line.
-CAUSES = (('quota:', 'decision'), ('pool', 'decision'), ('silent:', 'external'), ('stale:', 'tool'),
+CAUSES = (('quota:', 'decision'), ('pool', 'decision'), ('queue-', 'decision'), ('silent:', 'external'), ('stale:', 'tool'),
           ('quota-read', 'tool'), ('mate-read', 'tool'), ('config', 'tool'))
 
 
@@ -219,7 +225,7 @@ def settings():
                   stale_minutes=120, persist_polls=2, budget_seconds=24,
                   carrying_reset_hours=6, carrying_pool_floor=.4,
                   working_ceiling_multiple=6, external_wait_ceiling_hours=24,
-                  orphan_proc_hours=3)
+                  orphan_proc_hours=3, queue_depth=30, queue_age_days=14)
     path = CONFIG / 'fleet-alarm.json'
     if path.exists():
         supplied = json.loads(path.read_text())
@@ -371,6 +377,27 @@ def working_on_task(summary, counts, open_decisions, last_verb, paused_until, ag
     return age != 'null' and float(age) < ceiling
 
 
+def queue_findings(name, counts, cfg):
+    # Queue depth and age come from the summary's untruncated counts, never its bounded queued rows, and
+    # count only unheld rows (a held row is waiting on something, not stale). An older producer that
+    # sends neither field raises nothing; a malformed value is ignored rather than failing the poll.
+    findings = {}
+    unheld = counts.get('queued_unheld')
+    if type(unheld) is int and unheld > cfg['queue_depth']:
+        findings['queue-depth:' + name] = (f"Queue depth {unheld} unheld queued items in {name} "
+                                           f"(limit {cfg['queue_depth']:g}); run bin/fm-backlog-reconcile.py there")
+    oldest = counts.get('queued_oldest_since')
+    if isinstance(oldest, str):
+        try:
+            days = (datetime.now().astimezone().date() - datetime.fromisoformat(oldest[:10]).date()).days
+        except ValueError:
+            return findings
+        if days > cfg['queue_age_days']:
+            findings['queue-age:' + name] = (f"Oldest unheld queued item {days} days old in {name} "
+                                             f"(limit {cfg['queue_age_days']:g} days); run bin/fm-backlog-reconcile.py there")
+    return findings
+
+
 def mate_findings(read, cfg, not_collected):
     findings = {}
     registry = Path(os.environ.get('FM_DATA_OVERRIDE', HOME / 'data')) / 'secondmates.md'
@@ -496,6 +523,7 @@ done < "$2"
                 raise ValueError('home inventory incomplete: ' + reason[:500])
             # The fallback is usable; later local metadata errors must still alert.
             remote_unavailable = False
+            findings.update(queue_findings(name, counts, cfg))
             if not any(work) and open_decisions == '0':
                 continue
             if waiting_on_captain(summary, counts):

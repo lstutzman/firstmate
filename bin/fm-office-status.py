@@ -42,6 +42,7 @@ URL_RE = re.compile(r"https://[^\s)>\]]+")
 DATE_RE = re.compile(r"\((since|merged|done) (\d{4}-\d{2}-\d{2})[^)]*\)")
 DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 HOLD_KIND_RE = re.compile(r"\(hold-kind: ([^)]*)\)")
+HELD_RE = re.compile(r"\(hold(?:-kind)?:")
 
 LANES = {"in flight": "working", "queued": "next", "done": "done"}
 
@@ -210,6 +211,14 @@ def build_cards(rows, state_dir, now, seen):
     return working + queued + done
 
 
+def queue_summary(rows):
+    """The whole queue, uncapped: the cards stop at NEXT_LIMIT, so depth and age are reported here."""
+    queued = [row for row in rows if row["lane"] == "next"]
+    unheld = [row for row in queued if not HELD_RE.search(row["head"])]
+    days = [day for kind, day in map(row_date, unheld) if kind == "since"]
+    return {"total": len(queued), "unheld": len(unheld), "oldest_since": min(days) if days else None}
+
+
 def comparable(document):
     return {key: value for key, value in document.items() if key != "written_at"}
 
@@ -263,6 +272,7 @@ def main():
         "title": args.office[:1].upper() + args.office[1:],
         "written_at": iso(now),
         "cards": build_cards(rows, args.state, now, seen),
+        "queue": queue_summary(rows),
         "decisions": parse_decisions(os.path.join(args.data, "office-decisions.md")),
     }
     seen = {key: stamp for key, stamp in seen.items() if now - stamp <= SEEN_KEEP}

@@ -91,6 +91,7 @@ It reads only the home's `data/backlog.md`, `data/office-decisions.md` and `stat
     { "id": "pc-4712", "title": "...", "state": "next", "link": "", "waiting": "Lee" },
     { "id": "pc-4690-fix", "title": "...", "state": "done", "link": "https://github.com/...", "done_at": "2026-11-04T09:40:00Z" }
   ],
+  "queue": { "total": 12, "unheld": 11, "oldest_since": "2026-11-01" },
   "decisions": [
     { "date": "2026-11-05", "source": "10-article research, rank 8", "finding": "...", "call": "Needs Lee: ...", "action": "Asked Lee, key alert-wakes-agent" }
   ]
@@ -106,6 +107,8 @@ It reads only the home's `data/backlog.md`, `data/office-decisions.md` and `stat
 `office` is the `.fm-office` marker and `title` is that id with its first letter capitalized.
 `title` on a card is the row text without its trailing `(key: value)` groups and URL, cut to 200 characters.
 Cards are ordered working, then next, then done (newest first).
+
+`queue` covers the whole `## Queued` lane, past the 10 cards: `total` rows, `unheld` rows (no `(hold` marker), and `oldest_since`, the earliest `since` date among the unheld rows (`null` when none is dated).
 
 `decisions` lists the findings the office judged important, projected from the home's `data/office-decisions.md`, so they show on the Status page and not only in notes.
 That file holds a markdown table with the columns `Date | Source | Finding | Call | Action`; cells split on unescaped `|` only, and `\|` inside a cell reads as `|`; the header, separator and any line that is not a five-cell row with an ISO `YYYY-MM-DD` date and a non-empty finding and call are skipped, and an absent or unreadable file gives an empty list.

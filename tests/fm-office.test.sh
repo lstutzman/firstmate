@@ -461,6 +461,17 @@ test_status_next_lane() {
   pass 'status lists the first 10 queued items in order and marks a captain hold as waiting on Lee'
 }
 
+test_status_queue_summary() {
+  local w
+  w=$(status_world st-queue)
+  status "$w"
+  assert_equals '{"total":12,"unheld":11,"oldest_since":"2026-11-01"}' "$(jq -c .queue "$w/navigator/data/office-status.json")" "queue summary covers the rows past the 10-card cap"
+  printf '## In flight\n\n## Queued\n- [ ] q-a - A (repo: x) (kind: task) (since 2026-11-03) (hold: waits) (hold-kind: external)\n- [ ] q-b - B (repo: x) (kind: task)\n\n## Done\n' > "$w/navigator/data/backlog.md"
+  status "$w"
+  assert_equals '{"total":2,"unheld":1,"oldest_since":null}' "$(jq -c .queue "$w/navigator/data/office-status.json")" "held and undated rows"
+  pass 'status reports the whole queue: total, unheld and the oldest unheld filing date'
+}
+
 seen() { jq -c . "$1/navigator/state/office-status.seen.json"; }
 
 test_status_done_window() {
@@ -1278,7 +1289,7 @@ w, at, root, specs = sys.argv[1], int(sys.argv[2]), sys.argv[3], sys.argv[4:]
 rows = []
 for spec in specs:
     rank, home, shape = spec.split(":")
-    rid = "progress-2026-11-05-%016x" % int(rank)
+    rid = "progress-%016x" % int(rank)
     program = "/tmp/evil.sh" if shape == "bad" else root + "/bin/fm-inbox.sh"
     rows.append({"id": "item-" + rank, "rank": int(rank), "execute": {
         "action": "start", "request_id": rid, "env": {"FM_HOME": w if home == "main" else w + "/" + home},
@@ -1478,6 +1489,7 @@ test_publish_refusals
 test_remote_push_carries_the_record
 test_status_working_lane
 test_status_next_lane
+test_status_queue_summary
 test_status_done_window
 test_status_done_shows_24_hours_from_first_sight
 test_status_seen_file_loss_keeps_old_items_out
