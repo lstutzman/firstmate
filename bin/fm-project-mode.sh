@@ -19,7 +19,7 @@
 # refuses with exit 3. It reads no registry, so it answers even when data/projects.md
 # is absent.
 # With --open-pr-cap it prints the open-PR cap of a project that declares CI slots: its
-# line in config/open-pr-cap, else 12. It prints nothing for a project with no CI slots
+# line in config/open-pr-cap, else min(2 x S, 16). It prints nothing for a project with no CI slots
 # and refuses (exit 3) when either file is malformed; it too reads no registry.
 # With --admission it prints the project's registered admission config name the
 # same way.

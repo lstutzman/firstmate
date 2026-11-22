@@ -1591,15 +1591,15 @@ PY
 drain() { printf '%s\n' "$1" > "$HOME_FIX/drain-state"; }
 drain 'off o/r 3'
 [ -z "$(run_alarm check)" ] || fail 'a repository out of drain must be silent'
-drain 'on o/r 20'
-assert_contains "$(run_alarm check)" 'PR drain on: o/r has 20 open PRs' 'reaching 20 open PRs must announce drain-on'
+drain 'on o/r 24'
+assert_contains "$(run_alarm check)" 'PR drain on: o/r has 24 eligible open PRs' 'reaching 24 eligible open PRs must announce drain-on'
 for state in 'on o/r 19' 'on o/r 1' 'unknown o/r GitHub unreadable: HTTP 502'; do
   drain "$state"
   out=$(run_alarm check)
   [ -z "$out" ] || fail "a poll in the same drain state must be quiet ($state): $out"
 done
 drain 'off o/r 0'
-assert_contains "$(run_alarm check)" 'PR drain off: o/r has 0 open PRs' 'reaching 0 open PRs must announce drain-off'
+assert_contains "$(run_alarm check)" 'PR drain off: o/r has 0 eligible open PRs' 'reaching 0 eligible open PRs must announce drain-off'
 [ -z "$(run_alarm check)" ] || fail 'a second poll at 0 must be quiet'
 pass 'check announces drain-on and drain-off once each, and an unknown read keeps the state'
 before=$(wc -l < "$HOME_FIX/state/fleet-alarm.status")
@@ -1609,12 +1609,12 @@ run_alarm timer >/dev/null
 lines=$(tail -n +"$((before + 1))" "$HOME_FIX/state/fleet-alarm.status")
 [ "$(printf '%s\n' "$lines" | wc -l)" -eq 1 ] || fail "the timer must write one drain-on line: $lines"
 case "$lines" in
-  'working [at='*'] [key=pr-drain-o-r]: PR drain on: o/r has 25 open PRs'*'relay drain-on to every home') ;;
+  'working [at='*'] [key=pr-drain-o-r]: PR drain on: o/r has 25 eligible open PRs'*'relay drain-on to every home') ;;
   *) fail "the drain-on line must be keyed and name the repository and count: $lines" ;;
 esac
 drain 'off o/r 0'
 run_alarm timer >/dev/null
-tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^resolved \[at=[0-9]*\] \[key=pr-drain-o-r\]: PR drain off: o/r has 0 open PRs' \
+tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^resolved \[at=[0-9]*\] \[key=pr-drain-o-r\]: PR drain off: o/r has 0 eligible open PRs' \
   || fail 'the timer must resolve the drain key with one drain-off line'
 pass 'timer writes one keyed line per drain transition, independent of the check channel'
 
@@ -1631,7 +1631,7 @@ print('on o/b 22' if name == 'b' else 'unknown o/c open count stayed between 1 a
 PY
 printf '%s\n' '{"budget_seconds":4,"persist_polls":1}' > "$HOME_FIX/config/fleet-alarm.json"
 out=$(run_alarm timer)
-tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^working \[at=[0-9]*\] \[key=pr-drain-o-b\]: PR drain on: o/b has 22 open PRs' \
+tail -n 1 "$HOME_FIX/state/fleet-alarm.status" | grep -q '^working \[at=[0-9]*\] \[key=pr-drain-o-b\]: PR drain on: o/b has 22 eligible open PRs' \
   || fail "a hung drain read on one clone starved the next clone: $(tail -n 1 "$HOME_FIX/state/fleet-alarm.status")"
 printf '%s\n' "${out##*RUN-RESULT }" | jq -e '.summary | (length <= 200) and test("; Serving Claude accounts ") and endswith("; PR drain unread: a")' >/dev/null \
   || fail "the run result must keep the quota and end by naming only the clone whose drain read timed out: $out"

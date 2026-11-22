@@ -644,12 +644,13 @@ EOF
 
 # The PR drain check a ship worker runs just before it opens a new pull request;
 # an ordinary brief and a promotion both append it to their Definition of done.
-fm_pr_drain_rule() {  # <fm-root> <branch>
-  local root=$1 branch=$2 root_q branch_q
+fm_pr_drain_rule() {  # <fm-root> <branch> [project-name]
+  local root=$1 branch=$2 name=${3:-} root_q branch_q name_q=
   printf -v root_q '%q' "$root/bin/fm-pr-drain.py"
   printf -v branch_q '%q' "$branch"
+  [ -z "$name" ] || printf -v name_q ' %q' "$name"
   cat <<EOF
-PR drain check: just before you open a new pull request (in no-mistakes mode, before you run /no-mistakes, which opens one), run \`python3 $root_q state .\` from your worktree.
+PR drain check: just before you open a new pull request (in no-mistakes mode, before you run /no-mistakes, which opens one), run \`python3 $root_q state .$name_q\` from your worktree.
 While it prints \`on\`, the repository is in PR drain and takes no new pull requests, and this overrides the rest of the Definition of done: open no pull request and do not run /no-mistakes; push the branch with \`git push -u origin $branch_q\`, append \`done [at=<epoch>]: branch $branch pushed, no PR (PR drain)\` and stop; firstmate decides when that branch's pull request opens.
 When it prints \`off\`, \`unknown\` or \`none\`, open the pull request as the Definition of done says.
 If your branch already has an open pull request, skip this check and finish through the Definition of done, /no-mistakes included.
@@ -666,7 +667,7 @@ fm_ci_slots_gate_rule() {  # <fm-root> <branch> <project-name>
   printf -v name_q '%q' "$name"
   cat <<EOF
 CI slots check: just before you open a new pull request (in no-mistakes mode, before you run /no-mistakes, which opens one), run \`python3 $root_q gate . $name_q\` from your worktree.
-While it prints \`hold\`, the project's CI slots or open-PR cap are full, and this overrides the rest of the Definition of done: open no pull request and do not run /no-mistakes; push the branch with \`git push -u origin $branch_q\`, append \`done [at=<epoch>]: branch $branch pushed, no PR (CI slots)\` and stop; firstmate opens the pull request when a place frees.
+While it prints \`hold\`, the project's open-PR cap (2 x its CI slots, at most 16, of eligible open PRs) is full, and this overrides the rest of the Definition of done: open no pull request and do not run /no-mistakes; push the branch with \`git push -u origin $branch_q\`, append \`done [at=<epoch>]: branch $branch pushed, no PR (CI slots)\` and stop; firstmate opens the pull request when a place frees.
 When it prints \`open\`, \`unknown\` or \`none\`, open the pull request as the Definition of done says.
 If your branch already has an open pull request, skip this check and finish through the Definition of done, /no-mistakes included.
 EOF

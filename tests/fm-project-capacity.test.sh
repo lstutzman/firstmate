@@ -1240,7 +1240,7 @@ test_pr_drain_defers_a_ship_without_a_class() {
   worktrees=$(worktree_list "$case_dir")
   out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
   expect_code "$DEFER_EXIT" "$rc" "a ship spawn on a drained repository was not deferred: $out"
-  assert_contains "$out" "deferred: o/r is in PR drain with 25 open PRs" "the deferral did not name the repository and its count: $out"
+  assert_contains "$out" "deferred: o/r is in PR drain with 25 eligible open PRs" "the deferral did not name the repository and its count: $out"
   assert_contains "$out" "bin/fm-brief.sh --pr-drain <class>" "the deferral did not name the flag: $out"
   assert_nothing_created "$case_dir" "$home" task-c "$before" "$worktrees"
   pass "a ship spawn on a repository in PR drain with no declared class is deferred before anything exists"
@@ -1435,14 +1435,15 @@ test_ci_slots_gate_counts_every_pr_when_a_record_is_unreadable() {
   case_dir=$(make_case slots-unreadable)
   home="$case_dir/home"
   declare_slots "$home" "project 3"
+  declare_cap "$home" "project 3"
   drain_gh "$case_dir" 0
   open_prs "$case_dir" 3 0
   write_ready "$home" held-a "$case_dir/project" 1 5 off
   write_ready "$home" held-b "$case_dir/project" 2 5 off
   write_live "$home" other-c "$case_dir/project"
-  assert_equals "open o/r" "$(slots_gate "$case_dir")" "two yolo-off PRs of 3 still held a PR opening against 3 slots"
+  assert_equals "open o/r" "$(slots_gate "$case_dir")" "two yolo-off PRs of 3 still held a PR opening against a cap of 3"
   chmod 000 "$home/state/other-c.meta"
-  assert_contains "$(slots_gate "$case_dir")" "hold o/r CI slots full: 3 open PR(s) count against 3 CI slot(s)" \
+  assert_contains "$(slots_gate "$case_dir")" "hold o/r open-PR cap reached: 3 eligible open PR(s) against the open-PR cap of 3" \
     "an unreadable task record did not make every ready PR count: $(slots_gate "$case_dir")"
   assert_contains "$(slots_gate "$case_dir")" "0 PR(s) waiting for the captain's merge word" "an unreadable record still left held PRs out"
   chmod 600 "$home/state/other-c.meta"
@@ -1516,22 +1517,23 @@ test_ci_slots_gate_leaves_captain_held_prs_out() {
   case_dir=$(make_case slots-held)
   home="$case_dir/home"
   declare_slots "$home" "project 3"
+  declare_cap "$home" "project 3"
   drain_gh "$case_dir" 0
   open_prs "$case_dir" 4 0
   # No local record owns PR 4: only positive evidence leaves a PR out, so it counts.
   write_ready "$home" held-a "$case_dir/project" 1 5
   write_ready "$home" held-b "$case_dir/project" 2 5 off
   write_ready "$home" ready-c "$case_dir/project" 3 5
-  assert_contains "$(slots_gate "$case_dir")" "hold o/r CI slots full: 3 open PR(s) count against 3 CI slot(s)" \
+  assert_contains "$(slots_gate "$case_dir")" "hold o/r open-PR cap reached: 3 eligible open PR(s) against the open-PR cap of 3" \
     "a yolo-off PR was not left out, or a yolo-on PR was: $(slots_gate "$case_dir")"
   assert_contains "$(slots_gate "$case_dir")" "1 PR(s) waiting for the captain's merge word" "the hold did not name the held PR"
-  # Hold held-a in its backlog too: two PRs now wait for the captain, so 2 count against 3 slots.
+  # Hold held-a in its backlog too: two PRs now wait for the captain, so 2 count against a cap of 3.
   FM_ROOT_OVERRIDE='' FM_HOME="$home" FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE='' \
     "$ROOT/bin/fm-captain-hold.sh" hold held-a --reason "payments PR waits for the merge word" >/dev/null 2>&1 ||
     fail "the captain hold on held-a could not be recorded"
-  assert_equals "open o/r" "$(slots_gate "$case_dir")" "two PRs waiting for the captain's word, of 4 open, still held a PR opening against 3 slots"
+  assert_equals "open o/r" "$(slots_gate "$case_dir")" "two PRs waiting for the captain's word, of 4 open, still held a PR opening against a cap of 3"
   tasks-axi unhold held-a --file "$home/data/backlog.md" >/dev/null
-  assert_contains "$(slots_gate "$case_dir")" "hold o/r CI slots full" "a PR whose captain hold was lifted stayed out of the count"
+  assert_contains "$(slots_gate "$case_dir")" "hold o/r open-PR cap reached" "a PR whose captain hold was lifted stayed out of the count"
   pass "a PR whose task waits for the captain's merge word (yolo off, or held in its backlog) leaves the count until released"
 }
 
@@ -1540,10 +1542,11 @@ test_ci_slots_gate_counts_a_pr_no_local_record_owns() {
   case_dir=$(make_case slots-unseen)
   home="$case_dir/home"
   declare_slots "$home" "project 4"
+  declare_cap "$home" "project 4"
   drain_gh "$case_dir" 0
   open_prs "$case_dir" 4 0
   # A remote home's PR, or a Wednesday pile, leaves no local sign that it waits, so it counts against the slots.
-  assert_contains "$(slots_gate "$case_dir")" "hold o/r CI slots full: 4 open PR(s)" "an unowned open PR was left out of the count"
+  assert_contains "$(slots_gate "$case_dir")" "hold o/r open-PR cap reached: 4 eligible open PR(s)" "an unowned open PR was left out of the count"
   pass "an open PR no local record shows to be waiting for the captain still counts"
 }
 

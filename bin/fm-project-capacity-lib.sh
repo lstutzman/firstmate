@@ -105,9 +105,8 @@
 # starts (Lee, 2026-11-21T20:15:32Z): bin/fm-spawn.sh reads neither S nor the
 # cap, and a ship builds to a finished branch whatever the queue. The check
 # lives in the worker's pre-PR step: `bin/fm-pr-drain.py gate` holds the
-# opening while the project's ready open PRs (drafts and PRs waiting for the
-# captain's merge word left out, fm_ci_slots_held below) reach S, or while every
-# open PR reaches the open-PR cap, and the worker parks the branch pushed with
+# opening while the project's eligible open PRs (drafts, promotion PRs and PRs waiting for the
+# captain's merge word left out, fm_ci_slots_held below) reach the open-PR cap, and the worker parks the branch pushed with
 # no PR. A project with no line is never held; a malformed file makes the gate
 # read unknown. Waiting for a release day (Wednesday) has no signal, so such a
 # PR counts. bin/fm-project-mode.sh --ci-slots and --open-pr-cap read S and the
@@ -116,8 +115,8 @@
 #
 # Open-PR cap: config/open-pr-cap, same format and inheritance, holds one
 # `<project-name> <cap>` line; a project that declares S and no cap line gets
-# FM_OPEN_PR_CAP_DEFAULT (12, Lee 2026-11-21). The cap counts every open PR, drafts and
-# held ones included, because it bounds rebase debt; a project with no S has none.
+# min(2 x S, FM_OPEN_PR_CAP_MAX) (Lee 2026-11-21: 2 x S, max 16). The cap counts eligible
+# open PRs: drafts, PRs waiting for the captain's merge word and promotion PRs are left out; a project with no S has none.
 #
 # Remote homes: a remote secondmate's task records live on its own host and are
 # never walked. Its ships reach the CI-slot hold count and the landing-lag check through
@@ -260,10 +259,10 @@ fm_ci_slots_lookup() {  # <config-dir> <project-name>
 }
 
 # The open-PR cap for a project that declares CI slots: its line in
-# <config-dir>/open-pr-cap, else FM_OPEN_PR_CAP_DEFAULT. Sets FM_OPEN_PR_CAP
+# <config-dir>/open-pr-cap, else min(2 x S, FM_OPEN_PR_CAP_MAX). Sets FM_OPEN_PR_CAP
 # (empty when the project declares no CI slots) and FM_OPEN_PR_CAP_ERROR;
 # returns 1 when either declaration is unreadable.
-FM_OPEN_PR_CAP_DEFAULT=12
+FM_OPEN_PR_CAP_MAX=16
 fm_open_pr_cap_lookup() {  # <config-dir> <project-name>
   local rc=0
   FM_OPEN_PR_CAP=
@@ -278,7 +277,7 @@ fm_open_pr_cap_lookup() {  # <config-dir> <project-name>
     FM_OPEN_PR_CAP_ERROR=$FM_DECLARED_ERROR
     return 1
   fi
-  FM_OPEN_PR_CAP=${FM_DECLARED:-$FM_OPEN_PR_CAP_DEFAULT}
+  FM_OPEN_PR_CAP=${FM_DECLARED:-$((FM_CI_SLOTS * 2 > FM_OPEN_PR_CAP_MAX ? FM_OPEN_PR_CAP_MAX : FM_CI_SLOTS * 2))}
   return 0
 }
 
@@ -444,12 +443,14 @@ EOF
 # record or backlog that cannot be read, or a PR no record owns, leaves the PR
 # counted. A record in <first-state> reads the backlog in <first-config> and
 # <first-data>; one in another local home reads that home's config/ and data/.
-# Sets FM_CI_SLOTS_HELD to the number of distinct PRs left out. Returns 1 with
+# Sets FM_CI_SLOTS_HELD to the number of distinct PRs left out and
+# FM_CI_SLOTS_HELD_URLS to their URLs, one per line. Returns 1 with
 # FM_PROJECT_CAPACITY_ERROR when fm_project_records does.
 fm_ci_slots_held() {  # <project-lock> <project-dir> <first-state> <first-config> <first-data> <urls>
   local first=$3 urls=$6 i=0 meta pr state config data id rc row seen=$'\n' yolo held
   local wedged=$FM_BACKLOG_ROW_SHOW_WEDGED
   FM_CI_SLOTS_HELD=0
+  FM_CI_SLOTS_HELD_URLS=
   fm_project_records "$1" "$2" "$3" "" || return 1
   while [ "$i" -lt "${#FM_PROJECT_RECORDS[@]}" ]; do
     meta=${FM_PROJECT_RECORDS[$i]}
@@ -504,6 +505,7 @@ EOF
     fi
   done
   FM_BACKLOG_ROW_SHOW_WEDGED=$wedged
+  FM_CI_SLOTS_HELD_URLS=${seen#$'\n'}
   return 0
 }
 

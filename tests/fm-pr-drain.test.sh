@@ -45,30 +45,34 @@ json.dump([{'createdAt': iso(c), 'closedAt': iso(d)} for c, d in (a.split(':') f
 PY
 }
 
-# A peak of 20 PRs opened 10 hours ago, of which all but <open> closed an hour ago.
+# A peak of 24 PRs opened 10 hours ago, of which all but <open> closed an hour ago.
 peak_then() {  # <open>
   local args=() i
   for ((i = 0; i < $1; i++)); do args+=(10); done
   args+=(--)
-  for ((i = $1; i < 20; i++)); do args+=(10:1); done
+  for ((i = $1; i < 24; i++)); do args+=(10:1); done
   timeline "${args[@]}"
 }
 
-test_twenty_open_turns_drain_on() {
+test_twenty_four_open_turns_drain_on() {
   local args=() i
-  for ((i = 0; i < 20; i++)); do args+=(3); done
+  for ((i = 0; i < 24; i++)); do args+=(3); done
   timeline "${args[@]}" --
-  assert_equals "on o/r 20" "$("$DRAIN" state "$PROJECT")" "20 open PRs did not read as drain on"
-  pass "20 open PRs turn the drain on"
+  assert_equals "on o/r 24" "$("$DRAIN" state "$PROJECT")" "24 open PRs did not read as drain on"
+  args=()
+  for ((i = 0; i < 23; i++)); do args+=(3); done
+  timeline "${args[@]}" --
+  assert_equals "off o/r 23" "$("$DRAIN" state "$PROJECT")" "23 open PRs with no peak turned the drain on"
+  pass "24 open PRs turn the drain on and 23 do not"
 }
 
-test_drain_holds_from_nineteen_down_to_one() {
+test_drain_holds_from_twenty_three_down_to_one() {
   local n
-  for n in 19 18 17 16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1; do
+  for n in 23 22 21 20 19 18 17 16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1; do
     peak_then "$n"
-    assert_equals "on o/r $n" "$("$DRAIN" state "$PROJECT")" "$n open PRs after a peak of 20 did not stay in drain"
+    assert_equals "on o/r $n" "$("$DRAIN" state "$PROJECT")" "$n open PRs after a peak of 24 did not stay in drain"
   done
-  pass "after a peak of 20 the drain holds at every count from 19 down to 1"
+  pass "after a peak of 24 the drain holds at every count from 23 down to 1"
 }
 
 test_zero_open_turns_drain_off() {
@@ -78,9 +82,9 @@ test_zero_open_turns_drain_off() {
 }
 
 test_a_zero_since_the_peak_keeps_drain_off() {
-  # 20 opened and closed 30 hours ago, then 0, then 5 new PRs 2 hours ago.
+  # 24 opened and closed 30 hours ago, then 0, then 5 new PRs 2 hours ago.
   local args=(2 2 2 2 2 --) i
-  for ((i = 0; i < 20; i++)); do args+=(40:30); done
+  for ((i = 0; i < 24; i++)); do args+=(40:30); done
   timeline "${args[@]}"
   assert_equals "off o/r 5" "$("$DRAIN" state "$PROJECT")" "5 open PRs after a return to 0 read as drain on"
   pass "a return to 0 after the peak keeps later PRs out of drain"
@@ -93,8 +97,8 @@ test_unreadable_or_undecided_history_is_unknown() {
   assert_contains "$out" "unknown o/r GitHub unreadable: HTTP 502" "an unreadable GitHub did not read as unknown: $out"
   timeline 900 900 --
   out=$("$DRAIN" state "$PROJECT")
-  assert_contains "$out" "unknown o/r open count stayed between 1 and 19" "a window with no 0 or 20 did not read as unknown: $out"
-  pass "an unreadable GitHub or a history with no 0 or 20 in the window reads as unknown"
+  assert_contains "$out" "unknown o/r eligible open count stayed between 1 and 23" "a window with no 0 or 24 did not read as unknown: $out"
+  pass "an unreadable GitHub or a history with no 0 or 24 in the window reads as unknown"
 }
 
 test_closed_list_at_the_search_cap_is_unknown() {
@@ -171,6 +175,25 @@ test_brief_tells_workers_to_check_drain_before_a_pr() {
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" scouted r --scout --pr-drain cve >/dev/null 2>&1 &&
     fail "--pr-drain was accepted on a scout"
   pass "PR-opening briefs carry a live drain check, landing jobs and cve skip it, and --pr-drain is validated"
+}
+
+test_worktree_drain_check_ends_at_s() {
+  local home="$TMP_ROOT/home" check wt="$TMP_ROOT/wt-not-the-name"
+  mkdir -p "$home/data" "$home/config"
+  printf '%s\n' 'r 6' > "$home/config/ci-slots"
+  peak_then 0
+  brief wt-name no-mistakes || fail "the brief did not scaffold: $(cat "$TMP_ROOT/brief.out")"
+  check=$(drain_check wt-name)
+  [ -n "$check" ] || fail "the brief has no PR drain check"
+  git -C "$PROJECT" worktree add --quiet -b wt-not-the-name "$wt"
+  peak_then 3
+  assert_equals "off o/r 3" "$(cd "$wt" && FM_HOME="$home" eval "$check")" \
+    "the brief's drain check, run from a worktree not named after the project, did not end the drain at S = 6"
+  peak_then 7
+  assert_equals "on o/r 7" "$(cd "$wt" && FM_HOME="$home" eval "$check")" "the worktree drain check ended the drain above S"
+  git -C "$PROJECT" worktree remove --force "$wt"
+  rm "$home/config/ci-slots"
+  pass "a worker's drain check from a worktree reads the project's S by name, not by the worktree's basename"
 }
 
 # shellcheck source=bin/fm-brief-heading-lib.sh
@@ -341,21 +364,22 @@ test_open_count_reads_one_repository() {
 }
 
 # A project's open PRs as GitHub reports them: <ready> ready ones numbered 1.., then <drafts> drafts.
-open_prs() {  # <ready> <drafts>
+open_prs() {  # <ready> <drafts> [<promotion>]: the last <promotion> ready PRs come from the head branch staging
   python3 -I -c 'import json, sys
-ready, drafts = int(sys.argv[2]), int(sys.argv[3])
-json.dump([{"createdAt": "2026-11-01T00:00:00Z", "isDraft": n > ready, "url": f"https://github.com/o/r/pull/{n}"}
-           for n in range(1, ready + drafts + 1)], open(sys.argv[1], "w"))' "$GHDATA/open.json" "$1" "$2"
+ready, drafts, promo = int(sys.argv[2]), int(sys.argv[3]), int(sys.argv[4])
+json.dump([{"createdAt": "2026-11-01T00:00:00Z", "isDraft": n > ready, "url": f"https://github.com/o/r/pull/{n}",
+            "headRefName": "staging" if ready - promo < n <= ready else f"fm/b{n}"}
+           for n in range(1, ready + drafts + 1)], open(sys.argv[1], "w"))' "$GHDATA/open.json" "$1" "$2" "${3:-0}"
 }
 
 test_open_leaves_drafts_out_of_the_count() {
   peak_then 5
   open_prs 2 3
   assert_equals "open o/r 2" "$("$DRAIN" open "$PROJECT")" "drafts were counted in the open PR count"
-  assert_equals "on o/r 5" "$("$DRAIN" state "$PROJECT")" "state must still count every open PR, drafts included, for the 20-PR drain"
+  assert_contains "$("$DRAIN" state "$PROJECT")" " 2" "state counted drafts in the eligible count"
   timeline 1 2 --
   assert_equals "open o/r 2" "$("$DRAIN" open "$PROJECT")" "a PR with no isDraft field was not counted as ready"
-  pass "open leaves drafts out of the count, and state still counts every PR"
+  pass "open leaves drafts out of the count, and state leaves them out of the eligible count"
 }
 
 GATE_HOME="$TMP_ROOT/gate-home"
@@ -364,27 +388,38 @@ gate() {  # prints the verdict line for project r
   FM_HOME="$GATE_HOME" "$DRAIN" gate "$PROJECT" r
 }
 
-test_gate_holds_a_pr_opening_at_the_slots_and_at_the_cap() {
+test_gate_holds_a_pr_opening_at_the_cap() {
   rm -f "$GATE_HOME/config/ci-slots" "$GATE_HOME/config/open-pr-cap"
   open_prs 9 9
   assert_equals "open o/r" "$(gate)" "a project with no CI slots line was held"
   printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
-  open_prs 3 8
-  assert_equals "open o/r" "$(gate)" "3 ready PRs and 8 drafts were held against 4 slots"
-  open_prs 4 0
-  assert_contains "$(gate)" "hold o/r CI slots full: 4 open PR(s) count against 4 CI slot(s)" "4 ready PRs against 4 slots did not hold the PR opening"
-  open_prs 4 3
-  assert_contains "$(gate)" "3 draft PR(s)" "the hold did not say that drafts were left out"
-  open_prs 3 9
-  assert_contains "$(gate)" "hold o/r open-PR cap reached: 12 open PR(s) against the open-PR cap of 12 (config/open-pr-cap)" \
-    "12 open PRs, drafts included, did not reach the default cap of 12"
-  open_prs 3 8
-  assert_equals "open o/r" "$(gate)" "11 open PRs reached the default cap of 12"
+  open_prs 7 0
+  assert_equals "open o/r" "$(gate)" "7 eligible PRs were held against a default cap of min(2 x 4, 16) = 8"
+  open_prs 8 0
+  assert_contains "$(gate)" "hold o/r open-PR cap reached: 8 eligible open PR(s) against the open-PR cap of 8 (config/open-pr-cap" \
+    "8 eligible PRs did not reach the default cap of 2 x S = 8"
+  open_prs 7 20
+  assert_equals "open o/r" "$(gate)" "drafts counted against the cap"
+  open_prs 9 3 2
+  assert_equals "open o/r" "$(gate)" "promotion PRs counted against the cap (9 ready, 2 promotion = 7 eligible)"
+  open_prs 10 3 2
+  assert_contains "$(gate)" "3 draft PR(s), 0 PR(s) waiting for the captain's merge word and 2 promotion PR(s) are not counted" "the hold did not say what it left out"
+  printf '%s\n' 'r 6' > "$GATE_HOME/config/ci-slots"
+  open_prs 11 0
+  assert_equals "open o/r" "$(gate)" "11 eligible PRs were held against 2 x 6 = 12"
+  open_prs 12 0
+  assert_contains "$(gate)" "against the open-PR cap of 12" "12 eligible PRs did not hold at 2 x 6"
+  printf '%s\n' 'r 20' > "$GATE_HOME/config/ci-slots"
+  open_prs 15 0
+  assert_equals "open o/r" "$(gate)" "15 eligible PRs were held against the maximum default cap of 16"
+  open_prs 16 0
+  assert_contains "$(gate)" "against the open-PR cap of 16" "the default cap exceeded the maximum of 16"
+  printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
   printf '%s\n' '# the cap' 'r 5' > "$GATE_HOME/config/open-pr-cap"
-  open_prs 3 2
+  open_prs 5 0
   assert_contains "$(gate)" "against the open-PR cap of 5" "a declared cap of 5 was not used"
-  open_prs 3 1
-  assert_equals "open o/r" "$(gate)" "4 open PRs reached a declared cap of 5"
+  open_prs 4 9
+  assert_equals "open o/r" "$(gate)" "4 eligible PRs reached a declared cap of 5"
   printf '%s\n' 'r twelve' > "$GATE_HOME/config/open-pr-cap"
   assert_contains "$(gate)" "unknown o/r" "a malformed open-pr-cap file did not read as unknown"
   rm "$GATE_HOME/config/open-pr-cap"
@@ -393,7 +428,68 @@ test_gate_holds_a_pr_opening_at_the_slots_and_at_the_cap() {
   printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
   assert_contains "$(FAKE_GH_FAIL=1 gate)" "unknown o/r GitHub unreadable" "an unreadable GitHub did not read as unknown"
   assert_equals "none" "$(FM_HOME="$GATE_HOME" FAKE_GH_FAIL=1 "$DRAIN" gate "$TMP_ROOT/other" r)" "a non-GitHub origin was queried"
-  pass "gate holds a PR opening at S ready PRs or at the open-PR cap of 12, leaves drafts out of S, and reads unknown or none rather than guessing"
+  pass "gate holds a PR opening at the eligible cap of min(2 x S, 16), leaves drafts and promotion PRs out, and reads unknown or none rather than guessing"
+}
+
+# state with a declared S: drain starts at 24 eligible and ends at S or fewer, never counting drafts or promotion PRs.
+state_r() {
+  FM_HOME="$GATE_HOME" "$DRAIN" state "$PROJECT" r
+}
+
+test_drain_with_slots_ends_at_s_not_zero() {
+  printf '%s\n' 'r 6' > "$GATE_HOME/config/ci-slots"
+  rm -f "$GATE_HOME/config/open-pr-cap"
+  local n
+  for n in 23 12 7; do
+    peak_then "$n"
+    assert_equals "on o/r $n" "$(state_r)" "$n eligible PRs after a peak of 24 did not stay in drain with S = 6"
+  done
+  for n in 6 3 0; do
+    peak_then "$n"
+    assert_equals "off o/r $n" "$(state_r)" "$n eligible PRs after a peak of 24 did not end the drain at S = 6"
+  done
+  printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
+  pass "with S declared the drain holds from 23 down to S + 1 and ends at S or fewer"
+}
+
+test_drain_counts_only_eligible_prs() {
+  printf '%s\n' 'r 6' > "$GATE_HOME/config/ci-slots"
+  printf '[]' > "$GHDATA/closed.json"
+  open_prs 23 30 5
+  assert_contains "$(state_r)" "unknown o/r" "drafts and promotion PRs pushed 18 eligible PRs into drain"
+  open_prs 30 30 6
+  assert_equals "on o/r 24" "$(state_r)" "24 eligible PRs among 30 ready, 6 promotion and 30 drafts did not read as on"
+  printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
+  pass "drain counts ready PRs without drafts and promotion PRs"
+}
+
+test_drain_walk_back_leaves_held_prs_out() {
+  printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
+  python3 -I - "$GHDATA" <<'PY2'
+import json, sys, time
+def iso(hours):
+    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - hours * 3600))
+pr = lambda n, h: {'createdAt': iso(h), 'isDraft': False, 'url': f'https://github.com/o/r/pull/{n}', 'headRefName': f'fm/b{n}'}
+json.dump([pr(n, 10) for n in range(1, 7)] + [pr(n, 1) for n in range(7, 10)], open(sys.argv[1] + '/open.json', 'w'))
+json.dump([{'createdAt': iso(10), 'closedAt': iso(2), 'isDraft': False, 'headRefName': 'fm/c'}] * 18,
+          open(sys.argv[1] + '/closed.json', 'w'))
+PY2
+  local n
+  for n in 7 8 9; do
+    fm_write_meta "$GATE_HOME/state/held-$n.meta" "project=$PROJECT" "kind=ship" "yolo=off" "pr=https://github.com/o/r/pull/$n"
+  done
+  assert_equals "on o/r 6" "$(state_r)" "3 held PRs opened an hour ago pulled the walk-back below S = 4 before the peak of 24"
+  rm -f "$GATE_HOME"/state/held-*.meta
+  assert_equals "on o/r 9" "$(state_r)" "with no held PR the 9 ready PRs were not all counted"
+  pass "drain's walk-back leaves out the PRs waiting for the captain, as its starting count does"
+}
+
+test_unreadable_s_makes_drain_unknown() {
+  printf '%s\n' 'r four' > "$GATE_HOME/config/ci-slots"
+  peak_then 3
+  assert_contains "$(state_r)" "unknown o/r the CI slots declaration for r is unreadable" "a malformed ci-slots file did not make the drain state unknown"
+  printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
+  pass "an unreadable CI slots declaration makes the drain state unknown rather than ending only at 0"
 }
 
 test_brief_carries_the_ci_slots_gate_only_when_slots_are_declared() {
@@ -432,8 +528,8 @@ test_slots_classes_are_the_urgent_and_landing_ones() {
 }
 
 fm_test_run \
-  test_twenty_open_turns_drain_on \
-  test_drain_holds_from_nineteen_down_to_one \
+  test_twenty_four_open_turns_drain_on \
+  test_drain_holds_from_twenty_three_down_to_one \
   test_zero_open_turns_drain_off \
   test_a_zero_since_the_peak_keeps_drain_off \
   test_unreadable_or_undecided_history_is_unknown \
@@ -442,11 +538,16 @@ fm_test_run \
   test_classes_are_validated \
   test_open_count_reads_one_repository \
   test_open_leaves_drafts_out_of_the_count \
-  test_gate_holds_a_pr_opening_at_the_slots_and_at_the_cap \
+  test_gate_holds_a_pr_opening_at_the_cap \
+  test_drain_with_slots_ends_at_s_not_zero \
+  test_drain_counts_only_eligible_prs \
+  test_drain_walk_back_leaves_held_prs_out \
+  test_unreadable_s_makes_drain_unknown \
   test_brief_carries_the_ci_slots_gate_only_when_slots_are_declared \
   test_slots_classes_are_the_urgent_and_landing_ones \
   test_lee_explicit_evidence_needs_a_quote_and_a_timestamp \
   test_security_needs_the_label_and_urgent_or_high_priority \
   test_security_reads_linear_graphql_without_echoing_the_credential \
   test_security_brief_needs_a_linear_item \
-  test_brief_tells_workers_to_check_drain_before_a_pr
+  test_brief_tells_workers_to_check_drain_before_a_pr \
+  test_worktree_drain_check_ends_at_s

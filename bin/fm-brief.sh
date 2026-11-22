@@ -1205,7 +1205,7 @@ If a gate-integrity guard or protected-file check refuses an edit, do not retry 
 Append one \`blocked [at=<epoch>] [cause=policy]: {file} - {the edit wanted}\` line to the status file so firstmate can grant it through \`fm-gate-grant.sh\` or route it, and carry on with the rest of the task."
 DOD=$(fm_dod_block "$MODE" "$ID" "$BRANCH" "$FORGE" "$BASE_BRANCH" "$UPSTREAM_CONSENT" "$PR_TEXT") || exit 1
 # A repository in PR drain takes branches, not new PRs; the worker reads the live state just before it opens one.
-PR_DRAIN_RULE=$(fm_pr_drain_rule "$FM_ROOT" "$BRANCH")
+PR_DRAIN_RULE=$(fm_pr_drain_rule "$FM_ROOT" "$BRANCH" "$REPO")
 PR_DRAIN_DOD=
 case "$MODE:$FORGE" in
   local-only:* | *:gerrit | *:external) ;;
@@ -1232,11 +1232,11 @@ case "$PR_DRAIN" in
   production-outage | cve | security | restack | red-gate-fix | returned-pr-fix | review) ;;
   *)
     if [ "$MODE" != local-only ] && [ -n "$PROJECT_DIR" ]; then
-      read -r PR_DRAIN_STATE PR_DRAIN_REPO PR_DRAIN_OPEN _ < <(python3 "$SCRIPT_DIR/fm-pr-drain.py" state "$PROJECT_DIR") || true
+      read -r PR_DRAIN_STATE PR_DRAIN_REPO PR_DRAIN_OPEN _ < <(python3 "$SCRIPT_DIR/fm-pr-drain.py" state "$PROJECT_DIR" "$REPO") || true
       [ "$PR_DRAIN_STATE" != on ] || PR_DRAIN_SECTION="
 
 # PR drain
-$PR_DRAIN_REPO was in PR drain ($PR_DRAIN_OPEN open PRs) when this brief was written: it takes no new pull requests until its open PRs are merged down to 0.
+$PR_DRAIN_REPO was in PR drain ($PR_DRAIN_OPEN open PRs) when this brief was written: it takes no new pull requests until its eligible open PRs are merged down to its CI slots S or fewer (0 when it declares none).
 ${PR_DRAIN_DOD:+Follow the PR drain check in the Definition of done before you open a pull request.}${PR_DRAIN_DOD:-$PR_DRAIN_RULE}"
     fi
     ;;
