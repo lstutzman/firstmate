@@ -696,6 +696,10 @@ test_a_pile_folds_only_the_members_it_names() {
   assert_equals "open o/r 5" "$(FM_HOME="$GATE_HOME" "$DRAIN" open "$PROJECT")" "the PRs a pile mentions outside its member clause were folded, or a named one was not"
   pile_prs 0 'Members in order: PR 7 and PR 6 and PR 99.'
   assert_equals "open o/r 5" "$(FM_HOME="$GATE_HOME" "$DRAIN" open "$PROJECT")" "a pile folded itself or a PR the list does not hold"
+  pile_prs 0 'One member: PR 7 at abc (PC-1).'
+  assert_equals "open o/r 5" "$(FM_HOME="$GATE_HOME" "$DRAIN" open "$PROJECT")" "a 'One member:' pile did not fold its member, so the pile counted twice"
+  pile_prs 0 'The member carries its own item review, and each member carries PR 7.'
+  assert_equals "open o/r 6" "$(FM_HOME="$GATE_HOME" "$DRAIN" open "$PROJECT")" "lower-case prose without a colon was read as a member clause"
   pass "a pile folds only the ready members its own member clause names; a draft pile or one with no clause folds nothing"
 }
 
