@@ -144,19 +144,26 @@ def open_prs(project):
 
 
 def fold_piles(prs):
-    """(prs without the members a ready landing pile in the list carries, how many were left out). A pile and its members
-    are one landing unit, counted once as the pile: the pile is the PR that takes the CI slot (one exact-head gate on its
-    merged tree), and its members wait in it unmerged. A draft pile folds nothing, a pile is never folded into another
-    pile, and a number the list does not hold is ignored."""
+    """(prs without the members a ready landing pile in the list carries, those members). A pile and its members are one
+    landing unit, counted once as the pile: the pile is the PR that takes the CI slot (one exact-head gate on its merged
+    tree), and its members wait in it unmerged. Before the pile existed each member counted on its own, so each carried
+    member is returned with its closedAt set to when the earliest pile carrying it was created (or its own creation, when
+    later). A draft pile folds nothing, a pile is never folded into another pile, and a number the list does not hold is
+    ignored."""
     piles = [pr for pr in prs if pr['head'].startswith(PILE_HEAD)]
-    carried = set()
+    carried = {}
     for pile in piles:
         if not pile['isDraft'] and not pile['promotion']:
             clause = MEMBERS.search(pile['body'])
-            carried |= {int(n) for n in MEMBER_REF.findall(clause.group(1))} if clause else set()
-    carried -= {pile['number'] for pile in piles}
+            for n in {int(n) for n in MEMBER_REF.findall(clause.group(1))} if clause else set():
+                if n not in carried or when(pile['createdAt']) < when(carried[n]):
+                    carried[n] = pile['createdAt']
+    for pile in piles:
+        carried.pop(pile['number'], None)
     kept = [pr for pr in prs if pr['number'] not in carried]
-    return kept, len(prs) - len(kept)
+    members = [dict(pr, closedAt=max(pr['createdAt'], carried[pr['number']], key=when))
+               for pr in prs if pr['number'] in carried]
+    return kept, members
 
 
 def tally(project, prs):
@@ -165,15 +172,17 @@ def tally(project, prs):
     counts left out of it: `drafts`, `promotion`, `held` (waiting for the captain, by a task record), `labelled`
     (labelled held, no record showing them waiting for the captain) and `folded` (members a pile carries). `held` and
     `labelled` PRs use no CI slot, so `units` is the CI-slot count (state and open); the open-PR cap counts them too, so
-    `cap` (units + held + labelled) is the cap count (gate), by Lee's word of 2026-11-22."""
-    prs, folded = fold_piles(prs)
+    `cap` (units + held + labelled) is the cap count (gate), by Lee's word of 2026-11-22. `carried` holds the folded
+    members that were eligible on their own before their pile existed, closed at that pile's creation (state's walk-back)."""
+    prs, members = fold_piles(prs)
     ready = [pr for pr in prs if not pr['isDraft'] and not pr['promotion']]
     held = held_urls(project, [pr['url'] for pr in ready]) if ready else set()
     units = [pr for pr in ready if pr['url'] not in held and not pr['labelHeld']]
     labelled = sum(1 for pr in ready if pr['labelHeld'] and pr['url'] not in held)
     return {'units': units, 'cap': len(units) + len(held) + labelled, 'drafts': sum(1 for pr in prs if pr['isDraft']),
             'held': len(held), 'promotion': sum(1 for pr in prs if pr['promotion'] and not pr['isDraft']),
-            'labelled': labelled, 'folded': folded}
+            'labelled': labelled, 'folded': len(members),
+            'carried': [pr for pr in members if not pr['isDraft'] and not pr['promotion'] and not pr['labelHeld']]}
 
 
 def open_count(project):
@@ -240,8 +249,9 @@ def state(project, name=None):
         if isinstance(found, str):
             return found
         repo, prs = found
-        opened = tally(project, prs)['units']
-        count = len(opened)
+        seen = tally(project, prs)
+        opened = seen['units'] + seen['carried']
+        count = len(seen['units'])
         name = name or os.path.basename(os.path.abspath(project))
         try:
             # S when the project declares CI slots, else drain ends only at 0.
@@ -256,7 +266,7 @@ def state(project, name=None):
         if len(closed) >= CLOSED_LIMIT:
             return f'unknown {repo} {CLOSED_LIMIT} or more PRs closed in {WINDOW_DAYS} days (the GitHub search cap)'
         # The same landing-unit rule as the open list: a closed pile and the members it carried count once.
-        closed = [pr for pr in fold_piles([normal(pr) for pr in closed])[0]
+        closed = [pr for pr in sum(fold_piles([normal(pr) for pr in closed]), [])
                   if not pr['isDraft'] and not pr['promotion'] and not pr['labelHeld']]
         steps = {}
         for pr in opened + closed:

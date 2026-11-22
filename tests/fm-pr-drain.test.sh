@@ -644,6 +644,25 @@ PY2
   pass "drain's walk-back counts a closed pile and its members once, as its open count does"
 }
 
+test_drain_walk_back_counts_pile_members_before_their_pile() {
+  printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
+  python3 -I - "$GHDATA" <<'PY2'
+import json, sys, time
+def iso(hours):
+    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - hours * 3600))
+pr = lambda n, hours, head='fm/b%d', body='': {'number': n, 'createdAt': iso(hours), 'isDraft': False, 'url': f'https://github.com/o/r/pull/{n}',
+                                                'headRefName': head % n if '%d' in head else head, 'body': body}
+others = [pr(n, 200) for n in range(1, 21)]
+pile = pr(50, 1, 'landing/pile-a', 'Members in order: PR 61, PR 62 and PR 63 ...')
+members = [pr(n, 96) for n in (61, 62, 63)]
+json.dump(others + [pile] + members, open(sys.argv[1] + '/open.json', 'w'))
+json.dump([{'number': 70, 'createdAt': iso(300), 'closedAt': iso(48), 'isDraft': False, 'headRefName': 'fm/c70', 'body': ''}],
+          open(sys.argv[1] + '/closed.json', 'w'))
+PY2
+  assert_contains "$(state_r)" "on o/r 21" "members open on their own for four days before their pile (20 + 3 + 1 closed = 24 two days ago) did not read on"
+  pass "drain's walk-back counts each pile member on its own until its pile was created"
+}
+
 test_unreadable_s_makes_drain_unknown() {
   printf '%s\n' 'r four' > "$GATE_HOME/config/ci-slots"
   peak_then 3
@@ -707,6 +726,7 @@ fm_test_run \
   test_a_pile_and_its_members_count_once_in_every_subcommand \
   test_a_pile_folds_only_the_members_it_names \
   test_drain_walk_back_counts_a_closed_pile_once \
+  test_drain_walk_back_counts_pile_members_before_their_pile \
   test_drain_leaves_label_held_prs_out \
   test_unreadable_s_makes_drain_unknown \
   test_brief_carries_the_ci_slots_gate_only_when_slots_are_declared \
