@@ -4498,26 +4498,28 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] &&
   echo "error: spawn refused: project $PROJ_ABS has no commit yet (unborn HEAD), so there is nothing to branch a worktree from; make one commit in the project, for example 'git -C $PROJ_ABS commit --allow-empty -m \"chore: initial commit\"', then spawn again" >&2
   exit 1
 fi
-# A brief declaring PR drain class security must name a Linear item that is
-# labelled security with Urgent or High priority (bin/fm-pr-drain.py security
-# reads it); a refusal exits the spawn. Shared by the PR-drain and CI-slots gates.
-spawn_require_security_item() {
+# A brief declaring PR drain class security keeps its PR-drain exemption only
+# when it names a Linear item labelled security with Urgent or High priority
+# (bin/fm-pr-drain.py security reads it); otherwise this names what is missing
+# and returns 1, and the ship still launches without the exemption.
+spawn_security_item_qualifies() {
   SPAWN_SECURITY_ITEM=$(sed -n 's/^> Quoted from Linear \(PC-[0-9][0-9]*\) (read-only.*$/\1/p' "$BRIEF" | head -n 1)
   [ -n "$SPAWN_SECURITY_ITEM" ] || {
-    echo "error: spawn refused: task $ID declares PR drain class security but its brief names no Linear item; rescaffold it with bin/fm-brief.sh --pr-drain security --linear <PC-n>" >&2
-    exit 1
+    echo "warning: task $ID declares PR drain class security but its brief names no Linear item; rescaffold it with bin/fm-brief.sh --pr-drain security --linear <PC-n> to keep the exemption" >&2
+    return 1
   }
   python3 "$FM_ROOT/bin/fm-pr-drain.py" security "$SPAWN_SECURITY_ITEM" || {
-    echo "error: spawn refused: task $ID declares PR drain class security but $SPAWN_SECURITY_ITEM does not qualify (see above); the task was not launched" >&2
-    exit 1
+    echo "warning: task $ID declares PR drain class security but $SPAWN_SECURITY_ITEM does not qualify (see above)" >&2
+    return 1
   }
 }
 # PR-drain checks (bin/fm-pr-drain.py owns the state and the classes): a drain
 # holds PR openings only, never a ship start, so this refuses nothing for a
-# drained repository; it only validates a declared lee-explicit or security class.
+# drained repository. It validates a declared lee-explicit class, and a security
+# class while in drain: an unqualified security ship launches without the exemption.
 # It runs before the shared project lock, so a slow GitHub read never holds it.
+SPAWN_SECURITY_UNEXEMPT=
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ]; then
-  read -r SPAWN_DRAIN_STATE SPAWN_DRAIN_REPO SPAWN_DRAIN_REST < <(python3 "$FM_ROOT/bin/fm-pr-drain.py" state "$PROJ_ABS") || true
   SPAWN_DRAIN_CLASS=$(sed -n 's/^PR drain: \([^ ]*\)$/\1/p' "$BRIEF" 2>/dev/null | head -n 1)
   if [ "$SPAWN_DRAIN_CLASS" = lee-explicit ]; then
     fm_brief_task_heading_body "$BRIEF" "## Captain's intent" | python3 "$FM_ROOT/bin/fm-pr-drain.py" evidence || {
@@ -4525,8 +4527,12 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ]; then
       exit 1
     }
   fi
-  if [ "$SPAWN_DRAIN_STATE" = on ] && [ "$SPAWN_DRAIN_CLASS" = security ]; then
-    spawn_require_security_item
+  if [ "$SPAWN_DRAIN_CLASS" = security ]; then
+    read -r SPAWN_DRAIN_STATE _ < <(python3 "$FM_ROOT/bin/fm-pr-drain.py" state "$PROJ_ABS") || true
+    if [ "$SPAWN_DRAIN_STATE" = on ] && ! spawn_security_item_qualifies; then
+      echo "warning: task $ID launches without its PR drain exemption; its launch brief carries the PR drain check, so its PR opening waits for the drain like any ship" >&2
+      SPAWN_SECURITY_UNEXEMPT=1
+    fi
   fi
 fi
 # Project capacity admission (bin/fm-project-capacity-lib.sh owns the
@@ -4701,6 +4707,10 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
       cat "$SOURCE_BRIEF" &&
       fm_brief_ownership_section "$SOURCE_BRIEF" "$MODEL" &&
       fm_brief_model_overlay_section "$CONFIG" "$MODEL" "$EFFORT" &&
+      if [ -n "$SPAWN_SECURITY_UNEXEMPT" ]; then
+        printf '\n# PR drain\nThis brief declares PR drain class security, but its Linear item did not qualify at spawn, so its PR opening is not exempt from the drain.\n' &&
+          fm_pr_drain_rule "$FM_ROOT" "$BRANCH" "$(basename "$PROJ_ABS")"
+      fi &&
       if [ "$KIND" = ship ] && [ "$MODE" = no-mistakes ]; then
         fm_brief_intent_overlay "$CAPTAIN_INTENT"
       fi
