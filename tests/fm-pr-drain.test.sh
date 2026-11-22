@@ -177,6 +177,25 @@ test_brief_tells_workers_to_check_drain_before_a_pr() {
   pass "PR-opening briefs carry a live drain check, landing jobs and cve skip it, and --pr-drain is validated"
 }
 
+test_worktree_drain_check_ends_at_s() {
+  local home="$TMP_ROOT/home" check wt="$TMP_ROOT/wt-not-the-name"
+  mkdir -p "$home/data" "$home/config"
+  printf '%s\n' 'r 6' > "$home/config/ci-slots"
+  peak_then 0
+  brief wt-name no-mistakes || fail "the brief did not scaffold: $(cat "$TMP_ROOT/brief.out")"
+  check=$(drain_check wt-name)
+  [ -n "$check" ] || fail "the brief has no PR drain check"
+  git -C "$PROJECT" worktree add --quiet -b wt-not-the-name "$wt"
+  peak_then 3
+  assert_equals "off o/r 3" "$(cd "$wt" && FM_HOME="$home" eval "$check")" \
+    "the brief's drain check, run from a worktree not named after the project, did not end the drain at S = 6"
+  peak_then 7
+  assert_equals "on o/r 7" "$(cd "$wt" && FM_HOME="$home" eval "$check")" "the worktree drain check ended the drain above S"
+  git -C "$PROJECT" worktree remove --force "$wt"
+  rm "$home/config/ci-slots"
+  pass "a worker's drain check from a worktree reads the project's S by name, not by the worktree's basename"
+}
+
 # shellcheck source=bin/fm-brief-heading-lib.sh
 . "$ROOT/bin/fm-brief-heading-lib.sh"
 
@@ -444,6 +463,35 @@ test_drain_counts_only_eligible_prs() {
   pass "drain counts ready PRs without drafts and promotion PRs"
 }
 
+test_drain_walk_back_leaves_held_prs_out() {
+  printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
+  python3 -I - "$GHDATA" <<'PY2'
+import json, sys, time
+def iso(hours):
+    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - hours * 3600))
+pr = lambda n, h: {'createdAt': iso(h), 'isDraft': False, 'url': f'https://github.com/o/r/pull/{n}', 'headRefName': f'fm/b{n}'}
+json.dump([pr(n, 10) for n in range(1, 7)] + [pr(n, 1) for n in range(7, 10)], open(sys.argv[1] + '/open.json', 'w'))
+json.dump([{'createdAt': iso(10), 'closedAt': iso(2), 'isDraft': False, 'headRefName': 'fm/c'}] * 18,
+          open(sys.argv[1] + '/closed.json', 'w'))
+PY2
+  local n
+  for n in 7 8 9; do
+    fm_write_meta "$GATE_HOME/state/held-$n.meta" "project=$PROJECT" "kind=ship" "yolo=off" "pr=https://github.com/o/r/pull/$n"
+  done
+  assert_equals "on o/r 6" "$(state_r)" "3 held PRs opened an hour ago pulled the walk-back below S = 4 before the peak of 24"
+  rm -f "$GATE_HOME"/state/held-*.meta
+  assert_equals "on o/r 9" "$(state_r)" "with no held PR the 9 ready PRs were not all counted"
+  pass "drain's walk-back leaves out the PRs waiting for the captain, as its starting count does"
+}
+
+test_unreadable_s_makes_drain_unknown() {
+  printf '%s\n' 'r four' > "$GATE_HOME/config/ci-slots"
+  peak_then 3
+  assert_contains "$(state_r)" "unknown o/r the CI slots declaration for r is unreadable" "a malformed ci-slots file did not make the drain state unknown"
+  printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
+  pass "an unreadable CI slots declaration makes the drain state unknown rather than ending only at 0"
+}
+
 test_brief_carries_the_ci_slots_gate_only_when_slots_are_declared() {
   local home="$TMP_ROOT/home" id
   mkdir -p "$home/data" "$home/config"
@@ -493,10 +541,13 @@ fm_test_run \
   test_gate_holds_a_pr_opening_at_the_cap \
   test_drain_with_slots_ends_at_s_not_zero \
   test_drain_counts_only_eligible_prs \
+  test_drain_walk_back_leaves_held_prs_out \
+  test_unreadable_s_makes_drain_unknown \
   test_brief_carries_the_ci_slots_gate_only_when_slots_are_declared \
   test_slots_classes_are_the_urgent_and_landing_ones \
   test_lee_explicit_evidence_needs_a_quote_and_a_timestamp \
   test_security_needs_the_label_and_urgent_or_high_priority \
   test_security_reads_linear_graphql_without_echoing_the_credential \
   test_security_brief_needs_a_linear_item \
-  test_brief_tells_workers_to_check_drain_before_a_pr
+  test_brief_tells_workers_to_check_drain_before_a_pr \
+  test_worktree_drain_check_ends_at_s

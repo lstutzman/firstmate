@@ -362,12 +362,14 @@ fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> 
 # record or backlog that cannot be read, or a PR no record owns, leaves the PR
 # counted. A record in <first-state> reads the backlog in <first-config> and
 # <first-data>; one in another local home reads that home's config/ and data/.
-# Sets FM_CI_SLOTS_HELD to the number of distinct PRs left out. Returns 1 with
+# Sets FM_CI_SLOTS_HELD to the number of distinct PRs left out and
+# FM_CI_SLOTS_HELD_URLS to their URLs, one per line. Returns 1 with
 # FM_PROJECT_CAPACITY_ERROR when fm_project_records does.
 fm_ci_slots_held() {  # <project-lock> <project-dir> <first-state> <first-config> <first-data> <urls>
   local first=$3 urls=$6 i=0 meta pr state config data id rc row seen=$'\n'
   local wedged=$FM_BACKLOG_ROW_SHOW_WEDGED
   FM_CI_SLOTS_HELD=0
+  FM_CI_SLOTS_HELD_URLS=
   fm_project_records "$1" "$2" "$3" "" || return 1
   while [ "$i" -lt "${#FM_PROJECT_RECORDS[@]}" ]; do
     meta=${FM_PROJECT_RECORDS[$i]}
@@ -404,6 +406,7 @@ fm_ci_slots_held() {  # <project-lock> <project-dir> <first-state> <first-config
     fi
   done
   FM_BACKLOG_ROW_SHOW_WEDGED=$wedged
+  FM_CI_SLOTS_HELD_URLS=${seen#$'\n'}
   return 0
 }
 

@@ -358,7 +358,7 @@ EOF
   case "$MODE:$FORGE" in
     local-only:* | *:gerrit | *:external) ;;
     *)
-      printf '%s\n' "$(fm_pr_drain_rule "$FM_ROOT" "$BRANCH")"
+      printf '%s\n' "$(fm_pr_drain_rule "$FM_ROOT" "$BRANCH" "${PROMOTE_PROJECT:+$(basename "$PROMOTE_PROJECT")}")"
       # A project that declares CI slots holds PR openings, never ship starts (bin/fm-pr-drain.py gate).
       if [ -n "$PROMOTE_PROJECT" ] &&
         [ -n "$(FM_HOME="$FM_HOME" FM_CONFIG_OVERRIDE="$CONFIG" "$FM_ROOT/bin/fm-project-mode.sh" --ci-slots "$(basename "$PROMOTE_PROJECT")" 2>/dev/null)" ]; then

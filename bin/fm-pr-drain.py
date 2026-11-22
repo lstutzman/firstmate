@@ -138,22 +138,23 @@ def project_mode(flag, name):
     return out.stdout.strip()
 
 
-def held_count(project, urls):
-    """How many of the ready PR URLs wait for the captain's merge word, 0 when that cannot be read."""
+def held_urls(project, urls):
+    """The ready PR URLs that wait for the captain's merge word, an empty set when that cannot be read."""
     try:
         out = subprocess.run([os.path.join(BIN, 'fm-ci-slots-held.sh'), project], input='\n'.join(urls) + '\n',
                              capture_output=True, text=True, check=False,
                              timeout=float(os.environ.get('FM_PR_DRAIN_TIMEOUT', 20)))
-        return int(out.stdout.strip()) if not out.returncode else 0
-    except (ValueError, OSError, subprocess.TimeoutExpired):
-        return 0
+        return set(out.stdout.split()) & set(urls) if not out.returncode else set()
+    except (OSError, subprocess.TimeoutExpired):
+        return set()
 
 
 def eligible(project, prs):
-    """(eligible count, drafts, held, promotion) of the open PRs: ready, not a promotion PR, not waiting for the captain."""
+    """(eligible PRs, drafts, held, promotion) of the open PRs: ready, not a promotion PR, not waiting for the captain."""
     ready = [pr for pr in prs if not pr['isDraft'] and not pr['promotion']]
-    held = held_count(project, [pr['url'] for pr in ready]) if ready else 0
-    return len(ready) - held, sum(1 for pr in prs if pr['isDraft']), held, sum(1 for pr in prs if pr['promotion'] and not pr['isDraft'])
+    held = held_urls(project, [pr['url'] for pr in ready]) if ready else set()
+    return ([pr for pr in ready if pr['url'] not in held], sum(1 for pr in prs if pr['isDraft']), len(held),
+            sum(1 for pr in prs if pr['promotion'] and not pr['isDraft']))
 
 
 def gate(project, name):
@@ -170,6 +171,7 @@ def gate(project, name):
     if not slots:
         return f'open {repo}'
     counted, drafts, held, promotion = eligible(project, prs)
+    counted = len(counted)
     if counted >= int(cap):
         return (f'hold {repo} open-PR cap reached: {counted} eligible open PR(s) against the open-PR cap of {cap} '
                 f"(config/open-pr-cap; min(2 x {slots} CI slots, 16) unless declared; {drafts} draft PR(s), {held} PR(s) waiting for "
@@ -187,15 +189,16 @@ def state(project, name=None):
         if isinstance(found, str):
             return found
         repo, prs = found
-        count = eligible(project, prs)[0]
+        opened = eligible(project, prs)[0]
+        count = len(opened)
+        name = name or os.path.basename(os.path.abspath(project))
         try:
             # S when the project declares CI slots, else drain ends only at 0.
-            floor = int(project_mode('--ci-slots', name or os.path.basename(os.path.abspath(project))) or 0)
-        except (ValueError, OSError, subprocess.TimeoutExpired):
-            floor = 0
+            floor = int(project_mode('--ci-slots', name) or 0)
+        except (ValueError, OSError, subprocess.TimeoutExpired) as error:
+            return f'unknown {repo} the CI slots declaration for {name} is unreadable: {error}'.replace('\n', ' ')
         if count >= THRESHOLD or count <= floor:
             return f"{'on' if count > floor else 'off'} {repo} {count}"
-        opened = [pr for pr in prs if not pr['isDraft'] and not pr['promotion']]
         since = datetime.now(timezone.utc) - timedelta(days=WINDOW_DAYS)
         closed = [pr for pr in gh(repo, '--state', 'closed', '--search', f"closed:>={since:%Y-%m-%dT%H:%M:%SZ}",
                                   '--limit', str(CLOSED_LIMIT), '--json', 'createdAt,closedAt,isDraft,headRefName')]
