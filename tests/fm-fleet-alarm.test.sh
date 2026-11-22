@@ -1034,7 +1034,10 @@ open_ask_mate() { # status lines (one per argument, each stamped 3601 seconds ag
   local at=$(($(date +%s) - 3601)) line
   : > "$HOME_FIX/state/mate.status"
   for line in "$@"; do printf '%s\n' "${line//@AT@/$at}" >> "$HOME_FIX/state/mate.status"; done
+  # The coverage checks below need a latest line that is not an open needs-decision, which exempts on its own.
+  [ -z "${ASK_TAIL:-}" ] || printf 'blocked [at=%s] [key=zz-tail]: tail\n' "$at" >> "$HOME_FIX/state/mate.status"
 }
+ASK_TAIL=1
 open_ask_mate 'needs-decision [at=@AT@] [key=item-a]: waiting on the card for item a'
 assert_contains "$(run_alarm check)" 'holding work silent' 'one ask covering one of three in-flight items leaves the other two silent'
 mate 0 0 0
@@ -1084,7 +1087,66 @@ set_mate_work 1 0 0 0 none
 assert_contains "$(run_alarm check)" 'holding work silent' 'work with no open needs-decision and no hold still alarms'
 mate 0 0 0
 run_alarm check >/dev/null
+ASK_TAIL=
 pass 'work is not silent only when every in-flight item waits on a needs-decision naming it'
+
+# Deep Thought (FLEET-153): the latest line is an open needs-decision whose key names no in-flight item.
+mate 0 0 0
+run_alarm check >/dev/null
+open_ask_mate 'needs-decision [at=@AT@] [key=pc1468-native-calls]: waiting on the captain'
+[ -z "$(run_alarm check)" ] || fail 'a mate whose latest line is an open needs-decision with an unmatched key is waiting, not silent'
+edit_mate_summary "value['counts']['decisions_open']=1; value['decisions_open']=[dict(id='item-b',key='ask',verb='needs-decision',source='status')]"
+assert_contains "$(run_alarm check)" 'holding work silent' 'an open latest needs-decision beside a child asking the mate still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+open_ask_mate 'needs-decision [at=@AT@] [key=pc1468-native-calls]: waiting on the captain' 'resolved [at=@AT@] [key=pc1468-native-calls]: answered'
+assert_contains "$(run_alarm check)" 'holding work silent' 'a resolved needs-decision is not a wait'
+mate 0 0 0
+run_alarm check >/dev/null
+now=$(date +%s)
+paused_mate() { # until offset in seconds
+  mate 1 0 7200
+  printf 'paused [at=%s]: waiting on ci until %s\n' "$((now - 7200))" "$(date -u -d "@$((now + $1))" +%Y-%m-%dT%H:%MZ)" > "$HOME_FIX/state/mate.status"
+}
+paused_mate 3000
+[ -z "$(run_alarm check)" ] || fail 'a paused line whose until has not passed is waiting, not silent'
+mate 0 0 0
+run_alarm check >/dev/null
+paused_mate -7200
+assert_contains "$(run_alarm check)" 'holding work silent' 'a paused line past its until falls back to the ordinary check'
+mate 0 0 0
+run_alarm check >/dev/null
+open_ask_mate 'needs-decision [at=@AT@] [key=ask-a]: first call' 'needs-decision [at=@AT@] [key=pc1468-native-calls]: waiting on the captain'
+bash -c '. "$1/bin/fm-wake-lib.sh"; . "$1/bin/fm-classify-lib.sh"; f="$2/state/mate.status"; before=$(_fm_status_file_size "$f"); printf "resolved [at=%s] [key=ask-a]: answered\n" "$(date +%s)" >> "$f"; status_home_appends_record "$f" "$before" "$(_fm_status_file_size "$f")"' fleet-alarm-test "$ROOT" "$HOME_FIX"
+[ -z "$(run_alarm check)" ] || fail 'an answer to another key after the open latest needs-decision leaves the mate waiting, not silent'
+mate 0 0 0
+run_alarm check >/dev/null
+paused_ask_mate() { # until offset in seconds
+  paused_mate "$1"
+  { printf 'needs-decision [at=%s] [key=ask-x]: waiting on the captain\n' "$((now - 7300))"; cat "$HOME_FIX/state/mate.status"; } > "$HOME_FIX/state/mate.status.new"
+  mv "$HOME_FIX/state/mate.status.new" "$HOME_FIX/state/mate.status"
+}
+paused_ask_mate 3000
+[ -z "$(run_alarm check)" ] || fail 'a pause whose until has not passed behind an open needs-decision is waiting, not silent'
+mate 0 0 0
+run_alarm check >/dev/null
+paused_ask_mate -7200
+assert_contains "$(run_alarm check)" 'holding work silent' 'a pause past its until behind an open needs-decision falls back to the ordinary check'
+mate 0 0 0
+run_alarm check >/dev/null
+undated_paused_ask_mate() { # pause age in seconds
+  mate 1 0 7200
+  printf 'needs-decision [at=%s] [key=ask-x]: waiting on the captain\npaused [at=%s]: waiting on the captain\n' "$((now - $1 - 100))" "$((now - $1))" > "$HOME_FIX/state/mate.status"
+}
+undated_paused_ask_mate 7200
+[ -z "$(run_alarm check)" ] || fail 'an undated pause behind an open needs-decision inside six silence windows is waiting, not silent'
+mate 0 0 0
+run_alarm check >/dev/null
+undated_paused_ask_mate 25200
+assert_contains "$(run_alarm check)" 'holding work silent' 'an undated pause behind an open needs-decision older than six silence windows alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+pass 'an open latest needs-decision or an unexpired pause is not silent'
 
 # Proxy view (a stale account supplies the quota card that carries the context line): a rotated-away exhausted account raises no decision while a headroom account serves.
 rotation_accounts() { # rotated_used serving_used
