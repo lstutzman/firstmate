@@ -496,6 +496,13 @@ write_host_fixture() {  # <dir> <kind>
         printf '[ "$(wc -l < "$FM_HOME/state/host-ran")" -gt 1 ] || kill -KILL $$\n'
         printf 'printf "stale: fixture-win after a retry\\n"\n'
         ;;
+      fails-empty)
+        printf 'exit 1\n'
+        ;;
+      empty-once)
+        printf '[ "$(wc -l < "$FM_HOME/state/host-ran")" -gt 1 ] || exit 0\n'
+        printf 'printf "stale: fixture-win after a retry\\n"\n'
+        ;;
     esac
     printf 'exit 0\n'
   } > "$dir/bin/fm-supervision-host.sh"
@@ -585,7 +592,24 @@ test_park_host_boundary_stand_down_and_death() {
   out=$(run_park "$dir")
   [ "$(wc -l < "$dir/state/host-ran" | tr -d ' ')" -eq 2 ] || fail "a host that died without a close must be retried: $(cat "$dir/state/host-ran")"
   case "$(followup_of "$out")" in *'stale: fixture-win after a retry'*) ;; *) fail "the retried host's wake was not delivered: $out" ;; esac
-  pass "cursor park: the host's boundary wakes, its stand-down is silent, and a host that died is retried"
+
+  dir=$(make_primary_dir "$TMP_ROOT/park-host-failed-empty")
+  : > "$dir/state/task1.meta"
+  mkdir -p "$dir/config"
+  : > "$dir/config/supervision-host"
+  write_host_fixture "$dir" fails-empty
+  out=$(run_park "$dir")
+  [ "$(wc -l < "$dir/state/host-ran" | tr -d ' ')" -eq 1 ] || fail "a host that exited 1 with empty output must not be retried: $(cat "$dir/state/host-ran")"
+
+  dir=$(make_primary_dir "$TMP_ROOT/park-host-empty-once")
+  : > "$dir/state/task1.meta"
+  mkdir -p "$dir/config"
+  : > "$dir/config/supervision-host"
+  write_host_fixture "$dir" empty-once
+  out=$(run_park "$dir")
+  [ "$(wc -l < "$dir/state/host-ran" | tr -d ' ')" -eq 2 ] || fail "a host that exited 0 with empty output must be retried: $(cat "$dir/state/host-ran")"
+  case "$(followup_of "$out")" in *'stale: fixture-win after a retry'*) ;; *) fail "the retried host's wake was not delivered: $out" ;; esac
+  pass "cursor park: the host's boundary wakes, its stand-down is silent, a host that died or exited 0 empty is retried, and one that failed is not"
 }
 
 test_park_inert_under_pi_coding_agent() {

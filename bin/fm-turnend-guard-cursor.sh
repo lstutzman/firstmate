@@ -368,6 +368,11 @@ while [ "$attempt" -lt "$ARM_ATTEMPTS" ]; do
     if [ -n "$ARM_OUT" ] && grep -q '^supervision-host stood down:' "$ARM_OUT" 2>/dev/null; then
       exit 0
     fi
+    # A failed hand-back can leave empty output: honor its explicit failure
+    # before retrying, or the replacement host parks on the undelivered close.
+    if [ "$HOST_RC" -ne 0 ] && [ "$HOST_RC" -le 128 ]; then
+      break
+    fi
     # A host that died without a close may have left its cycle running with
     # no owner to deliver the close; retrying lets the next host stop what it
     # left and own a fresh cycle, which the healthy-watcher predicate cannot.
