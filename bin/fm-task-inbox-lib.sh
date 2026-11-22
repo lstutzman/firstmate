@@ -65,7 +65,11 @@
 # repeat the steer once through the pointer record, never lose it. Inline
 # applies to local steers only: every remote secondmate steer is marked, and a
 # marked steer is never inline, so the remote leg always rings the pointer.
-# Everything else keeps the pointer doorbell.
+# A local steer to an agent the backend reports busy is not inline either
+# (bin/fm-send.sh): a busy agent queues typed input and reads an empty composer,
+# so a lost queued line could not be told from a delivered one, and only an
+# unhandled record stays in the ladder. Everything else keeps the pointer
+# doorbell.
 #
 # Sequence numbers are never reused within a task: allocation scans both the
 # inbox root and handled/, so a message is processed at most once per worker

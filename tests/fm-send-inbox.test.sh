@@ -31,6 +31,10 @@
 #      its body after a constant prefix; 301 characters, a newline, a tab or an
 #      escape keep the pointer doorbell; an inline ring that did not land falls
 #      back to an unhandled record for the watcher's ladder.
+#  12. An agent reported busy keeps the pointer doorbell and an unhandled
+#      record for a plain short steer: a busy agent queues typed input and
+#      reads an empty composer, so an inline (born taken) record would be
+#      unreachable by the watcher's ladder if that queued line were lost.
 # Every case below that passes a literal `$...` message quotes it on purpose
 # (the point is sending an unexpanded `$` line), so SC2016 is disabled.
 # shellcheck disable=SC2016
@@ -271,6 +275,71 @@ test_inline_ring_that_does_not_land_falls_back_to_the_ladder() {
     fail "a skipped inline ring must not fail the send"
   [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "a skipped inline ring must leave an unhandled record"
   pass "fm-send inbox: an inline ring that did not land falls back to an unhandled pointer record"
+}
+
+# A stateful stub herdr: `pane send-text` fills the composer, Enter submits it
+# (logged to $FM_HERDR_LOG.submitted) and empties it, as a busy Claude does when
+# it queues the input; `agent get` reports $FM_FAKE_AGENT_STATUS.
+make_herdr_stub() { # <dir>
+  local fb="$1/fakebin"
+  mkdir -p "$fb"
+  cat >"$fb/herdr" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_HERDR_LOG"
+C="$FM_HERDR_LOG.composer"
+case "$*" in
+  *"status --json"*) printf '{"server":{"running":true,"socket":""}}\n' ;;
+  *"agent get"*) printf '{"result":{"agent":{"agent_status":"%s","agent":"claude"}}}\n' "${FM_FAKE_AGENT_STATUS:-idle}" ;;
+  *"pane get"*) printf '{"result":{"pane":{"foreground_cwd":"/x","agent_status":"%s"}}}\n' "${FM_FAKE_AGENT_STATUS:-idle}" ;;
+  *"pane read"*) printf '\n────────────────────────────────────────\n❯ %s\n────────────────────────────────────────\n  ⏵⏵ bypass permissions on (shift+tab to cycle)\n' "$(cat "$C" 2>/dev/null)" ;;
+  *"pane send-text"*) shift 3; printf '%s' "$1" > "$C" ;;
+  *"pane send-keys"*)
+    case "$*" in
+      *ctrl+u*) : > "$C" ;;
+      *enter*) { cat "$C"; printf '\n'; } >> "$FM_HERDR_LOG.submitted"; : > "$C" ;;
+    esac ;;
+  *) printf '{"result":{}}\n' ;;
+esac
+exit 0
+SH
+  chmod +x "$fb/herdr"
+}
+
+# A busy agent queues what is typed into it and reads an empty composer, so the
+# ring cannot tell a queued doorbell from a delivered one; an inline record is
+# born taken and no ladder re-rings it. A plain short steer to a busy agent
+# therefore takes the pointer path: an unhandled record the watcher owns.
+test_inline_steer_to_a_busy_agent_keeps_the_ladder() {
+  local dir status rec
+  for status in idle working; do
+    dir="$TMP_ROOT/inline-busy-$status"
+    mkdir -p "$dir/home/state"
+    make_herdr_stub "$dir"
+    : >"$dir/herdr.log"
+    fm_write_meta "$dir/home/state/t1.meta" "window=lab:w1:p1" "endpoint_task_id=t1" "kind=ship" \
+      "harness=claude" "backend=herdr" "herdr_session=lab" "herdr_workspace_id=w1" \
+      "herdr_tab_id=w1:t1" "herdr_pane_id=w1:p1"
+    env PATH="$dir/fakebin:$PATH" FM_ROOT_OVERRIDE="$dir/home" FM_HOME="$dir/home" \
+      FM_HERDR_LOG="$dir/herdr.log" FM_FAKE_AGENT_STATUS="$status" FM_SEND_SETTLE=0 \
+      "$SEND" t1 "steer to a $status agent" >/dev/null 2>"$dir/send.err" ||
+      fail "a steer to a $status agent should send"
+    if [ "$status" = idle ]; then
+      [ -f "$dir/home/state/t1.inbox/handled/001.msg" ] || fail "a steer to an idle agent should stay inline"
+      continue
+    fi
+    rec="$dir/home/state/t1.inbox/001.msg"
+    [ -f "$rec" ] || fail "a steer to a busy agent must stay an unhandled record the ladder owns"
+    [ ! -e "$dir/home/state/t1.inbox/handled/001.msg" ] || fail "a steer to a busy agent was born taken"
+    grep -q '^inline=' "$rec" && fail "a steer to a busy agent kept its inline header"
+    case "$(cat "$dir/herdr.log.submitted")" in
+    *"Firstmate instruction waiting"*) ;;
+    *) fail "a busy agent should be rung with the pointer doorbell, got: $(cat "$dir/herdr.log.submitted")" ;;
+    esac
+    case "$(cat "$dir/herdr.log.submitted")" in
+    *"steer to a working agent"*) fail "the body must not ride the doorbell of a busy agent" ;;
+    esac
+  done
+  pass "fm-send inbox: a plain short steer to a busy agent keeps an unhandled record and the pointer doorbell"
 }
 
 test_multiline_steer_is_legal() {
@@ -641,6 +710,7 @@ test_deep_home_doorbell_stays_short
 test_inline_steer_is_recorded_taken_and_rung_with_its_body
 test_inline_eligibility_edges_at_the_send_surface
 test_inline_ring_that_does_not_land_falls_back_to_the_ladder
+test_inline_steer_to_a_busy_agent_keeps_the_ladder
 test_multiline_steer_is_legal
 test_resend_enqueues_new_sequence
 test_pending_composer_skips_ring_advisorily

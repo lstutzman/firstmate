@@ -32,8 +32,9 @@
 # for a remote secondmate - and the endpoint receives only one short constant
 # self-describing doorbell, best-effort. Pane backends type its line plus Enter;
 # T3 Code starts one native turn. A plain short steer (one line, at most 300
-# printable characters, no routing mark; bin/fm-task-inbox-lib.sh) is an inline
-# steer: its record is written already taken and the doorbell carries the body.
+# printable characters, no routing mark; bin/fm-task-inbox-lib.sh) to an agent
+# not reported busy is an inline steer: its record is written already taken and
+# the doorbell carries the body.
 # The durable record IS
 # the delivery, so the record's fate alone governs the exit: 0 = the steer is
 # durably sent (recorded); nonzero = nothing was confirmed delivered and a
@@ -1261,6 +1262,14 @@ else
   fi
   if [ "$INBOX_PLANE" = 1 ]; then
     INBOX_TASK_ID=$(fm_send_id_from_meta "$TARGET_META")
+    # An inline record is born taken and no ladder re-rings it, but a busy agent
+    # queues typed input and reads an empty composer, so a lost queued line is
+    # unprovable. Probe before taking the locks: a busy agent gets the pointer.
+    INBOX_AGENT_BUSY=0
+    if [ -z "$FIRE_AND_FORGET_ID" ] && fm_task_inbox_inline_eligible "$MESSAGE" &&
+      [ "$(fm_backend_busy_state "$TARGET_BACKEND" "$T" 2>/dev/null || true)" = busy ]; then
+      INBOX_AGENT_BUSY=1
+    fi
     INBOX_DELIVERY_LOCK=$(fm_task_inbox_delivery_lock_path "$STATE" "$INBOX_TASK_ID")
     if ! fm_task_inbox_lock_acquire "$INBOX_DELIVERY_LOCK"; then
       if [ "$PENDING_REPLY_CREATED" = 1 ] && [ -n "$PENDING_REPLY_CORR" ]; then
@@ -1302,11 +1311,12 @@ else
       echo "error: steer not sent to $INBOX_TASK_ID: the task retired or changed endpoint during target resolution" >&2
       exit 1
     fi
-    # A plain short steer rides the doorbell itself and its record is written
-    # already taken (inline steer, bin/fm-task-inbox-lib.sh); fire-and-forget
-    # and everything else keep the pointer doorbell.
+    # A plain short steer to an agent not reported busy rides the doorbell
+    # itself and its record is written already taken (inline steer,
+    # bin/fm-task-inbox-lib.sh); fire-and-forget, a busy agent and everything
+    # else keep the pointer doorbell.
     INBOX_INLINE=
-    if [ -z "$FIRE_AND_FORGET_ID" ] && fm_task_inbox_inline_eligible "$MESSAGE"; then
+    if [ -z "$FIRE_AND_FORGET_ID" ] && [ "$INBOX_AGENT_BUSY" != 1 ] && fm_task_inbox_inline_eligible "$MESSAGE"; then
       INBOX_INLINE=inline
     fi
     if [ "${FM_SEND_IDEMPOTENT:-0}" = 1 ]; then
