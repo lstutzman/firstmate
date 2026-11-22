@@ -217,6 +217,7 @@ test_slot_count_is_read_once_per_sweep() {
   set_status "$root" t1 "$(pending_toon t1 RUN1)"
   set_status "$root" t2 "$(pending_toon t2 RUN2)"
   set_runs "$root" here:running:1 here:pending:2
+  # shellcheck disable=SC2016 # the stub script must keep "$@" and ${1:-} literal
   printf '#!/usr/bin/env bash\n[ "${1:-}" != -I ] || printf x >> "%s"\nexec "%s" "$@"\n' \
     "$root/fake/python.calls" "$(command -v python3)" > "$root/bin/python3"
   chmod +x "$root/bin/python3"
