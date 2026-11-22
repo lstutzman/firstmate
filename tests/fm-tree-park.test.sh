@@ -553,6 +553,299 @@ test_teardown_after_merge_on_a_parked_task() {
   pass "cleanup of a parked task after its merge removes the record without touching the pool"
 }
 
+# make_ready_lab <name>: a ship that finished as a pushed ready branch with no PR
+# (the CI slots gate held its opening), as bin/fm-ready-branch.sh records it: no
+# pr= lines, no merge handoff or released run, ready_branch= appended, and a done
+# line that says so. The forge is unusable here, since no PR exists to ask.
+make_ready_lab() {
+  local name=$1 dir
+  dir=$(make_lab "$name")
+  grep -vE '^(pr_at|pr|pr_head)=' "$dir/home/state/$ID.meta" > "$dir/meta.new"
+  printf 'ready_branch=%s\n' "$BRANCH" >> "$dir/meta.new"
+  cat "$dir/meta.new" > "$dir/home/state/$ID.meta"
+  rm -f "$dir/meta.new" "$dir/home/state/$ID.merge-handoff" "$dir/home/state/$ID.nm-released"
+  printf 'done [at=1700000100]: branch %s pushed, no PR (CI slots)\n' "$BRANCH" > "$dir/home/state/$ID.status"
+  printf '#!/bin/sh\necho "gh must not be asked about a branch with no PR" >&2\nexit 1\n' > "$dir/fakebin/gh"
+  # A ready branch never ran a pipeline: `axi status` answers with no run on
+  # the copy's branch (the shape tests/fm-crew-state.test.sh pins), unless a
+  # case sets FM_TEST_NM_STATUS to stand a run up on it.
+  cat > "$dir/fakebin/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_TEST_LAB/nm.log"
+[ "${1:-} ${2:-}" = "axi status" ] || exit 2
+if [ -z "${FM_TEST_NM_STATUS:-}" ]; then
+  printf 'current_branch: %s\nruns_on_current_branch: 0\n' "${FM_TEST_NM_BRANCH:-$(git symbolic-ref --quiet --short HEAD)}"
+  exit 0
+fi
+printf 'current_branch: %s\nruns_on_current_branch: 1\nrun:\n  id: r1\n  branch: %s\n  status: %s\n' \
+  "$(git symbolic-ref --quiet --short HEAD)" "$(git symbolic-ref --quiet --short HEAD)" "$FM_TEST_NM_STATUS"
+SH
+  chmod +x "$dir/fakebin/no-mistakes"
+  printf '%s\n' "$dir"
+}
+
+test_ready_branch_parks_and_returns_its_copy() {
+  local dir head out
+  dir=$(make_ready_lab ready-park)
+  head=$(git -C "$dir/pool/1/project" rev-parse HEAD)
+  mkdir -p "$dir/pool/1/project/.claude"
+  printf '{}\n' > "$dir/pool/1/project/.claude/settings.local.json"
+  out=$(park "$dir" 2>"$dir/err") || fail "ready-park: a clean pushed ready branch did not park: $(cat "$dir/err")"
+  case "$out" in "parked: $ID"*"$BRANCH"*) ;; *) fail "ready-park: park did not name the branch it holds: $out" ;; esac
+  [ "$(meta_value "$dir" parked)" = 1 ] || fail "ready-park: the record is not marked parked"
+  [ -z "$(meta_value "$dir" worktree)" ] || fail "ready-park: the record still names the returned slot"
+  [ "$(meta_value "$dir" parked_head)" = "$head" ] || fail "ready-park: the parked head is not the pushed head"
+  [ "$(meta_value "$dir" parked_branch)" = "$BRANCH" ] || fail "ready-park: the parked branch is wrong"
+  [ "$(meta_value "$dir" parked_worktree)" = "$dir/pool/1/project" ] || fail "ready-park: the returned slot is not recorded"
+  [ "$(meta_value "$dir" ready_branch)" = "$BRANCH" ] || fail "ready-park: the ready branch record was lost"
+  [ -z "$(meta_value "$dir" pr)" ] || fail "ready-park: parking invented a PR record"
+  grep -qx "$ID exit --stop-background" "$dir/control.log" || fail "ready-park: the agent was not stopped through the control plane"
+  grep -qx "return --force $dir/pool/1/project" "$dir/treehouse.log" || fail "ready-park: the slot was not returned"
+  [ ! -e "$dir/pool/1/.fm-slot-owner" ] || fail "ready-park: the slot claim was left behind"
+  [ ! -e "$dir/pool/1/project/.claude/settings.local.json" ] || fail "ready-park: the harness wiring stayed in the returned slot"
+  git -C "$dir/remote.git" rev-parse --verify --quiet "refs/heads/$BRANCH" >/dev/null || fail "ready-park: the pushed branch is gone from the remote"
+  [ "$(wc -l < "$dir/home/state/$ID.status" | tr -d ' ')" = 1 ] || fail "ready-park: park wrote to the task's status"
+  out=$(lab_env "$dir" "$dir/root/bin/fm-crew-state.sh" "$ID" 2>/dev/null) || true
+  case "$out" in "state: done"*"$BRANCH"*parked*) ;; *) fail "ready-park: crew state does not read the parked branch as done: $out" ;; esac
+  case "$out" in *"PR  "*|*"PR waits"*) fail "ready-park: crew state describes a branch with no PR as a PR: $out" ;; esac
+  out=$(FM_HOME="$dir/home" "$dir/root/bin/fm-ready-branch.sh" list)
+  case "$out" in "$ID $BRANCH "*) ;; *) fail "ready-park: the parked branch left the ready-branch list: $out" ;; esac
+  pass "a ready branch whose copy is clean and equals its pushed head returns the copy and keeps its record"
+}
+
+test_ready_branch_refuses_each_unsafe_copy() {
+  local dir
+  dir=$(make_ready_lab ready-dirty)
+  printf 'edit\n' >> "$dir/pool/1/project/change.txt"
+  park "$dir" >/dev/null 2>"$dir/err" && fail "ready-dirty: a tracked edit was parked"
+  grep -q 'uncommitted' "$dir/err" || fail "ready-dirty: the refusal does not say why: $(cat "$dir/err")"
+  assert_not_parked "$dir" ready-dirty
+  [ ! -s "$dir/control.log" ] || fail "ready-dirty: the agent was stopped for an unsafe copy"
+
+  dir=$(make_ready_lab ready-untracked)
+  printf 'new\n' > "$dir/pool/1/project/new.txt"
+  park "$dir" >/dev/null 2>&1 && fail "ready-untracked: an untracked file was parked"
+  assert_not_parked "$dir" ready-untracked
+
+  dir=$(make_ready_lab ready-unpushed)
+  git -C "$dir/pool/1/project" commit -q --allow-empty -m unpushed
+  park "$dir" >/dev/null 2>"$dir/err" && fail "ready-unpushed: an unpushed commit was parked"
+  grep -q 'not on origin' "$dir/err" || fail "ready-unpushed: the refusal does not say why: $(cat "$dir/err")"
+  assert_not_parked "$dir" ready-unpushed
+
+  dir=$(make_ready_lab ready-other-branch)
+  git -C "$dir/pool/1/project" checkout -q -b fm/other
+  git -C "$dir/pool/1/project" push -q origin fm/other
+  park "$dir" >/dev/null 2>"$dir/err" && fail "ready-other-branch: a copy on another branch was parked"
+  grep -q 'not the recorded ready branch' "$dir/err" || fail "ready-other-branch: the refusal does not say why: $(cat "$dir/err")"
+  assert_not_parked "$dir" ready-other-branch
+
+  dir=$(make_ready_lab ready-live-run)
+  FM_TEST_NM_STATUS=running park "$dir" >/dev/null 2>"$dir/err" && fail "ready-live-run: a copy under a live run was parked"
+  grep -q 'still active' "$dir/err" || fail "ready-live-run: the refusal does not say why: $(cat "$dir/err")"
+  assert_not_parked "$dir" ready-live-run
+
+  dir=$(make_ready_lab ready-no-run-elsewhere)
+  FM_TEST_NM_BRANCH=fm/other park "$dir" >/dev/null 2>&1 && fail "ready-no-run-elsewhere: a no-run answer for another branch was parked"
+  assert_not_parked "$dir" ready-no-run-elsewhere
+
+  dir=$(make_ready_lab ready-steered)
+  mkdir -p "$dir/home/state/$ID.inbox"
+  printf 'run it now\n' > "$dir/home/state/$ID.inbox/0001.msg"
+  park "$dir" >/dev/null 2>&1 && fail "ready-steered: a task with a waiting steer was parked"
+  assert_not_parked "$dir" ready-steered
+
+  dir=$(make_ready_lab ready-working)
+  printf 'working [at=1700000200]: back at it\n' >> "$dir/home/state/$ID.status"
+  park "$dir" >/dev/null 2>&1 && fail "ready-working: a worker that resumed work was parked"
+  assert_not_parked "$dir" ready-working
+
+  dir=$(make_ready_lab ready-open-decision)
+  printf 'needs-decision [at=1700000200] [key=q1]: which way\n' >> "$dir/home/state/$ID.status"
+  park "$dir" >/dev/null 2>&1 && fail "ready-open-decision: a task with an open decision was parked"
+  assert_not_parked "$dir" ready-open-decision
+
+  dir=$(make_ready_lab ready-tmux)
+  sed -i.bak 's/^backend=herdr$/backend=tmux/' "$dir/home/state/$ID.meta"
+  park "$dir" >/dev/null 2>&1 && fail "ready-tmux: a task whose backend cannot relaunch it was parked"
+  assert_not_parked "$dir" ready-tmux
+
+  dir=$(make_ready_lab ready-busy)
+  "$ROOT/bin/fm-busy-event.sh" apply "$dir/home/state" "$ID" busy --current-gen --source claude-hook --event prompt \
+    || fail "ready-busy: could not record a busy agent"
+  park "$dir" >/dev/null 2>&1 && fail "ready-busy: a busy agent's copy was parked"
+  assert_not_parked "$dir" ready-busy
+
+  dir=$(make_ready_lab ready-unstopped)
+  FM_TEST_CONTROL_EXIT_RC=1 park "$dir" >/dev/null 2>&1 && fail "ready-unstopped: a copy was parked without a proven stop"
+  assert_not_parked "$dir" ready-unstopped
+
+  dir=$(make_lab no-ready-record)
+  grep -vE '^(pr_at|pr|pr_head)=' "$dir/home/state/$ID.meta" > "$dir/meta.new"
+  cat "$dir/meta.new" > "$dir/home/state/$ID.meta"
+  park "$dir" >/dev/null 2>&1 && fail "no-ready-record: a ship with neither a PR nor a ready branch was parked"
+  assert_not_parked "$dir" no-ready-record
+  pass "a ready branch with a dirty, untracked, unpushed, off-branch, live-run, steered, resumed, undecided, tmux, busy, or unstopped copy is never parked"
+}
+
+# unpark_ready <dir>: the steer that releases a parked branch (ship-landing).
+unpark_ready() {
+  lab_env "$1" "$1/root/bin/fm-send.sh" "$ID" "the CI slots are open: run /no-mistakes on the branch" 2>&1
+}
+
+test_ready_branch_steer_leases_a_fresh_copy_at_the_pushed_branch() {
+  local dir head out new
+  dir=$(make_ready_lab ready-unpark)
+  head=$(git -C "$dir/pool/1/project" rev-parse HEAD)
+  park "$dir" >/dev/null 2>"$dir/err" || fail "ready-unpark: setup park failed: $(cat "$dir/err")"
+  git -C "$dir/pool/1/project" checkout -q --detach origin/main
+  out=$(unpark_ready "$dir") || fail "ready-unpark: the steer to a parked branch failed: $out"
+  new=$(meta_value "$dir" worktree)
+  [ -n "$new" ] && [ "$new" != "$dir/pool/1/project" ] || fail "ready-unpark: the task was not given a fresh copy: $new"
+  [ -z "$(meta_value "$dir" parked)" ] && [ -z "$(meta_value "$dir" parked_head)" ] || fail "ready-unpark: the parked fields stayed on the record"
+  [ "$(meta_value "$dir" ready_branch)" = "$BRANCH" ] || fail "ready-unpark: the ready branch record was lost"
+  [ "$(git -C "$new" rev-parse HEAD)" = "$head" ] || fail "ready-unpark: the fresh copy is not at the pushed head"
+  [ "$(git -C "$new" symbolic-ref --quiet --short HEAD)" = "$BRANCH" ] || fail "ready-unpark: the fresh copy is not on the ready branch"
+  grep -qx "relaunch worktree=$new head=$head branch=$BRANCH" "$dir/control.log" \
+    || fail "ready-unpark: the worker was not relaunched in the fresh copy: $(cat "$dir/control.log")"
+  assert_grep "CI slot" "$dir/relaunch-note" "ready-unpark: the relaunch note does not say the branch waited for a CI slot"
+  assert_grep "$BRANCH" "$dir/relaunch-note" "ready-unpark: the relaunch note does not name the branch"
+  FM_HOME="$dir/home" fm_treehouse_slot_owner_state "$new" "$ID"
+  [ "$FM_TREEHOUSE_SLOT_OWNER" = mine ] || fail "ready-unpark: the fresh slot was not claimed for the task"
+  grep -rqF 'run /no-mistakes on the branch' "$dir/home/state/$ID.inbox" || fail "ready-unpark: the steer was not recorded after the relaunch"
+
+  # A branch pushed to since the park is followed, with the forge never asked.
+  dir=$(make_ready_lab ready-unpark-moved)
+  park "$dir" >/dev/null 2>"$dir/err" || fail "ready-unpark-moved: setup park failed: $(cat "$dir/err")"
+  git -C "$dir/project" checkout -q "$BRANCH"
+  git -C "$dir/project" commit -q --allow-empty -m moved
+  git -C "$dir/project" push -q origin "$BRANCH"
+  head=$(git -C "$dir/project" rev-parse HEAD)
+  git -C "$dir/project" checkout -q --detach
+  out=$(unpark_ready "$dir") || fail "ready-unpark-moved: the steer was refused: $out"
+  [ "$(git -C "$(meta_value "$dir" worktree)" rev-parse HEAD)" = "$head" ] || fail "ready-unpark-moved: the fresh copy is not at the moved head"
+  assert_grep "moved from" "$dir/relaunch-note" "ready-unpark-moved: the relaunch note does not say the head moved"
+  pass "a steer to a parked ready branch leases a fresh copy at the pushed branch and relaunches the worker there"
+}
+
+test_ready_branch_refused_unpark_stays_parked() {
+  local dir out
+  dir=$(make_ready_lab ready-unpark-gone)
+  park "$dir" >/dev/null 2>"$dir/err" || fail "ready-unpark-gone: setup park failed: $(cat "$dir/err")"
+  git -C "$dir/project" push -q origin --delete "$BRANCH"
+  out=$(unpark_ready "$dir") && fail "ready-unpark-gone: a steer was sent although the branch is gone: $out"
+  case "$out" in *"$BRANCH is gone"*) ;; *) fail "ready-unpark-gone: the refusal does not say the branch is gone: $out" ;; esac
+  assert_stays_parked "$dir" ready-unpark-gone 2
+
+  dir=$(make_ready_lab ready-unpark-relaunch)
+  park "$dir" >/dev/null 2>"$dir/err" || fail "ready-unpark-relaunch: setup park failed: $(cat "$dir/err")"
+  out=$(FM_TEST_CONTROL_RELAUNCH_RC=1 unpark_ready "$dir") && fail "ready-unpark-relaunch: a steer was sent with no worker: $out"
+  [ "$(meta_value "$dir" parked)" = 1 ] && [ -z "$(meta_value "$dir" worktree)" ] || fail "ready-unpark-relaunch: a failed relaunch did not leave the task parked"
+  out=$(lab_env "$dir" "$dir/root/bin/fm-send.sh" "$ID" --key Enter 2>&1) && fail "ready-unpark-relaunch: a key was sent to a parked branch: $out"
+  case "$out" in *"waits for a CI slot"*) ;; *) fail "ready-unpark-relaunch: the key refusal does not say the branch waits for a CI slot: $out" ;; esac
+  pass "an unpark whose branch is gone or whose worker cannot relaunch leaves the branch parked and records no steer"
+}
+
+# fm-ready-branch.sh records the parked branch and then gives the copy back
+# at once; when the copy cannot be given back it says why and still records.
+test_recording_a_ready_branch_returns_the_copy_or_says_why() {
+  local dir out
+  dir=$(make_ready_lab record-park)
+  grep -v '^ready_branch=' "$dir/home/state/$ID.meta" > "$dir/meta.new"
+  cat "$dir/meta.new" > "$dir/home/state/$ID.meta"
+  out=$(lab_env "$dir" "$dir/root/bin/fm-ready-branch.sh" "$ID" "$BRANCH" 2>&1) || fail "record-park: recording failed: $out"
+  [ "$(meta_value "$dir" ready_branch)" = "$BRANCH" ] || fail "record-park: the ready branch was not recorded"
+  [ "$(meta_value "$dir" parked)" = 1 ] || fail "record-park: recording did not return the copy: $out"
+  grep -qx "return --force $dir/pool/1/project" "$dir/treehouse.log" || fail "record-park: the slot was not returned"
+  case "$out" in *"recorded ready branch $BRANCH"*"parked: $ID"*) ;; *) fail "record-park: the output does not report both steps: $out" ;; esac
+
+  # The branch was released, held at the gate and reported again: the record
+  # already exists, and the park still runs.
+  out=$(unpark_ready "$dir") || fail "record-park: the release steer failed: $out"
+  mkdir -p "$dir/home/state/$ID.inbox/handled"
+  mv "$dir/home/state/$ID.inbox/"*.msg "$dir/home/state/$ID.inbox/handled/"
+  printf 'done [at=%s]: branch %s pushed, no PR (CI slots)\n' "$(( $(date +%s) + 30 ))" "$BRANCH" >> "$dir/home/state/$ID.status"
+  out=$(lab_env "$dir" "$dir/root/bin/fm-ready-branch.sh" "$ID" "$BRANCH" 2>&1) || fail "record-park: a repeated record failed: $out"
+  case "$out" in *"already records"*"parked: $ID"*) ;; *) fail "record-park: a repeated record did not park again: $out" ;; esac
+  [ "$(meta_value "$dir" parked)" = 1 ] || fail "record-park: a repeated record left the copy held"
+
+  dir=$(make_ready_lab record-dirty)
+  grep -v '^ready_branch=' "$dir/home/state/$ID.meta" > "$dir/meta.new"
+  cat "$dir/meta.new" > "$dir/home/state/$ID.meta"
+  printf 'edit\n' >> "$dir/pool/1/project/change.txt"
+  out=$(lab_env "$dir" "$dir/root/bin/fm-ready-branch.sh" "$ID" "$BRANCH" 2>&1) || fail "record-dirty: a refused park failed the record: $out"
+  [ "$(meta_value "$dir" ready_branch)" = "$BRANCH" ] || fail "record-dirty: the ready branch was not recorded"
+  case "$out" in *"copy kept"*"uncommitted"*) ;; *) fail "record-dirty: the output does not say why the copy was kept: $out" ;; esac
+  assert_not_parked "$dir" record-dirty
+  pass "recording a ready branch returns its copy at once, parks again on a repeat record, and says why when it keeps the copy"
+}
+
+# A direct park spends the done line's one attempt as a sweep park does, so a
+# sweep that runs after the release relaunched the worker but before its steer
+# is recorded does not stop the fresh worker to park it again.
+test_ready_branch_direct_park_spends_the_sweep_attempt() {
+  local dir out
+  dir=$(make_ready_lab ready-direct-attempt)
+  park "$dir" >/dev/null 2>"$dir/err" || fail "ready-direct-attempt: setup park failed: $(cat "$dir/err")"
+  out=$(lab_env "$dir" "$dir/root/bin/fm-tree-park.sh" unpark "$ID" 2>&1) || fail "ready-direct-attempt: unpark failed: $out"
+  [ -n "$(meta_value "$dir" worktree)" ] && [ -z "$(meta_value "$dir" parked)" ] || fail "ready-direct-attempt: unpark did not give a fresh copy"
+  : > "$dir/control.log"
+  lab_env "$dir" "$dir/root/bin/fm-tree-park.sh" sweep >/dev/null 2>&1 || fail "ready-direct-attempt: the sweep failed"
+  [ ! -e "$dir/home/state/$ID.park-log" ] || fail "ready-direct-attempt: the sweep started a park of the released branch: $(cat "$dir/home/state/$ID.park-log")"
+  [ -z "$(meta_value "$dir" parked)" ] || fail "ready-direct-attempt: the sweep parked the just-released branch again"
+  ! grep -q 'exit' "$dir/control.log" || fail "ready-direct-attempt: the sweep stopped the relaunched worker: $(cat "$dir/control.log")"
+  [ "$(grep -c '^return' "$dir/treehouse.log")" = 1 ] || fail "ready-direct-attempt: the copy was returned again: $(cat "$dir/treehouse.log")"
+  pass "a direct park spends the done line's attempt, so a sweep during a release leaves the relaunched worker alone"
+}
+
+# The sweep spends one attempt per done line, so a branch that is released, hits
+# the gate again and reports a new done line is parked again.
+test_ready_branch_sweep_parks_again_after_a_new_done_line() {
+  local dir i out
+  dir=$(make_ready_lab ready-sweep)
+  lab_env "$dir" "$dir/root/bin/fm-tree-park.sh" sweep >/dev/null 2>&1 || fail "ready-sweep: the sweep failed"
+  i=0
+  until [ "$(meta_value "$dir" parked)" = 1 ] || [ "$i" -ge 100 ]; do sleep 0.1; i=$((i + 1)); done
+  [ "$(meta_value "$dir" parked)" = 1 ] || fail "ready-sweep: the sweep did not park the ready branch: $(cat "$dir/home/state/$ID.park-log" 2>/dev/null)"
+  lab_env "$dir" "$dir/root/bin/fm-tree-park.sh" sweep >/dev/null 2>&1 || fail "ready-sweep: a second sweep failed"
+  [ "$(grep -c '^return' "$dir/treehouse.log")" = 1 ] || fail "ready-sweep: the copy was returned more than once"
+  out=$(unpark_ready "$dir") || fail "ready-sweep: the release steer failed: $out"
+  # The worker took the steer, ran its gate check, held, and reported again.
+  mkdir -p "$dir/home/state/$ID.inbox/handled"
+  mv "$dir/home/state/$ID.inbox/"*.msg "$dir/home/state/$ID.inbox/handled/"
+  printf 'done [at=%s]: branch %s pushed, no PR (CI slots)\n' "$(( $(date +%s) + 30 ))" "$BRANCH" >> "$dir/home/state/$ID.status"
+  lab_env "$dir" "$dir/root/bin/fm-tree-park.sh" sweep >/dev/null 2>&1 || fail "ready-sweep: the sweep after the release failed"
+  i=0
+  until [ "$(meta_value "$dir" parked)" = 1 ] || [ "$i" -ge 100 ]; do sleep 0.1; i=$((i + 1)); done
+  [ "$(meta_value "$dir" parked)" = 1 ] || fail "ready-sweep: a released branch that reported again was not parked again: $(cat "$dir/home/state/$ID.park-log" 2>/dev/null)"
+  [ "$(grep -c "^return" "$dir/treehouse.log")" = 2 ] || fail "ready-sweep: the second park did not return its copy: $(cat "$dir/treehouse.log")"
+  pass "the sweep parks a ready branch once per done line and again after a release reports a new one"
+}
+
+# Cleanup of a ready branch is the same whether its copy is held or parked: the
+# branch stays on the remote, which is what makes the copy safe to give up.
+# Parking adds no discard path, and a parked record has no slot to return.
+test_teardown_of_a_parked_ready_branch_matches_an_unparked_one() {
+  local dir out mode
+  for mode in plain parked; do
+    dir=$(make_ready_lab "ready-teardown-$mode")
+    [ "$mode" = plain ] || park "$dir" >/dev/null 2>"$dir/err" || fail "ready-teardown-$mode: setup park failed: $(cat "$dir/err")"
+    : > "$dir/treehouse.log"
+    printf '%s\n' '## In flight' '' '## Queued' '' '## Done' > "$dir/home/data/backlog.md"
+    printf 'manual\n' > "$dir/home/config/backlog-backend"
+    out=$(lab_env "$dir" "$dir/root/bin/fm-teardown.sh" "$ID" 2>&1) || fail "ready-teardown-$mode: cleanup failed: $out"
+    [ ! -e "$dir/home/state/$ID.meta" ] || fail "ready-teardown-$mode: the record was not removed"
+    git -C "$dir/remote.git" rev-parse --verify --quiet "refs/heads/$BRANCH" >/dev/null \
+      || fail "ready-teardown-$mode: cleanup deleted the pushed branch"
+    if [ "$mode" = parked ]; then
+      ! grep -q '^return' "$dir/treehouse.log" || fail "ready-teardown-parked: cleanup returned a slot the parked task no longer holds"
+    else
+      grep -qx "return --force $dir/pool/1/project" "$dir/treehouse.log" || fail "ready-teardown-plain: cleanup did not return the held slot"
+    fi
+  done
+  pass "cleanup of a parked ready branch leaves the pushed branch and the pool alone, as for a held copy"
+}
+
 fm_test_run \
   test_parks_a_clean_handed_off_task \
   test_routed_handoff_record_releases_and_parks \
@@ -566,4 +859,12 @@ fm_test_run \
   test_refused_unpark_stays_parked_and_sends_nothing \
   test_failed_rollback_names_the_copy_it_still_holds \
   test_watcher_sweep_parks_and_wakes_once_on_a_report \
-  test_teardown_after_merge_on_a_parked_task
+  test_teardown_after_merge_on_a_parked_task \
+  test_ready_branch_parks_and_returns_its_copy \
+  test_ready_branch_refuses_each_unsafe_copy \
+  test_ready_branch_steer_leases_a_fresh_copy_at_the_pushed_branch \
+  test_ready_branch_refused_unpark_stays_parked \
+  test_recording_a_ready_branch_returns_the_copy_or_says_why \
+  test_ready_branch_direct_park_spends_the_sweep_attempt \
+  test_ready_branch_sweep_parks_again_after_a_new_done_line \
+  test_teardown_of_a_parked_ready_branch_matches_an_unparked_one

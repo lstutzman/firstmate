@@ -13,6 +13,13 @@
 # no record. The branch's PR opens later through /no-mistakes, which validates it
 # (.agents/skills/ship-landing).
 #
+# Either way it then runs bin/fm-tree-park.sh park, which returns the task's pool
+# copy once the branch is pushed and the copy is clean, so parked branches stop
+# holding the pool. A repeat run covers a released branch that held at the gate
+# and reported done again. When the copy must stay, it prints `copy kept: <why>`
+# and still exits 0; the watcher's sweep retries later. A steer to the task gives
+# it a fresh copy (bin/fm-send.sh).
+#
 # list prints `<task-id> <branch> <project>` for each task record in this home's
 # state that has a ready_branch= line and no pr= line: the parked branches still
 # waiting for a CI slot.
@@ -40,7 +47,14 @@ META="$STATE/$ID.meta"
 [ -f "$META" ] && [ ! -L "$META" ] || { echo "error: task $ID has no record at $META" >&2; exit 1; }
 if grep -q '^ready_branch=' "$META"; then
   echo "task $ID already records its ready branch"
-  exit 0
+else
+  printf 'ready_branch=%s\n' "$BRANCH" >> "$META"
+  echo "recorded ready branch $BRANCH for task $ID"
 fi
-printf 'ready_branch=%s\n' "$BRANCH" >> "$META"
-echo "recorded ready branch $BRANCH for task $ID"
+# Give the copy back at once (bin/fm-tree-park.sh owns the rules). A refusal is
+# not a failure: the record stands, the copy stays, and the sweep retries.
+if PARK_OUT=$(FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" "$SCRIPT_DIR/fm-tree-park.sh" park "$ID" 2>&1); then
+  echo "$PARK_OUT"
+else
+  echo "copy kept: $(printf '%s' "$PARK_OUT" | tr '\n' ' ')"
+fi

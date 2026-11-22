@@ -1642,7 +1642,9 @@ wedge_defer_writing() {  # <window> <since-file> <triage-label> <idle-age>
 # Skip ONE wedge escalation, with no wake at all, for a landing task: a ship
 # whose finished PR waits only on another home's merger. Its worker has
 # stopped, nothing this home does lands it, and the merge-landed poll wakes this
-# home when it merges, so every alarm on that lane would change nothing.
+# home when it merges, so every alarm on that lane would change nothing. A ship
+# parked as a pushed ready branch with no PR (bin/fm-tree-park.sh) is skipped
+# the same way: its worker is stopped on purpose until a CI slot opens.
 # fm_office_task_landing in bin/fm-office-authority-lib.sh owns which tasks are
 # landing, shared with an office's wip count; any doubt there keeps the ladder.
 # In an office its id is the merger the PR must not be bound to, and anywhere
@@ -1650,17 +1652,23 @@ wedge_defer_writing() {  # <window> <since-file> <triage-label> <idle-age>
 # the idle timer and leaves the escalation count alone, so a task steered back
 # into fix work stops being landing and alarms within one STALE_ESCALATE_SECS.
 wedge_skip_landing() {  # <window> <since-file> <triage-label> <idle-age> <task>
-  local win=$1 since_file=$2 label=$3 age=$4 task=$5 office=''
+  local win=$1 since_file=$2 label=$3 age=$4 task=$5 office='' why
   [ -n "$task" ] || return 1
   if ! declare -F fm_office_task_landing >/dev/null; then
     # shellcheck source=/dev/null # Analyzed separately as a canonical lint root.
     . "$SCRIPT_DIR/fm-office-authority-lib.sh"
   fi
   ! fm_office_detect "$FM_HOME" "${FM_DATA_OVERRIDE:-$FM_HOME/data}" || office=$FM_OFFICE_DETECT_ID
-  fm_office_task_landing "$STATE" "$task" "$office" || return 1
+  if fm_office_task_landing "$STATE" "$task" "$office"; then
+    why="its finished PR waits on another home's merger"
+  elif fm_office_task_parked_ready_branch "$STATE" "$task"; then
+    why="its pushed branch waits for a CI slot and its copy was returned to the pool"
+  else
+    return 1
+  fi
   clear_write_tracking "$(window_key "$win")"
   date +%s > "$since_file"
-  triage_log "absorbed $label (landing: its finished PR waits on another home's merger, idle ${age}s): $win"
+  triage_log "absorbed $label (landing: $why, idle ${age}s): $win"
 }
 
 # One wait record, carrying every field a recheck needs to be correct. Emitting

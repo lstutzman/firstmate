@@ -508,8 +508,53 @@ fm_office_msg_after() {  # <msg> <epoch>
   [ "$epoch" -ge "$2" ]
 }
 
+# 0 when task <id>'s steering inbox holds no unhandled message and no handled
+# one written after <epoch>, so no steer reached the worker since its done line.
+fm_office_inbox_quiet_since() {  # <state-dir> <id> <epoch>
+  local msg
+  for msg in "$1/$2.inbox"/*.msg; do
+    [ ! -e "$msg" ] || return 1
+  done
+  for msg in "$1/$2.inbox/handled"/*.msg; do
+    [ -f "$msg" ] || continue
+    ! fm_office_msg_after "$msg" "$3" || return 1
+  done
+}
+
+# 0 when task <id> is a ship that finished as a pushed ready branch with no PR
+# (bin/fm-ready-branch.sh) and has been left alone since: ready_branch= and no
+# pr= in its record, no open decision, a stamped done line as its latest event,
+# and no steer since. Sets FM_OFFICE_READY_DONE_AT to that done line's epoch, so
+# a branch released and finished again reads as a new wait.
+# bin/fm-tree-park.sh parks such a task's copy, and bin/fm-watch.sh skips wedge
+# alarms for the stopped worker of one it has parked. This is deliberately not
+# fm_office_task_landing: that counts only a PR waiting on another home's merger,
+# and an office's wip count and the fleet snapshot read it.
+FM_OFFICE_READY_DONE_AT=
+fm_office_task_ready_branch_waiting() {  # <state-dir> <id>
+  local meta=$1/$2.meta status=$1/$2.status last verb
+  FM_OFFICE_READY_DONE_AT=
+  [ "$(fm_office_meta_value "$meta" kind)" = ship ] || return 1
+  [ -n "$(fm_office_meta_value "$meta" ready_branch)" ] || return 1
+  [ -z "$(fm_office_meta_value "$meta" pr)" ] || return 1
+  [ -f "$status" ] && [ ! -L "$status" ] && [ -r "$status" ] || return 1
+  [ -z "$(status_open_decisions "$status" ship)" ] || return 1
+  last=$(_fm_status_latest_event "$status" merge-handoff-)
+  status_line_verb "$last" verb
+  [ "$verb" = "done" ] || return 1
+  FM_OFFICE_READY_DONE_AT=$(status_line_at_epoch "$last") || return 1
+  fm_office_inbox_quiet_since "$1" "$2" "$FM_OFFICE_READY_DONE_AT" || return 1
+}
+
+# 0 when task <id> is parked (bin/fm-tree-park.sh returned its copy) as a ready
+# branch that is still waiting, as above.
+fm_office_task_parked_ready_branch() {  # <state-dir> <id>
+  [ "$(fm_office_meta_value "$1/$2.meta" parked)" = 1 ] || return 1
+  fm_office_task_ready_branch_waiting "$1" "$2"
+}
+
 fm_office_task_landing() {  # <state-dir> <id> <office-id>
-  local state=$1 id=$2 self=$3 meta=$1/$2.meta status=$1/$2.status url n open key verb note handed=0 last done_at msg project merger rc=0
+  local state=$1 id=$2 self=$3 meta=$1/$2.meta status=$1/$2.status url n open key verb note handed=0 last done_at project merger rc=0
   [ "$(fm_office_meta_value "$meta" kind)" = ship ] || return 1
   url=$(fm_office_meta_value "$meta" pr)
   [ -n "$url" ] || return 1
@@ -527,13 +572,7 @@ EOF
   status_line_verb "$last" verb
   [ "$verb" = "done" ] || return 1
   done_at=$(status_line_at_epoch "$last") || return 1
-  for msg in "$state/$id.inbox"/*.msg; do
-    [ ! -e "$msg" ] || return 1
-  done
-  for msg in "$state/$id.inbox/handled"/*.msg; do
-    [ -f "$msg" ] || continue
-    ! fm_office_msg_after "$msg" "$done_at" || return 1
-  done
+  fm_office_inbox_quiet_since "$state" "$id" "$done_at" || return 1
   [ "$handed" = 0 ] || return 0
   if [ -f "$state/$id.merge-handoff" ] && [ ! -L "$state/$id.merge-handoff" ]; then
     read -r key _ < "$state/$id.merge-handoff" 2>/dev/null || key=

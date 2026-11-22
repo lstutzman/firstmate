@@ -976,7 +976,7 @@ for meta in "$STATE"/*.meta; do
   window=$(fm_meta_get "$meta" window)
   target=$(fm_backend_target_of_meta "$meta")
   if [ "$(fm_meta_get "$meta" parked)" = 1 ]; then
-    printf 'endpoint: parked (copy returned to the pool while its PR waits on its merger; a text steer through bin/fm-send.sh brings back a copy and worker)\n'
+    printf 'endpoint: parked (copy returned to the pool while its PR waits on its merger or its pushed branch waits for a CI slot; a text steer through bin/fm-send.sh brings back a copy and worker)\n'
   elif [ -n "$window" ]; then
     backend=$(fm_backend_of_meta "$meta")
     endpoint_rc=0
