@@ -5295,4 +5295,30 @@ PATH="$UNDISP/bin:$PATH" FM_HOME="$UNDISP/home" \
   "$ROOT/bin/fm-procevent-lavish.sh" retire "$undisp_art" >/dev/null 2>&1 || true
 pass "arm does not launch beside a stale claim whose process group is alive"
 
+# Two recovered runners prepare the shared capture directories at the same moment.
+# The loser of the mkdir race sees the directory already there and must carry on,
+# not die before it launches its source. The shim makes this deterministic: it
+# creates the directory, then reports the failure the race loser sees.
+PREP="$TMP_ROOT/prepare-race"
+mkdir -p "$PREP/shim" "$PREP/state"
+chmod 0700 "$PREP/state"
+real_mkdir=$(command -v mkdir)
+cat > "$PREP/shim/mkdir" <<SHIM
+#!/usr/bin/env bash
+"$real_mkdir" "\$@" || exit \$?
+exec "$real_mkdir" "\$@"
+SHIM
+chmod +x "$PREP/shim/mkdir"
+for prepare_kind in inbox reservation; do
+  prepare_out=$(PATH="$PREP/shim:$PATH" bash -c '
+    . "$1/bin/fm-pr-lib.sh"
+    . "$1/bin/fm-wake-lib.sh"
+    . "$1/bin/fm-procevent-lib.sh"
+    "fm_procevent_capture_${3}_prepare" "$2"
+  ' _ "$ROOT" "$PREP/state" "$prepare_kind" 2>&1) \
+    || fail "capture $prepare_kind preparation failed after losing a concurrent mkdir race: $prepare_out"
+  [ -d "$prepare_out" ] || fail "capture $prepare_kind preparation did not return its directory: $prepare_out"
+done
+pass "capture directory preparation survives losing a concurrent mkdir race"
+
 printf '\nall procevent tests passed\n'
