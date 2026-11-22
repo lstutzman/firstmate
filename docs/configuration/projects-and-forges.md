@@ -104,8 +104,10 @@ A draft PR is left out because GitHub says so (`isDraft`), and a promotion PR be
 A PR waiting for the captain's merge word is left out only on positive evidence from a task record in a local home: the task recorded `yolo` that is not on, which waits for the captain's merge word by definition, or its backlog row is held for the captain and not done.
 A PR of a ship in a remote home is read the same way from that home's cached summary, when it is less than two hours old; a missing or older copy is skipped with one `warning:` line and never changes the gate.
 A PR no record shows to be waiting counts.
-A PR held for a release day (Wednesday) counts too: firstmate has no signal for it, so the gate leaves out only the classes it can detect.
-That Wednesday-hold signal is tracked as a follow-up under Linear FLEET-145 (backlog item `wednesday-hold-signal`).
+A PR another home holds (Slarti's Wednesday pile, a Navigator PR waiting for the captain's merge word) carries the GitHub label `held` (`HELD_LABEL` in `bin/fm-pr-drain.py`, the one definition).
+The home that holds the PR sets the label at hold time and the same home removes it when the hold ends; firstmate sets and removes nothing.
+The label leaves the PR out of the CI-slot count only: the drain's eligible count, `open` (P) and so the S comparison; it never frees a place under the open-PR cap, so labelled PRs still count toward the gate's cap, and the gate reports them as `N PR(s) labelled held use no CI slot but are counted`.
+The gate reads the label from the open-PR list it already makes, with no extra GitHub call per PR.
 An unreadable declaration or GitHub reads as `unknown`, and the worker opens the pull request as usual.
 An unreadable task record leaves no PR out as held, so every ready PR counts and the gate can hold.
 `config/open-pr-cap` holds one `<project> <cap>` line per project in the same format and is inherited the same way; a project that declares S and no cap line gets `min(2 x S, 16)`, and a project with no S has none.

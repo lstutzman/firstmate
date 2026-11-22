@@ -433,6 +433,29 @@ test_gate_holds_a_pr_opening_at_the_cap() {
   pass "gate holds a PR opening at the eligible cap of min(2 x S, 16), leaves drafts and promotion PRs out, and reads unknown or none rather than guessing"
 }
 
+test_label_held_prs_leave_the_slot_count_but_not_the_cap() {
+  printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
+  rm -f "$GATE_HOME/config/open-pr-cap"
+  python3 -I - "$GHDATA" 8 3 <<'PY2'
+import json, sys
+total, labelled = int(sys.argv[2]), int(sys.argv[3])
+pr = lambda n: {'createdAt': '2026-11-01T00:00:00Z', 'isDraft': False, 'url': f'https://github.com/o/r/pull/{n}', 'headRefName': f'fm/b{n}',
+                'labels': [{'name': 'held'}] if n <= labelled else [{'name': 'other'}]}
+json.dump([pr(n) for n in range(1, total + 1)], open(sys.argv[1] + '/open.json', 'w'))
+PY2
+  assert_equals "open o/r 5" "$("$DRAIN" open "$PROJECT")" "3 PRs labelled held were counted in the CI-slot count of 8 ready PRs"
+  assert_contains "$(gate)" "hold o/r open-PR cap reached: 8 eligible open PR(s) against the open-PR cap of 8" "labelled PRs were left out of the open-PR cap"
+  assert_contains "$(gate)" "3 PR(s) labelled \`held\` use no CI slot but are counted" "the hold did not report the labelled count"
+  python3 -I - "$GHDATA" <<'PY2'
+import json, sys
+json.dump([{'createdAt': '2026-11-01T00:00:00Z', 'isDraft': False, 'url': f'https://github.com/o/r/pull/{n}', 'headRefName': f'fm/b{n}'} for n in range(1, 9)],
+          open(sys.argv[1] + '/open.json', 'w'))
+PY2
+  assert_equals "open o/r 8" "$("$DRAIN" open "$PROJECT")" "unlabelled PRs did not count as before"
+  assert_contains "$(gate)" "0 PR(s) labelled" "a PR list with no labels field was not read as unlabelled"
+  pass "a PR labelled held leaves the CI-slot count but still counts toward the open-PR cap; an unlabelled one counts as before"
+}
+
 # state with a declared S: drain starts at 24 eligible and ends at S or fewer, never counting drafts or promotion PRs.
 state_r() {
   FM_HOME="$GATE_HOME" "$DRAIN" state "$PROJECT" r
@@ -541,6 +564,7 @@ fm_test_run \
   test_open_count_reads_one_repository \
   test_open_leaves_drafts_out_of_the_count \
   test_gate_holds_a_pr_opening_at_the_cap \
+  test_label_held_prs_leave_the_slot_count_but_not_the_cap \
   test_drain_with_slots_ends_at_s_not_zero \
   test_drain_counts_only_eligible_prs \
   test_drain_walk_back_leaves_held_prs_out \
