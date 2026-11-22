@@ -384,9 +384,13 @@ FM_CAPACITY_LIB_DIR=$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] ||
 # silent empty answer reads as "no remote ships" and lets a spawn through.
 fm_remote_ship_deps() {
   declare -F fm_firstmate_root_home >/dev/null 2>&1 \
-    || . "$FM_CAPACITY_LIB_DIR/fm-wake-lib.sh" 2>/dev/null
+    || {
+      # shellcheck source=bin/fm-wake-lib.sh
+      . "$FM_CAPACITY_LIB_DIR/fm-wake-lib.sh" 2>/dev/null; }
   declare -F secondmate_registry_parse_line >/dev/null 2>&1 \
-    || . "$FM_CAPACITY_LIB_DIR/fm-secondmate-registry-lib.sh" 2>/dev/null
+    || {
+      # shellcheck source=bin/fm-secondmate-registry-lib.sh
+      . "$FM_CAPACITY_LIB_DIR/fm-secondmate-registry-lib.sh" 2>/dev/null; }
   declare -F fm_firstmate_root_home >/dev/null 2>&1 \
     && declare -F secondmate_registry_parse_line >/dev/null 2>&1 \
     && command -v jq >/dev/null 2>&1 && return 0
