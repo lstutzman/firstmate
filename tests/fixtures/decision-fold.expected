@@ -28,16 +28,36 @@ $'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-17
 $'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tduplicate.'
 === cutover (unknown)
 $'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover.'
+=== several synthetic copies per correlation (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover\nu-1792000100-aaaaaaaaaaaaaaaa\tneeds-decision\tcopy one\nu-1792000101-aaaaaaaaaaaaaaaa\tneeds-decision\tcopy two\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request.'
+=== keyed ask drops one correlation only (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies.'
+=== stated keys shaped like synthetic keys (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000200-cccccccccccccccc\tneeds-decision\tstated key shaped like a synthetic one\nu-1792000201\tneeds-decision\tshaped without correlation.'
+=== keyed ask drops a stated synthetic-shaped key (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key.'
+=== reopened after a correlated close (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key\nu-1792000300-dddddddddddddddd\tneeds-decision\treopen me.'
+=== correlation ids compare case-exact (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key\nu-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case.'
+=== ambiguous unkeyed closes leave both open (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key\nu-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case\nu-1792000500-1111111111111111\tneeds-decision\tfirst of two\nu-1792000501-1111111111111111\tneeds-decision\tsecond of two.'
+=== default entry counts toward ambiguity (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key\nu-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case\nu-1792000500-1111111111111111\tneeds-decision\tfirst of two\nu-1792000501-1111111111111111\tneeds-decision\tsecond of two\ndefault\tblocked\tdefault entry beside synthetic ones.'
+=== explicit default close (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key\nu-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case\nu-1792000500-1111111111111111\tneeds-decision\tfirst of two\nu-1792000501-1111111111111111\tneeds-decision\tsecond of two.'
+=== correlated resolve drops every copy (unknown)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key\nu-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case.'
 === failed terminals (unknown)
-$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover.'
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key\nu-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case.'
 === invalid bytes (unknown)
-$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp.'
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key\nu-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp.'
 === colonless terminal (unknown)
-$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key\nu-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
 === done terminals (unknown)
-$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key\nu-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
 === final (unknown)
-$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  \nlast\tneeds-decision\tunterminated last line.'
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key\nu-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  \nlast\tneeds-decision\tunterminated last line.'
 === keyed opens (ship)
 $'alpha\tneeds-decision\tfirst choice\nbeta\tblocked\ttoken missing.'
 === repeated key moves last (ship)
@@ -68,6 +88,26 @@ $'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-17
 $'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tduplicate.'
 === cutover (ship)
 $'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover.'
+=== several synthetic copies per correlation (ship)
+$'u-1792000100-aaaaaaaaaaaaaaaa\tneeds-decision\tcopy one\nu-1792000101-aaaaaaaaaaaaaaaa\tneeds-decision\tcopy two\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request.'
+=== keyed ask drops one correlation only (ship)
+$'u-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies.'
+=== stated keys shaped like synthetic keys (ship)
+$'u-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000200-cccccccccccccccc\tneeds-decision\tstated key shaped like a synthetic one\nu-1792000201\tneeds-decision\tshaped without correlation.'
+=== keyed ask drops a stated synthetic-shaped key (ship)
+$'u-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key.'
+=== reopened after a correlated close (ship)
+$'u-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key\nu-1792000300-dddddddddddddddd\tneeds-decision\treopen me.'
+=== correlation ids compare case-exact (ship)
+$'u-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case.'
+=== ambiguous unkeyed closes leave both open (ship)
+$'u-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case\nu-1792000500-1111111111111111\tneeds-decision\tfirst of two\nu-1792000501-1111111111111111\tneeds-decision\tsecond of two.'
+=== default entry counts toward ambiguity (ship)
+$'u-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case\nu-1792000500-1111111111111111\tneeds-decision\tfirst of two\nu-1792000501-1111111111111111\tneeds-decision\tsecond of two\ndefault\tblocked\tdefault entry beside synthetic ones.'
+=== explicit default close (ship)
+$'u-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case\nu-1792000500-1111111111111111\tneeds-decision\tfirst of two\nu-1792000501-1111111111111111\tneeds-decision\tsecond of two.'
+=== correlated resolve drops every copy (ship)
+.
 === failed terminals (ship)
 .
 === invalid bytes (ship)
@@ -108,6 +148,26 @@ $'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-17
 $'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tduplicate.'
 === cutover (scout)
 $'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover.'
+=== several synthetic copies per correlation (scout)
+$'u-1792000100-aaaaaaaaaaaaaaaa\tneeds-decision\tcopy one\nu-1792000101-aaaaaaaaaaaaaaaa\tneeds-decision\tcopy two\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request.'
+=== keyed ask drops one correlation only (scout)
+$'u-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies.'
+=== stated keys shaped like synthetic keys (scout)
+$'u-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000200-cccccccccccccccc\tneeds-decision\tstated key shaped like a synthetic one\nu-1792000201\tneeds-decision\tshaped without correlation.'
+=== keyed ask drops a stated synthetic-shaped key (scout)
+$'u-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key.'
+=== reopened after a correlated close (scout)
+$'u-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key\nu-1792000300-dddddddddddddddd\tneeds-decision\treopen me.'
+=== correlation ids compare case-exact (scout)
+$'u-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case.'
+=== ambiguous unkeyed closes leave both open (scout)
+$'u-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case\nu-1792000500-1111111111111111\tneeds-decision\tfirst of two\nu-1792000501-1111111111111111\tneeds-decision\tsecond of two.'
+=== default entry counts toward ambiguity (scout)
+$'u-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case\nu-1792000500-1111111111111111\tneeds-decision\tfirst of two\nu-1792000501-1111111111111111\tneeds-decision\tsecond of two\ndefault\tblocked\tdefault entry beside synthetic ones.'
+=== explicit default close (scout)
+$'u-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case\nu-1792000500-1111111111111111\tneeds-decision\tfirst of two\nu-1792000501-1111111111111111\tneeds-decision\tsecond of two.'
+=== correlated resolve drops every copy (scout)
+.
 === failed terminals (scout)
 .
 === invalid bytes (scout)
@@ -148,13 +208,33 @@ $'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-17
 $'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tduplicate.'
 === cutover (secondmate)
 $'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover.'
+=== several synthetic copies per correlation (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover\nu-1792000100-aaaaaaaaaaaaaaaa\tneeds-decision\tcopy one\nu-1792000101-aaaaaaaaaaaaaaaa\tneeds-decision\tcopy two\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request.'
+=== keyed ask drops one correlation only (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies.'
+=== stated keys shaped like synthetic keys (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000200-cccccccccccccccc\tneeds-decision\tstated key shaped like a synthetic one\nu-1792000201\tneeds-decision\tshaped without correlation.'
+=== keyed ask drops a stated synthetic-shaped key (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key.'
+=== reopened after a correlated close (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key\nu-1792000300-dddddddddddddddd\tneeds-decision\treopen me.'
+=== correlation ids compare case-exact (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key\nu-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case.'
+=== ambiguous unkeyed closes leave both open (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key\nu-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case\nu-1792000500-1111111111111111\tneeds-decision\tfirst of two\nu-1792000501-1111111111111111\tneeds-decision\tsecond of two.'
+=== default entry counts toward ambiguity (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key\nu-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case\nu-1792000500-1111111111111111\tneeds-decision\tfirst of two\nu-1792000501-1111111111111111\tneeds-decision\tsecond of two\ndefault\tblocked\tdefault entry beside synthetic ones.'
+=== explicit default close (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key\nu-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case\nu-1792000500-1111111111111111\tneeds-decision\tfirst of two\nu-1792000501-1111111111111111\tneeds-decision\tsecond of two.'
+=== correlated resolve drops every copy (secondmate)
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key\nu-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case.'
 === failed terminals (secondmate)
-$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\ndefault\tneeds-decision\tbefore cutover\nu-1791843600\tneeds-decision\tat cutover.'
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key\nu-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case.'
 === invalid bytes (secondmate)
-$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp.'
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key\nu-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp.'
 === colonless terminal (secondmate)
-$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key\nu-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
 === done terminals (secondmate)
-$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key\nu-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  .'
 === final (secondmate)
-$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  \nlast\tneeds-decision\tunterminated last line.'
+$'gamma\tneeds-decision\tanother choice\nplaceholder\tblocked\tplaceholder\nu-1791843600\tneeds-decision\tat cutover\nu-1792000102-bbbbbbbbbbbbbbbb\tneeds-decision\tother request\nreal\tneeds-decision\tkeyed ask supersedes its copies\nu-1792000201\tneeds-decision\tshaped without correlation\nreal2\tneeds-decision\tkeyed ask drops the shaped key\nu-1792000401-abcdefabcdefabcd\tneeds-decision\tlower case\na\tneeds-decision\tcaf\351 broken bytes\nu-1792000000-0123456789abcdef\tblocked\t\377\376 x\ndefault\tneeds-decision\tinvalid byte in stamp\nfinal\tneeds-decision\tfinal open\ntail\tblocked\ttrailing spaces  \nlast\tneeds-decision\tunterminated last line.'

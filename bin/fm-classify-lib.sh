@@ -1455,17 +1455,82 @@ status_open_decisions() {  # <status-file> [<kind>]
         s = trim_left(substr(s, stop + 1))
       return index(s, "[key=") == 1 && has_token(s, "[key=") ? raw_key(s) : ""
     }
-    function noted_drop(key,    c, n, i, doomed) {
-      n = 0
-      for (c in records)
-        if ((c == "default" || synthetic(c)) && noted_key(notes[c]) == key) doomed[++n] = c
-      for (i = 1; i <= n; i++) delete records[doomed[i]]
+    # The correlation id of a synthetic key (u-<digits>-<corr>), else "".
+    function corr_of(key,    rest, dash) {
+      if (substr(key, 1, 2) != "u-") return ""
+      rest = substr(key, 3)
+      dash = index(rest, "-")
+      if (!dash || !synthetic(key)) return ""
+      return substr(rest, dash + 1)
     }
-    function corr_drop(corr,    c, n, i, doomed) {
-      n = 0
-      for (c in records)
-        if (synthetic(c) && substr(c, length(c) - length(corr)) == "-" corr) doomed[++n] = c
-      for (i = 1; i <= n; i++) delete records[doomed[i]]
+    # Open records are indexed as they open and close, so no line scans the set:
+    # ucount/usum count the open "default" and synthetic records and sum their
+    # serials, and ccount/csum do the same per correlation id. When exactly one
+    # record matches, its serial sum names it through order[], which is the
+    # single-match answer the former scan produced. members lists, per
+    # correlation id, every synthetic key opened under it (stale entries are
+    # skipped), so a correlated close drops only the records of its own id.
+    function open_record(key, serial, value, note,    c, nk) {
+      if (key in records) close_record(key)
+      records[key] = serial
+      values[key] = value
+      notes[key] = note
+      order[serial] = key
+      if (key == "default" || synthetic(key)) {
+        ucount++
+        usum += serial
+        nk = noted_key(note)
+        if (nk != "" && !((nk, key) in nlisted)) { nlisted[nk, key] = 1; nmembers[nk, ++nmember_count[nk]] = key }
+      }
+      c = corr_of(key)
+      if (c != "") {
+        ccount[c]++
+        csum[c] += serial
+        if (!(key in listed)) { listed[key] = 1; members[c, ++member_count[c]] = key }
+      }
+    }
+    function close_record(key,    c, serial) {
+      if (!(key in records)) return
+      serial = records[key]
+      if (key == "default" || synthetic(key)) { ucount--; usum -= serial }
+      c = corr_of(key)
+      if (c != "") { ccount[c]--; csum[c] -= serial }
+      delete records[key]
+    }
+    function close_all(    key) {
+      for (key in records) delete records[key]
+      ucount = 0
+      usum = 0
+      split("", ccount)
+      split("", csum)
+      split("", members)
+      split("", member_count)
+      split("", listed)
+      split("", nmembers)
+      split("", nmember_count)
+      split("", nlisted)
+    }
+    # An exact-key line closes the unkeyed records whose note leads with that
+    # key; nmembers lists them per noted key (stale entries are rechecked).
+    function noted_drop(key,    i, n, c) {
+      n = nmember_count[key]
+      for (i = 1; i <= n; i++) {
+        c = nmembers[key, i]
+        delete nlisted[key, c]
+        delete nmembers[key, i]
+        if ((c in records) && noted_key(notes[c]) == key) close_record(c)
+      }
+      nmember_count[key] = 0
+    }
+    function corr_drop(corr,    i, n, key) {
+      n = member_count[corr]
+      for (i = 1; i <= n; i++) {
+        key = members[corr, i]
+        close_record(key)
+        delete listed[key]
+        delete members[corr, i]
+      }
+      member_count[corr] = 0
     }
     function allowed(key, note,    i, prefix) {
       for (i = 1; i <= reserved_count; i++) {
@@ -1495,7 +1560,7 @@ status_open_decisions() {  # <status-file> [<kind>]
       if (!has_colon && !has_token(s, "[key=")) next
       if (has_colon && (v == "done" || v == "failed") &&
           (kind == "ship" || kind == "scout")) {
-        for (key in records) delete records[key]
+        close_all()
         next
       }
       if (v == "done") {
@@ -1527,26 +1592,18 @@ status_open_decisions() {  # <status-file> [<kind>]
       if (!allowed(key, note)) next
       if (!unkeyed) noted_drop(key)
       if (v == "needs-decision" || v == "blocked") {
-        order[++serial] = key
-        records[key] = serial
-        notes[key] = note
-        values[key] = key "\t" v "\t" note
+        open_record(key, ++serial, key "\t" v "\t" note, note)
       } else {
         if (unkeyed && !(key in records) && ((corr = correlation(s)) == "" || v != resolve)) {
-          count = 0
-          target = ""
-          for (candidate in records) {
-            if (corr != "") {
-              if (!synthetic(candidate) ||
-                  substr(candidate, length(candidate) - length(corr)) != "-" corr) continue
-            } else if (candidate != "default" && !synthetic(candidate)) continue
-            target = candidate
-            count++
+          if (corr != "") {
+            if (ccount[corr] != 1) next
+            key = order[csum[corr]]
+          } else {
+            if (ucount != 1) next
+            key = order[usum]
           }
-          if (count != 1) next
-          key = target
         }
-        delete records[key]
+        close_record(key)
       }
       if ((unkeyed ? v == resolve : v != held) && (corr = correlation(s)) != "") corr_drop(corr)
     }
