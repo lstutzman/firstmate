@@ -859,7 +859,7 @@ navigator_held_done 'done' held
 [ -z "$(run_alarm check)" ] || fail 'a done child held for a captain call is complete, not an incomplete inventory'
 mate 0 0 3601
 navigator_held_done 'done' unheld
-assert_contains "$(run_alarm check)" 'home inventory incomplete' 'a done child with no captain hold for its task still alarms as incomplete'
+assert_not_contains "$(run_alarm check)" 'inventory' 'a done child with no captain hold and no known done time is normal in-flight work'
 mate 0 0 0
 run_alarm check >/dev/null
 mate 0 0 3601
@@ -868,6 +868,73 @@ assert_contains "$(run_alarm check)" 'home inventory incomplete' 'a failed child
 mate 0 0 0
 run_alarm check >/dev/null
 pass 'a captain-held in-flight item with a done child counts as complete; other terminal items still alarm'
+
+# FLEET-171: a done child reports before its merge and clean-up; that is normal in-flight work until
+# it stays uncleaned past done_grace_hours (default 2), when the finding names the task and its age.
+done_in_flight() { # <done age seconds or null> [task] [summary age seconds] [failed task]
+  python3 - "$TMP_ROOT/mate/state/home-summary.json" "$1" "${2:-d1-ci-slots-code}" "${3:-0}" "${4:-}" <<'PY_DONE'
+from pathlib import Path
+import json,sys
+path=Path(sys.argv[1]); value=json.loads(path.read_text())
+age,item,since,failed=json.loads(sys.argv[2]),sys.argv[3],int(sys.argv[4]),sys.argv[5]
+ids=[item]+([failed] if failed else [])
+endpoints=[dict(id=item, kind='ship', state='done', age_seconds=age)]
+endpoints+=[dict(id=failed, kind='ship', state='failed', age_seconds=age)] if failed else []
+value.update(valid=False, state='unknown', generated_epoch=value['generated_epoch']-since,
+             invalidity=dict(kind='terminal_in_flight', ids=ids),
+             reason=f'in-flight backlog item has terminal child state: {item}=done',
+             counts=dict(in_flight=len(ids), held_in_flight=0, active_children=0, decisions_open=0, holds=0,
+                         endpoints=len(endpoints)),
+             decisions_open=[], holds=[], endpoints=endpoints)
+path.write_text(json.dumps(value))
+PY_DONE
+}
+mate 0 0 0
+done_in_flight 600
+out=$(run_alarm check)
+assert_not_contains "$out" 'inventory unavailable' 'a freshly done child is not an inventory fault'
+assert_not_contains "$out" 'inventory incomplete' 'a freshly done child is not an incomplete inventory'
+assert_not_contains "$out" 'not merged and cleaned up' 'a freshly done child is inside the grace period'
+mate 0 0 0
+done_in_flight 3600
+out=$(run_alarm check)
+assert_not_contains "$out" 'inventory' 'a done child inside the grace period is normal in-flight work'
+assert_not_contains "$out" 'not merged and cleaned up' 'a done child inside the grace period raises no finding'
+mate 0 0 3601
+done_in_flight 7201
+out=$(run_alarm check)
+assert_contains "$out" 'Done task not merged and cleaned up: mate: d1-ci-slots-code done 2h0m ago' 'a done child past the grace period names the task and its age'
+assert_not_contains "$out" 'inventory incomplete' 'an overdue done child is not called an inventory fault'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 3601
+done_in_flight 5400
+printf '%s\n' '{"persist_polls":1,"done_grace_hours":1}' > "$HOME_FIX/config/fleet-alarm.json"
+assert_contains "$(run_alarm check)" 'not merged and cleaned up: mate: d1-ci-slots-code' 'done_grace_hours moves the grace period'
+printf '%s\n' '{"persist_polls":1}' > "$HOME_FIX/config/fleet-alarm.json"
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 3601
+done_in_flight 3600 d1-ci-slots-code 6000
+assert_contains "$(run_alarm check)" 'Done task not merged and cleaned up: mate: d1-ci-slots-code done 2h40m ago' 'the summary age counts toward the done age'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 3601
+done_in_flight null d1-ci-slots-code 6000
+out=$(run_alarm check)
+assert_not_contains "$out" 'inventory' 'a done child with no known done time is normal in-flight work'
+assert_not_contains "$out" 'not merged and cleaned up' 'a done child with no known done time is inside the grace period'
+mate 0 0 0
+done_in_flight null d1-ci-slots-code 0 f8-mac-paths
+assert_contains "$(run_alarm check)" 'home inventory incomplete' 'an undated done child beside a failed child still alarms as incomplete'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 0
+done_in_flight 600 d1-ci-slots-code 0 f8-mac-paths
+assert_contains "$(run_alarm check)" 'home inventory incomplete' 'a done child beside a failed child still alarms as incomplete'
+mate 0 0 0
+run_alarm check >/dev/null
+pass 'a done child is normal in-flight work inside done_grace_hours and an uncleaned-task finding past it'
 
 # cl-keeper and Deep Thought: every in-flight item waits on the mate's own needs-decision for Lee.
 open_ask_mate() { # status lines (one per argument, each stamped 3601 seconds ago)

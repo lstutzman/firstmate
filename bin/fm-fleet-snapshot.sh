@@ -1271,6 +1271,7 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
              captain_held:($row != null and $row.hold_kind == "captain" and $row.state != "done"),
              blocked:($row != null and (($row.unresolved_blocker_ids // []) | length) > 0)}][:$ships_n]),
         endpoints:([$tasks[] | {id,kind,state:.current_state.state,source:.current_state.source,
+          age_seconds:(if .current_state.state == "done" and .current_state.source == "status-log" and .paths.status_log.last_event.state == "done" then (.paths.status_log.last_event.age_seconds // null) else null end),
           endpoint:(.endpoint + {target:((.endpoint.target // null) | if . == null then null else trunc(240) end)})}][:$child_n]),
         counts:{
           in_flight:($owned_in_flight | length),

@@ -8,7 +8,7 @@ read), pool_remaining (.1, mean remaining
 weekly capacity across non-stale Claude readings), silent_minutes
 (60), stale_minutes (120), persist_polls (2), budget_seconds (24), carrying_reset_hours (6),
 carrying_pool_floor (.4), working_ceiling_multiple (6), external_wait_ceiling_hours (24),
-queue_depth (30) and queue_age_days (14).
+queue_depth (30), queue_age_days (14) and done_grace_hours (2).
 cpa-usage-host selects local
 or SSH quota reads, as in dispatch resolution. A missing host uses local CLI.
 Each Claude account's carrying threshold comes from the proxy config's routing.quota-threshold
@@ -225,7 +225,8 @@ def settings():
                   stale_minutes=120, persist_polls=2, budget_seconds=24,
                   carrying_reset_hours=6, carrying_pool_floor=.4,
                   working_ceiling_multiple=6, external_wait_ceiling_hours=24,
-                  orphan_proc_hours=3, queue_depth=30, queue_age_days=14)
+                  orphan_proc_hours=3, queue_depth=30, queue_age_days=14,
+                  done_grace_hours=2)
     path = CONFIG / 'fleet-alarm.json'
     if path.exists():
         supplied = json.loads(path.read_text())
@@ -340,6 +341,28 @@ def held_terminal_complete(summary, counts):
     held = {row.get('id') for row in decisions if isinstance(row, dict) and row.get('verb') == 'captain-hold'}
     done = {row.get('id') for row in endpoints if isinstance(row, dict) and row.get('state') == 'done'}
     return all(item in held and item in done for item in ids)
+
+
+def done_in_grace(summary, counts, cfg):
+    # FLEET-171: a done child reports before its merge and clean-up, so an in-flight item whose child
+    # is done is normal work, not an inventory fault. Returns None when the invalidity is anything else,
+    # else the (id, age seconds) pairs past done_grace_hours; the endpoint's age_seconds counts from its
+    # done line to generated_epoch, and a done child with no known done time is inside the grace period.
+    invalidity = summary.get('invalidity')
+    if not isinstance(invalidity, dict) or invalidity.get('kind') != 'terminal_in_flight':
+        return None
+    ids, endpoints = invalidity.get('ids'), summary.get('endpoints')
+    if not (isinstance(ids, list) and ids and isinstance(endpoints, list)) or counts['endpoints'] > len(endpoints):
+        return None
+    ages = {row.get('id'): row.get('age_seconds') for row in endpoints
+            if isinstance(row, dict) and row.get('state') == 'done'}
+    if not all(item in ages and (ages[item] is None or (type(ages[item]) in (int, float)
+                                                        and math.isfinite(ages[item]) and ages[item] >= 0))
+               for item in ids):
+        return None
+    since = max(0, time.time() - summary['generated_epoch'])
+    return [(item, ages[item] + since) for item in ids
+            if ages[item] is not None and ages[item] + since >= cfg['done_grace_hours'] * 3600]
 
 
 def held_work(summary, counts):
@@ -512,6 +535,12 @@ done < "$2"
             work[0] = max(0, work[0] - waiting - external)
             if not summary['valid'] and held_terminal_complete(summary, counts):
                 summary = {**summary, 'valid': True, 'invalidity': None}
+            overdue = None if summary['valid'] else done_in_grace(summary, counts, cfg)
+            if overdue is not None:
+                summary = {**summary, 'valid': True, 'invalidity': None}
+                if overdue:
+                    findings['done-uncleaned:' + name] = 'Done task not merged and cleaned up: ' + name + ': ' + ', '.join(
+                        f'{item} done {int(age) // 3600}h{int(age) % 3600 // 60}m ago' for item, age in overdue)
             invalidity = summary.get('invalidity')
             partial_counts = (isinstance(invalidity, dict)
                               and invalidity.get('kind') == 'child_current_unavailable'
