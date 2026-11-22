@@ -1424,7 +1424,7 @@ EOF
   pass "home-summary treats a parked handed-off item as consistent"
 }
 
-# FLEET-153: a done ship parked as a ready branch (ready_branch= and no pr=) stays terminal_in_flight, but its
+# FLEET-153: a done ship parked as a ready branch (ready_branch= and no pr=) is not terminal_in_flight: its
 # endpoints row carries ready_branch_waiting and the child counts as waiting; a done child with a PR or neither still flags.
 test_home_summary_ready_branch_waiting_is_marked() {
   local home fakebin out

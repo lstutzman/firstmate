@@ -369,10 +369,8 @@ def done_in_grace(summary, counts, cfg):
                for item in ids):
         return None
     since = max(0, time.time() - summary['generated_epoch'])
-    # A parked ready branch (ready_branch= and no pr=) waits for a PR place by design, so it never alarms.
-    parked = {row.get('id') for row in endpoints if isinstance(row, dict) and row.get('ready_branch_waiting') is True}
     return [(item, ages[item] + since) for item in ids
-            if item not in parked and ages[item] is not None and ages[item] + since >= cfg['done_grace_hours'] * 3600]
+            if ages[item] is not None and ages[item] + since >= cfg['done_grace_hours'] * 3600]
 
 
 def held_work(summary, counts):

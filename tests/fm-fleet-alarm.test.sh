@@ -1026,33 +1026,6 @@ mate 0 0 0
 run_alarm check >/dev/null
 pass 'a done child is normal in-flight work inside done_grace_hours and an uncleaned-task finding past it'
 
-# FLEET-153: a done ship parked as a ready branch (ready_branch= and no pr=) waits for a PR place by design,
-# so the snapshot marks its endpoints row ready_branch_waiting and the done-grace finding skips it. A done
-# child with a PR or with neither still alarms past the grace period.
-mate 0 0 3601
-done_in_flight 90000 ui-climb-portfolio-panel
-edit_mate_summary "value['endpoints'][0]['ready_branch_waiting']=True"
-out=$(run_alarm check)
-assert_not_contains "$out" 'not merged and cleaned up' 'a parked ready branch past the grace period raises nothing'
-assert_not_contains "$out" 'inventory' 'a parked ready branch is not an inventory fault'
-mate 0 0 0
-run_alarm check >/dev/null
-mate 0 0 3601
-done_in_flight 90000 pc-5021
-edit_mate_summary "value['endpoints'][0]['ready_branch_waiting']=False"
-assert_contains "$(run_alarm check)" 'Done task not merged and cleaned up: mate: pc-5021 done 25h0m ago' 'a done child with a PR or with neither still alarms past the grace period'
-mate 0 0 0
-run_alarm check >/dev/null
-mate 0 0 3601
-done_in_flight 90000 pc-5021
-edit_mate_summary "value['invalidity']['ids'].append('pc-5022'); value['counts'].update(in_flight=2, endpoints=2); value['endpoints'].append(dict(id='pc-5022', kind='ship', state='done', age_seconds=90000, ready_branch_waiting=True))"
-out=$(run_alarm check)
-assert_contains "$out" 'pc-5021 done 25h0m ago' 'an unparked done child beside a parked one still alarms'
-assert_not_contains "$out" 'pc-5022' 'the parked ready branch beside it is left out of the finding'
-mate 0 0 0
-run_alarm check >/dev/null
-pass 'a parked ready branch never raises the done-uncleaned finding; other done children keep it'
-
 # cl-keeper and Deep Thought: every in-flight item waits on the mate's own needs-decision for Lee.
 open_ask_mate() { # status lines (one per argument, each stamped 3601 seconds ago)
   mate 0 0 3601

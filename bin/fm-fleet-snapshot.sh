@@ -290,7 +290,7 @@ is not handed to its merger early. An expired hold_until or a failed child does
 not exempt; captain holds are unchanged.
 A done ship that finished as a parked ready branch (ready_branch= and no pr=, fm_office_task_ready_branch_waiting,
 shown as pr.ready_branch_waiting) is waiting for a PR place by design: it is not terminal_in_flight, is listed in
-waiting_on_merge with pr null and ready_branch true, and its endpoints row carries ready_branch_waiting.
+waiting_on_merge with pr null and ready_branch true; its endpoints row shows ready_branch_waiting for display.
 A held in-flight item with the same external hold and no child at all is counted in
 counts.external_wait_in_flight, which the silent-mate alarm treats as waiting rather than silent work.
 A failed child, or any other done child without both a
