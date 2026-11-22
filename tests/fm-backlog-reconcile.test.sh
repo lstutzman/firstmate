@@ -150,9 +150,36 @@ linear issue view FLEET-9 --output json" "$(grep '^linear ' "$W/calls")" 'only e
   pass 'reconcile: a queued row is judged only on its own Linear item and pull request'
 }
 
+test_a_parent_or_source_identifier_is_context() {
+  make_world parent
+  cat > "$W/home/data/backlog.md" <<'MD'
+## Queued
+- [ ] a-of - Follow-up of FLEET-139: settle the run results (repo: x) (kind: ship) (since 2026-10-01)
+- [ ] b-suffix - FLEET-145 follow-up: verify the teardown receipt (repo: x) (kind: ship) (since 2026-10-02)
+- [ ] c-diag - Velocity (FLEET-152 diagnosis): ghost detector (repo: x) (kind: ship) (since 2026-10-03)
+- [ ] d-same - Warn on reserved key hand-close, same as FLEET-153 (repo: x) (kind: ship) (since 2026-10-04)
+- [ ] e-found - Wednesday hold signal found by FLEET-154 (repo: x) (kind: ship) (since 2026-10-05)
+- [ ] f-own - FLEET-176: follow-up of FLEET-139, own item leads (repo: x) (kind: ship) (since 2026-10-06)
+- [ ] g-plain - FLEET-177: a plain title (repo: x) (kind: ship) (since 2026-10-07)
+
+## Done
+MD
+  for id in 139 145 152 153 154 176 177; do printf 'Done\n' > "$W/linear/FLEET-$id"; done
+  out=$(reconcile) || fail "the sweep failed: $out"
+  for row in a-of b-suffix c-diag d-same e-found; do
+    assert_not_contains "$out" "$row:" "a parent or source identifier is context: $row has no item"
+  done
+  assert_contains "$out" 'linear-closed: f-own: FLEET-176 is Done' 'the own identifier outside the phrase is the row item'
+  assert_contains "$out" 'linear-closed: g-plain: FLEET-177 is Done' 'a plain FLEET-176 style title still maps to its identifier'
+  assert_equals "linear issue view FLEET-176 --output json
+linear issue view FLEET-177 --output json" "$(grep '^linear ' "$W/calls")" 'parent identifiers are never looked up'
+  pass 'reconcile: an identifier the title marks as a parent or source is context'
+}
+
 test_reports_each_kind_of_closed_queued_row
 test_a_mate_home_reads_the_primary_registry_and_backlog
 test_only_the_rows_own_item_is_looked_up
+test_a_parent_or_source_identifier_is_context
 test_lookups_are_bounded_and_failures_are_unchecked
 test_missing_backlog_and_json
 echo FM_TEST_COMPLETE
