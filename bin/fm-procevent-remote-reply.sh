@@ -95,6 +95,8 @@ DOCUMENT_LOCAL_FAILURE=2
 . "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
 # shellcheck source=bin/fm-pending-reply-lib.sh
 . "$SCRIPT_DIR/fm-pending-reply-lib.sh"
+# shellcheck source=bin/fm-parent-channel-lib.sh
+. "$SCRIPT_DIR/fm-parent-channel-lib.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
 usage() { sed -n '2,66p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
@@ -553,6 +555,56 @@ stage_mirror_lines() { # <source> <rewritten> <source-record> <status> <status-a
   ' "$1"
 }
 
+# Deliver the merge handoffs among the lines about to be mirrored straight into
+# their merger's inbox, with no model turn. A remote worker home has no route
+# back, so it can only write the keyed handoff line (fm_merge_handoff_line in
+# bin/fm-parent-channel-lib.sh) on its channel; this parent, which holds the
+# merger's record, delivers it the way a local worker home's fm-pr-check does
+# (fm_merge_handoff_deliver). Only a line that is exactly that canonical form,
+# with a key that matches the PR URL's last segment, is delivered, and the
+# merger is sent a line rebuilt from the validated parts, never the remote
+# bytes. A delivered line is replaced by a silent working line, so it neither
+# opens a decision nor wakes the parent; any other line, a merger that is not a
+# recorded secondmate here (the main home merges it) or is this mate itself, an
+# unconfirmed delivery, or a handoff past the first three in one delta stays
+# exactly as written and wakes the parent as before. Each send is bounded by
+# FM_REMOTE_REPLY_HANDOFF_BUDGET seconds, so the cap bounds how long the ingest
+# lock is held. The source identity is committed either way, so a replay does
+# not deliver twice; the line is the delivery seed because the remote line
+# carries no PR head. Rewrites <status-additions> in place.
+route_merge_handoffs() { # <status-additions> <mate-id>
+  local additions=$1 mate=$2 out line merger url at message canonical budget=${FM_REMOTE_REPLY_HANDOFF_BUDGET:-10} routed=0 attempts=0
+  local LC_ALL=C
+  local re='^needs-decision \[key=merge-handoff-([0-9]+)\] \[cause=external\]( \[at=([0-9]+)\])?: \[handoff=([A-Za-z0-9_-][A-Za-z0-9._-]*)\] (https?://[^][[:space:][:cntrl:]]+) is ready to merge$'
+  out="$additions.routed"
+  : > "$out" || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ "$attempts" -lt 3 ] && [[ $line =~ $re ]]; then
+      at=${BASH_REMATCH[3]}
+      merger=${BASH_REMATCH[4]}
+      url=${BASH_REMATCH[5]}
+      if [ "${url##*/}" = "${BASH_REMATCH[1]}" ] && [ "$merger" != "$mate" ]; then
+        canonical=$(fm_merge_handoff_line "$merger" "$url")
+        message=$canonical
+        [ -z "$at" ] || message="${canonical%%": [handoff="*} [at=$at]: ${canonical#*": "}"
+        attempts=$((attempts + 1))
+        if fm_merge_handoff_deliver "$FM_HOME" "$merger" "$message" "$line" "$budget" "$SCRIPT_DIR/fm-send.sh"; then
+          status_stamp_line "working: merge handoff delivered to home $merger inbox: $url" >> "$out" || return 1
+          printf '\n' >> "$out" || return 1
+          routed=1
+          continue
+        fi
+      fi
+    fi
+    printf '%s\n' "$line" >> "$out" || return 1
+  done < "$additions"
+  if [ "$routed" -eq 1 ]; then
+    mv -f -- "$out" "$additions" || return 1
+  else
+    rm -f -- "$out"
+  fi
+}
+
 cmd_ingest() {
   local id=${1:-} result=${2:-} seq=${3:-} class blank payload normalized_payload schema status path from to from_hash to_hash payload_hash payload_bytes reason
   local actual_bytes actual_hash line doc local_doc appended=0 cursor_already=0 lock status_file source_record tmp
@@ -680,6 +732,8 @@ EOF
   stage_mirror_lines "$normalized_payload" "$mirrored" "$source_record" "$status_file" \
     "$status_additions" "$source_additions" \
     || { fm_lock_release "$lock"; die "cannot stage remote reply mirror identity"; }
+  route_merge_handoffs "$status_additions" "$id" \
+    || { fm_lock_release "$lock"; die "cannot route remote merge handoffs"; }
   cat "$status_additions" >> "$status_file" \
     || { fm_lock_release "$lock"; die "cannot append remote reply"; }
   appended=$(LC_ALL=C awk 'END { print NR + 0 }' "$status_additions") \

@@ -776,7 +776,9 @@ esac
 # is local and whose parent home records the merger as a secondmate skips the
 # parent's model: pr_check_handoff_direct below sends the line into the
 # merger's durable inbox and leaves a silent working line on the channel, and
-# only a failed delivery falls back to the waking keyed line. state/<id>.merge-handoff records the
+# only a failed delivery falls back to the waking keyed line. A home whose parent
+# route is remote writes the keyed line and the parent's reply adapter does the
+# same delivery when it mirrors the line. state/<id>.merge-handoff records the
 # last PR and head handed off, so re-registering the same head is silent and a
 # new head is announced once; it is written only after a successful delivery,
 # so an interrupted run announces again rather than never. A project this home
@@ -800,26 +802,23 @@ pr_check_send_budget() {
 }
 
 # Deliver the merge handoff <line> for <merger> straight into the merger's
-# durable inbox, through fm-send.sh run in the parent home where the merger is a
-# recorded secondmate (local or remote, as that home's fm-send routes it), and
-# leave only a silent working line on the parent channel <dest>. The delivery
-# id is a hash of <sent> ("<url> <head>"), so a retry of one PR head is
-# idempotent, and --fire-and-forget arms no reply expectation. Returns non-zero
-# without sending when the route cannot do this (a remote parent route, a
-# merger the parent home has no secondmate record for, such as the main home),
-# and after a failed send or ledger write, so the caller falls back to the
-# keyed needs-decision line that wakes the parent.
+# durable inbox, through fm_merge_handoff_deliver (bin/fm-parent-channel-lib.sh,
+# fm-send.sh run in the parent home where the merger is a recorded secondmate,
+# local or remote, as that home's fm-send routes it), and leave only a silent
+# working line on the parent channel <dest>. The delivery id is a hash of <sent>
+# ("<url> <head>"), so a retry of one PR head is idempotent. Returns non-zero
+# without sending when this home cannot do it (a remote parent route: the
+# remote home has no route back, so the parent's reply adapter delivers the
+# keyed line it mirrors, bin/fm-procevent-remote-reply.sh; a merger the parent
+# home has no secondmate record for, such as the main home), and after a failed
+# send or ledger write, so the caller falls back to the keyed needs-decision
+# line that wakes the parent.
 pr_check_handoff_direct() {  # <merger> <line> <sent> <channel-path>
-  local merger=$1 line=$2 sent=$3 dest=$4 parent id budget
+  local merger=$1 line=$2 sent=$3 dest=$4 budget
   budget=$(pr_check_send_budget) || return 1
   fm_secondmate_parent_record_parse "$FM_HOME/.fm-secondmate-parent" || return 1
   [ "$FM_SECONDMATE_PARENT_ROUTE" = local ] || return 1
-  parent=$FM_SECONDMATE_PARENT_HOME
-  grep -qx 'kind=secondmate' "$parent/state/$merger.meta" 2>/dev/null || return 1
-  id=$(printf '%s' "$sent" | LC_ALL=C sha256sum | cut -c1-16) || return 1
-  [ -n "$id" ] || return 1
-  env -u FM_STATE_OVERRIDE -u FM_CONFIG_OVERRIDE FM_HOME="$parent" FM_SEND_REMOTE_BUDGET="$budget" \
-    "$FM_ROOT/bin/fm-send.sh" "fm-$merger" --fire-and-forget "$id" "$line" >/dev/null 2>&1 || return 1
+  fm_merge_handoff_deliver "$FM_SECONDMATE_PARENT_HOME" "$merger" "$line" "$sent" "$budget" "$FM_ROOT/bin/fm-send.sh" || return 1
   fm_parent_channel_append "$dest" "$(status_stamp_line "working: merge handoff delivered to home $merger inbox: $URL")" || true
 }
 

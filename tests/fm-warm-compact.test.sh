@@ -124,7 +124,7 @@ test_one_compaction_per_idle_episode() {
 
 test_failed_submit_is_reported() {
   reset
-  SUBMIT_VERDICT=send-failed
+  SUBMIT_VERDICT='send-failed'
   assert_equals failed "$(primary 2700 0)" 'an unconfirmed submit is a failure the caller marks'
   pass 'failed submit'
 }
