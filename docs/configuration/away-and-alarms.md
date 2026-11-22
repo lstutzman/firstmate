@@ -64,6 +64,9 @@ Each poll also compares the ready (non-draft) open PR count of every clone whose
 
 Each poll also reads every secondmate's queue counts from its home summary: more than `queue_depth` (default 30) unheld queued items raises `queue-depth:<home>`, and an oldest unheld item more than `queue_age_days` (default 14) old raises `queue-age:<home>`.
 Held rows are not counted, a home with nothing but a queue is still checked, and a summary without the counts raises nothing.
+A queue finding is a report for its home, not a question for the captain, so it never joins the `needs-decision [key=fleet-alarm]` line.
+The timer appends one `working [key=queue-depth-<home>]` or `[key=queue-age-<home>]` line and sends the same text to that home's inbox, again only when the finding is worse: the unheld count enters a higher band of 10, or the oldest age a higher band of 7 days.
+A finding that improves sends nothing, and one that clears appends a `resolved` line with its key.
 `bin/fm-backlog-reconcile.py` is the sweep those alarms point at.
 
 Each poll also scans this host's own process table for orphaned build and test processes, and never stops anything.

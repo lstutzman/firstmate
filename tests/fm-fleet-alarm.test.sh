@@ -133,6 +133,68 @@ PY_HELD
 mate 0 0 9000
 pass 'queue depth and age alarm from the summary counts, held rows excepted'
 
+# A queue finding is a report for the owning home (fleet rules section 2), never a question for the captain:
+# the timer sends one keyed working line per home, again only when its depth or age band is worse, and never
+# lets the fleet-alarm needs-decision line carry it.
+cat > "$BIN_FIX/fm-send.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_HOME/send-calls"
+SH
+chmod +x "$BIN_FIX/fm-send.sh"
+touch "$HOME_FIX/config/fleet-ledger"
+status="$HOME_FIX/state/fleet-alarm.status"
+: > "$status"; rm -f "$HOME_FIX/send-calls"
+queue_lines() { grep -c 'key=queue-' "$status" || true; }
+mate 0 0 9000
+set_mate_queue 31 2
+run_alarm timer
+[ "$(queue_lines)" = 1 ] || fail 'a new queue finding writes exactly one line'
+assert_contains "$(cat "$status")" 'working [at=' 'a queue finding is a working line'
+assert_contains "$(cat "$status")" '[key=queue-depth-mate]' 'the working line is keyed per home'
+assert_contains "$(cat "$status")" 'Queue depth 31' 'the working line carries the finding'
+assert_not_contains "$(cat "$status")" 'needs-decision' 'a queue finding is never a needs-decision'
+assert_not_contains "$(cat "$status")" 'key=fleet-alarm' 'a queue finding never uses the fleet-alarm key'
+assert_contains "$(cat "$HOME_FIX/send-calls")" 'fm-mate' 'the finding is delivered to the named home'
+assert_contains "$(cat "$HOME_FIX/send-calls")" 'Queue depth 31' 'the delivery carries the finding'
+run_alarm timer; run_alarm timer
+set_mate_queue 33 2
+run_alarm timer
+[ "$(queue_lines)" = 1 ] || fail 'an unchanged or same-band queue does not re-fire'
+[ "$(wc -l < "$HOME_FIX/send-calls")" = 1 ] || fail 'an unchanged queue is not delivered again'
+set_mate_queue 45 2
+run_alarm timer
+[ "$(queue_lines)" = 2 ] || fail 'a queue in a higher depth band fires once'
+assert_contains "$(tail -n 1 "$status")" 'Queue depth 45' 'the worsened line carries the new depth'
+run_alarm timer
+[ "$(queue_lines)" = 2 ] || fail 'the worsened queue does not re-fire'
+set_mate_queue 35 2
+run_alarm timer
+[ "$(queue_lines)" = 2 ] || fail 'an improved queue sends nothing'
+set_mate_queue 45 2
+run_alarm timer
+[ "$(queue_lines)" = 3 ] || fail 'a queue that worsens again after improving fires again'
+set_mate_queue 3 none
+run_alarm timer
+assert_contains "$(tail -n 1 "$status")" 'resolved' 'a cleared queue finding resolves its key'
+assert_contains "$(tail -n 1 "$status")" '[key=queue-depth-mate]' 'the resolved line names the same key'
+assert_not_contains "$(cat "$status")" 'needs-decision' 'a queue finding never filed a needs-decision across its life'
+set_mate_queue 3 15
+run_alarm timer
+assert_contains "$(tail -n 1 "$status")" 'Oldest unheld queued item 15 days' 'an old queue fires its own keyed line'
+assert_contains "$(tail -n 1 "$status")" '[key=queue-age-mate]' 'the age line is keyed per home'
+lines=$(wc -l < "$status")
+set_mate_queue 3 16
+run_alarm timer
+[ "$(wc -l < "$status")" = "$lines" ] || fail 'a day more of age in the same band does not re-fire'
+set_mate_queue 3 22
+run_alarm timer
+assert_contains "$(tail -n 1 "$status")" 'Oldest unheld queued item 22 days' 'an oldest item a week older fires once'
+set_mate_queue 3 none
+run_alarm timer >/dev/null
+mate 0 0 9000
+rm -f "$HOME_FIX/config/fleet-ledger" "$status" "$BIN_FIX/fm-send.sh" "$HOME_FIX/send-calls"
+pass 'a queue finding is one keyed working line per home, again only when worse, never a needs-decision'
+
 # Child liveness can be unknown while the structured in-flight count is complete.
 python3 - "$TMP_ROOT/mate/state/home-summary.json" <<'PY_PARTIAL'
 from pathlib import Path
