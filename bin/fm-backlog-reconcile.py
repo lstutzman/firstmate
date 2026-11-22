@@ -11,7 +11,9 @@ or the owner of the home decides what to close. Exit 0 whether or not it found a
 backlog cannot be read; 2 on a usage error.
 
 A queued row is judged only on its own item. Its Linear item is the `(linear: ...)` field, otherwise the
-first PC or FLEET identifier in its title; its pull request is the first `/pull/` link on its title line,
+first PC or FLEET identifier in its title that is not named as a parent or source ("follow-up of X",
+"X follow-up", "X diagnosis", "same as X", "found by X": context, so a row with no other identifier has no
+item); its pull request is the first `/pull/` link on its title line,
 the rule the fleet snapshot uses for pr_url. Identifiers and links anywhere else are context: they are
 never looked up. A queued row is a finding when:
   linear-closed   its Linear item is Done, Released, Canceled or a Duplicate (`linear-axi issue view`),
@@ -43,6 +45,12 @@ HELD = re.compile(r"\(hold(?:-kind)?:")
 SINCE = re.compile(r"\(since (\d{4}-\d{2}-\d{2})")
 LINEAR_ID = re.compile(r"\b(?:PC|FLEET)-\d{1,6}\b")
 LINEAR_FIELD = re.compile(r"(?:\(|,\s*)linear:\s*((?:PC|FLEET)-\d{1,6})\b")
+_ID = r"(?:PC|FLEET)-\d{1,6}"
+PARENT_PHRASE = re.compile(
+    r"\b(?:follow[- ]?ups?\s+(?:of|to)|same\s+as|found\s+by)\s+" + _ID + r"\b"
+    r"|\b" + _ID + r"\s+(?:follow[- ]?ups?|diagnosis)\b",
+    re.IGNORECASE,
+)
 METADATA = re.compile(r"\s*\((?:[a-z][a-z-]*:|(?:since|merged|reported|done)\s)[^)]*\)")
 PR_URL = re.compile(r"https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/pull/\d+")
 LINEAR_CLOSED = {"done", "released", "canceled", "cancelled", "duplicate"}
@@ -73,7 +81,7 @@ def own_linear(head):
     field = LINEAR_FIELD.search(head)
     if field:
         return field.group(1)
-    found = LINEAR_ID.search(METADATA.sub("", PR_URL.sub("", head)))
+    found = LINEAR_ID.search(PARENT_PHRASE.sub("", METADATA.sub("", PR_URL.sub("", head))))
     return found.group(0) if found else None
 
 
