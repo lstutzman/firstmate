@@ -13,13 +13,16 @@
 # through bin/fm-nm-run-lib.sh, the same reader fm-crew-state.sh uses:
 #   pending  the run is pending and no step has started, for 5 minutes or more
 #            (FM_NM_STALL_PENDING_SECS), while a run slot is free. A slot counts as
-#            free unless this repo's overview shows as many running runs as
-#            max_concurrent_runs in $NM_HOME/config.yaml (default ~/.no-mistakes),
-#            so a run queued behind full slots stays silent and its clock does
-#            not start. When the count or the cap cannot be read the wake still
-#            goes out and says the slot state is unknown. The overview lists only
-#            this repo while the cap is machine-wide, so a wake can fire for a
-#            run queued behind other repos' runs; inspect before acting.
+#            free unless the running runs, counted machine-wide, reach
+#            max_concurrent_runs in $NM_HOME/config.yaml (default ~/.no-mistakes).
+#            The count sums `no-mistakes axi` overviews over every repo this
+#            home has a no-mistakes ship in (run ids counted once), because the
+#            cap is machine-wide; no supported daemon-wide read exists. A run
+#            queued behind full slots stays silent and its clock does not start.
+#            When the count or the cap cannot be read the wake still goes out and
+#            says the slot state is unknown. Runs of repos this home has no task
+#            in are invisible to the count, so a wake can still fire for a run
+#            queued behind them; inspect before acting.
 #   gate     the run is parked at a gate for 30 minutes or more
 #            (FM_NM_STALL_GATE_SECS) with no answer. The wake names the gate and
 #            routes it: a finding whose action column is ask-user is owed by the
@@ -107,19 +110,56 @@ gate_name() {  # <toon-output>
   printf '%s' "${name:-gate}"
 }
 
+# Running runs in one repo's overview, read from <worktree>. Prints one run id per
+# line (possibly none); returns 1 when the overview cannot be read.
+repo_running_ids() {  # <worktree>
+  local overview ids statuses i=0 s
+  overview=$(fm_nm_run "$1" "$READ_SECS" axi)
+  [ -n "$overview" ] || return 1
+  if printf '%s\n' "$overview" | grep -q '^runs\['; then
+    ids=$(fm_nm_table_column "$overview" runs id)
+    statuses=$(fm_nm_table_column "$overview" runs status)
+    while IFS= read -r s; do
+      i=$((i + 1))
+      [ "$s" = running ] && printf '%s\n' "$ids" | sed -n "${i}p"
+    done <<< "$statuses"
+    return 0
+  fi
+  # A repo with no runs prints its repo line and no runs table.
+  printf '%s\n' "$overview" | grep -q '^repo:' || return 1
+  return 0
+}
+
 # 0 when the machine's run slots are provably full. Prints the running/cap note.
+# The cap is machine-wide, so the count is too: running runs summed over every
+# repo this home has a no-mistakes ship in (plus the pending run's own), each read
+# once and each run id counted once. Any repo that cannot be read leaves the state
+# unknown, never free.
 SLOT_NOTE=
 slots_full() {  # <worktree>
-  local wt=$1 overview running cap cfg
+  local wt=$1 meta d common seen='' repos='' all='' ids running cap cfg
   SLOT_NOTE="run slot state unknown"
-  overview=$(fm_nm_run "$wt" "$READ_SECS" axi)
-  [ -n "$overview" ] || return 1
-  printf '%s\n' "$overview" | grep -q '^runs\[' || return 1
-  running=$(fm_nm_table_column "$overview" runs status | grep -c '^running$')
+  for d in "$wt" $(for meta in "$STATE"/*.meta; do
+    [ -f "$meta" ] || continue
+    [ "$(fm_meta_get "$meta" kind)" = ship ] || continue
+    [ "$(fm_meta_get "$meta" mode)" = no-mistakes ] || continue
+    [ -z "$(fm_meta_get "$meta" remote_host)" ] || continue
+    printf '%s\n' "$(fm_meta_get "$meta" worktree)"
+  done); do
+    [ -d "$d" ] || continue
+    common=$(cd "$d" 2>/dev/null && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P) || common=
+    [ -n "$common" ] || common=$d
+    case "$seen" in *"|$common|"*) continue ;; esac
+    seen="$seen|$common|"
+    [ "$SECONDS" -lt "$BUDGET_SECS" ] || return 1
+    ids=$(repo_running_ids "$d") || return 1
+    [ -z "$ids" ] || all="$all$ids"$'\n'
+  done
+  running=$(printf '%s' "$all" | sort -u | grep -c .)
   cfg="${NM_HOME:-$HOME/.no-mistakes}/config.yaml"
   cap=$(sed -n 's/^max_concurrent_runs:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$cfg" 2>/dev/null | head -1)
   [ -n "$cap" ] || return 1
-  SLOT_NOTE="$running of $cap run slots in use in this repo"
+  SLOT_NOTE="$running of $cap run slots in use machine-wide"
   [ "$running" -ge "$cap" ]
 }
 

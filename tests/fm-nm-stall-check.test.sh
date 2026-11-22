@@ -26,7 +26,8 @@ if [ "${2:-}" = status ]; then
   [ ! -e "$FAKE_DIR/$name.fail" ] || exit 1
   cat "$FAKE_DIR/$name.status" 2>/dev/null
 elif [ "$#" -eq 1 ]; then
-  cat "$FAKE_DIR/overview" 2>/dev/null
+  if [ -e "$FAKE_DIR/overview.fail.$name" ]; then exit 1; fi
+  if [ -e "$FAKE_DIR/overview.$name" ]; then cat "$FAKE_DIR/overview.$name"; else cat "$FAKE_DIR/overview" 2>/dev/null; fi
 fi
 exit 0
 SH
@@ -81,7 +82,7 @@ test_pending_with_no_steps_wakes_once_after_five_minutes() {
   [ -z "$out" ] || fail "under five minutes must stay silent: $out"
   out=$(sweep "$root" 1300)
   assert_contains "$out" "t1 run RUN1 pending with no step started" "five minutes pending wakes"
-  assert_contains "$out" "1 of 4 run slots in use" "wake names the slot state"
+  assert_contains "$out" "1 of 4 run slots in use machine-wide" "wake names the slot state"
   out=$(sweep "$root" 1900)
   [ -z "$out" ] || fail "the same run and state must not wake twice: $out"
   pass "pending with no steps wakes once at five minutes"
@@ -138,6 +139,50 @@ test_unknown_slot_state_still_wakes_and_says_so() {
   out=$(sweep "$root" 1300)
   assert_contains "$out" "run slot state unknown" "unreadable cap is disclosed, not hidden"
   pass "unreadable slot state wakes with a caveat"
+}
+
+# Machine-wide cap: <n> running runs in another repo (task "other"), one pending run
+# here (task "t1"), whose own overview lists no running run.
+machine_world() {  # <name> <running elsewhere> <cap>
+  local root
+  root=$(make_world "$1" "$3")
+  add_task "$root" t1
+  add_task "$root" other
+  set_status "$root" t1 "$(pending_toon t1 RUN1)"
+  set_status "$root" other "$(pending_toon other RUNX pending pending | sed 's/status: pending/status: running/')"
+  printf 'count: 1 of 1 total\nruns[1]{id,branch,status,head,pr}:\n  "RUN1",fm/t1,pending,abc1234,""\n' > "$root/fake/overview.t1"
+  overview_toon "$2" > "$root/fake/overview.other"
+  printf '%s' "$root"
+}
+
+test_runs_in_another_repo_fill_the_machine_slots() {
+  local root out
+  root=$(machine_world other4 4 4)
+  sweep "$root" 1000 >/dev/null
+  out=$(sweep "$root" 5000)
+  [ -z "$out" ] || fail "four running elsewhere must keep the pending run silent: $out"
+  assert_absent "$root/state/.nm-stall-check" "no clock while machine slots are full"
+  pass "machine-wide count: full slots held by another repo stay silent"
+}
+
+test_free_machine_slot_with_runs_elsewhere_still_alarms() {
+  local root out
+  root=$(machine_world other3 3 4)
+  sweep "$root" 1000 >/dev/null
+  out=$(sweep "$root" 1300)
+  assert_contains "$out" "t1 run RUN1 pending with no step started" "three of four slots wakes"
+  assert_contains "$out" "3 of 4 run slots in use machine-wide" "note says machine-wide"
+  pass "machine-wide count: a free slot still alarms"
+}
+
+test_unreadable_machine_count_never_claims_a_free_slot() {
+  local root out
+  root=$(machine_world unread 4 4)
+  : > "$root/fake/overview.fail.other"
+  sweep "$root" 1000 >/dev/null
+  out=$(sweep "$root" 1300)
+  assert_contains "$out" "run slot state unknown" "unreadable repo leaves the state unknown"
+  pass "machine-wide count: an unreadable repo is unknown, not free"
 }
 
 test_gate_wakes_after_thirty_minutes_routed_to_the_captain_for_ask_user() {
@@ -316,6 +361,9 @@ fm_test_run \
   test_pending_run_that_started_a_step_clears_and_a_new_stall_wakes_again \
   test_pending_behind_full_slots_is_silent_and_starts_no_clock \
   test_unknown_slot_state_still_wakes_and_says_so \
+  test_runs_in_another_repo_fill_the_machine_slots \
+  test_free_machine_slot_with_runs_elsewhere_still_alarms \
+  test_unreadable_machine_count_never_claims_a_free_slot \
   test_gate_wakes_after_thirty_minutes_routed_to_the_captain_for_ask_user \
   test_gate_owed_by_the_worker_routes_to_the_worker \
   test_run_reported_parked_age_counts_on_first_sight \
