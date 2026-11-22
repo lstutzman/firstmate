@@ -716,6 +716,23 @@ printf 'paused [at=%s] [cause=external]: waiting on vendor\n' "$((now - 90000))"
 assert_contains "$(run_alarm check)" 'holding work silent' 'an undated paused [cause=external] wait older than 24 hours alarms again'
 mate 0 0 0
 run_alarm check >/dev/null
+# The Librarian's shape: the recheck time is a [until=...] tag, not prose.
+now=$(date +%s)
+mate 1 0 7200
+printf 'paused [until=%s] [cause=external] [key=lib-pool-full] [at=%s]: pool full\n' "$(date -u -d "@$((now + 3000))" +%Y-%m-%dT%H:%MZ)" "$((now - 7200))" > "$HOME_FIX/state/mate.status"
+[ -z "$(run_alarm check)" ] || fail 'a paused [until=] tag in the future suppresses the silence alarm'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 1 0 20000
+printf 'paused [until=%s] [cause=external] [key=lib-pool-full] [at=%s]: pool full\n' "$(date -u -d "@$((now - 7200))" +%Y-%m-%dT%H:%MZ)" "$((now - 20000))" > "$HOME_FIX/state/mate.status"
+assert_contains "$(run_alarm check)" 'holding work silent' 'a paused [until=] tag long past alarms again'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 1 0 90000
+printf 'paused [cause=external] [key=lib-pool-full] [at=%s]: pool full\n' "$((now - 90000))" > "$HOME_FIX/state/mate.status"
+assert_contains "$(run_alarm check)" 'holding work silent' 'a paused line with no until keeps the ordinary check'
+mate 0 0 0
+run_alarm check >/dev/null
 # A plain done line after a declared pause does not end the pause.
 now=$(date +%s)
 mate 1 0 7200

@@ -41,7 +41,7 @@ nothing open (a `needs-decision [key=merge-handoff-<n>]` whose text starts `[han
 does not count) and a complete decision list, is working a long task and
 is not silent either. A `paused [cause=external]` line with no `until` time is a declared wait
 that counts instead while younger than external_wait_ceiling_hours (24), then alarms again; only an
-`until <YYYY-MM-DDTHH:MMZ>` token in a line is read as its `until` time, never a date-only phrase.
+`until <YYYY-MM-DDTHH:MMZ>` token, or a `[until=<YYYY-MM-DDTHH:MMZ>]` tag before the first colon, is read as its `until` time, never a date-only phrase.
 A secondmate waiting on an open captain decision is healthy waiting and is never silent: no
 open decision row has source status unless the mate also holds that task id as a captain-hold row
 (no child is asking it anything), its
@@ -480,6 +480,11 @@ while IFS= read -r line || [ -n "$line" ]; do
       raw_verb=$verb
       case "$verb" in working|paused) ;; *) verb=other ;; esac
       until=$(status_paused_until "$line" || true)
+      # A paused line may also declare its recheck as a [until=<YYYY-MM-DDTHH:MMZ>] tag before the first colon.
+      if [ -z "$until" ] && status_is_paused "$line"; then
+        tag=$(printf '%s' "${line%%:*}" | sed -n 's/.*\[until=\([0-9T:-]*Z\)\].*/\1/p' | head -1)
+        [ -z "$tag" ] || until=$(fm_utc_iso_to_epoch "$tag" || true)
+      fi
       cause=$(status_line_cause "$line")
       folded=$(status_open_decisions "$window" secondmate)
       # An external merge handoff ([handoff=<home>]) waits on another home, not on the captain or the mate going quiet, so it is not an unanswered decision here.
