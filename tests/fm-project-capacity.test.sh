@@ -1554,21 +1554,21 @@ test_ci_slots_gate_leaves_a_remote_captain_held_pr_out() {
   local case_dir home
   case_dir=$(make_case slots-remote-held)
   home="$case_dir/home"
-  declare_slots "$home" "project 4"
+  declare_slots "$home" "project 2"
   drain_gh "$case_dir" 0
   open_prs "$case_dir" 4 0
-  assert_contains "$(slots_gate "$case_dir")" "hold o/r CI slots full: 4 open PR(s)" "no remote summary: every open PR must count"
+  assert_contains "$(slots_gate "$case_dir")" "hold o/r open-PR cap reached: 4 eligible open PR(s) against the open-PR cap of 4" "no remote summary: every open PR must count"
   # PR 1 is a remote ship blocked by an unresolved dependency but not held for the captain: it still
   # takes a CI slot, as a local blocked PR does.
   remote_mate_with_summary "$case_dir" \
     '[{"id":"far-a","kind":"ship","project":"project","yolo":"on","pr":"https://github.com/o/r/pull/1","pr_at":1790000000,"captain_held":false,"blocked":true}]' 60
-  assert_contains "$(slots_gate "$case_dir")" "hold o/r CI slots full: 4 open PR(s)" "a blocked remote PR not held for the captain was left out of the count"
+  assert_contains "$(slots_gate "$case_dir")" "hold o/r open-PR cap reached: 4 eligible open PR(s) against the open-PR cap of 4" "a blocked remote PR not held for the captain was left out of the count"
   # PR 1 is a remote ship held for the captain, PR 2 a remote yolo-off ship, PR 3 a remote ready ship.
   remote_mate_with_summary "$case_dir" \
     '[{"id":"far-a","kind":"ship","project":"project","yolo":"on","pr":"https://github.com/o/r/pull/1","pr_at":1790000000,"captain_held":true,"blocked":false},
       {"id":"far-b","kind":"ship","project":"project","yolo":"off","pr":"https://github.com/o/r/pull/2","pr_at":1790000000,"captain_held":false,"blocked":false},
       {"id":"far-c","kind":"ship","project":"project","yolo":"on","pr":"https://github.com/o/r/pull/3","pr_at":1790000000,"captain_held":false,"blocked":false}]' 60
-  assert_equals "open o/r" "$(slots_gate "$case_dir")" "two remote PRs waiting for the captain, of 4 open, still held against 4 slots"
+  assert_equals "open o/r" "$(slots_gate "$case_dir")" "two remote PRs waiting for the captain, of 4 open, under the open-PR cap of 4"
   pass "a remote ship's PR waiting for the captain's merge word leaves the CI slot count, read from its cached summary"
 }
 
