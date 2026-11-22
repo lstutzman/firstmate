@@ -43,8 +43,8 @@ captain's merge word (bin/fm-ci-slots-held.sh) and the PRs labelled `held` use n
 (Lee, 2026-11-22T12:51:39Z, card open-pr-cap-recorded-holds). <project-name> is the registered name that
 names the project in those files; it defaults to the directory's name. FM_HOME picks the home whose config is read.
 While now is before the timestamp in the home's config/open-pr-cap-piles-free-until (one ISO UTC timestamp; absent
-means off; a malformed file is ignored and named in the line), the gate leaves ready, non-held landing piles (each with
-its members) out of the cap count and names them in its line; state, open and the CI-slot count are unchanged.
+means off; a malformed file is ignored and named in the line), the gate leaves every ready landing pile (each with its
+members, held or not) out of the cap count and names them in its line; state, open and the CI-slot count are unchanged.
 FM_PR_DRAIN_NOW (an ISO UTC timestamp) replaces the clock (tests).
 class exits 0 when <value> is a recognised drain declaration: an exemption class (production-outage,
 cve, security, wolverine, lee-research, lee-explicit, officer, scheduled) or a landing job (restack,
@@ -260,7 +260,7 @@ def gate(project, name):
     seen = tally(project, prs)
     counted = seen['cap']
     until, note = piles_free_until()
-    piles = sum(1 for pr in seen['units'] if pr['head'].startswith(PILE_HEAD)) if until else 0
+    piles = sum(1 for pr in prs if pr['head'].startswith(PILE_HEAD) and not pr['isDraft'] and not pr['promotion']) if until else 0
     counted -= piles
     if piles:
         note = f' ({piles} landing pile(s) not counted until {until})'
