@@ -42,6 +42,10 @@ members counted once, reach the open-PR cap (config/open-pr-cap, default min(2 x
 captain's merge word (bin/fm-ci-slots-held.sh) and the PRs labelled `held` use no CI slot but are counted toward the cap
 (Lee, 2026-11-22T12:51:39Z, card open-pr-cap-recorded-holds). <project-name> is the registered name that
 names the project in those files; it defaults to the directory's name. FM_HOME picks the home whose config is read.
+While now is before the timestamp in the home's config/open-pr-cap-piles-free-until (one ISO UTC timestamp; absent
+means off; a malformed file is ignored and named in the line), the gate leaves ready, non-held landing piles (each with
+its members) out of the cap count and names them in its line; state, open and the CI-slot count are unchanged.
+FM_PR_DRAIN_NOW (an ISO UTC timestamp) replaces the clock (tests).
 class exits 0 when <value> is a recognised drain declaration: an exemption class (production-outage,
 cve, security, wolverine, lee-research, lee-explicit, officer, scheduled) or a landing job (restack,
 red-gate-fix, returned-pr-fix, review), and 2 otherwise. bin/fm-brief.sh --pr-drain writes it into a
@@ -219,6 +223,27 @@ def held_urls(project, urls):
         return set()
 
 
+def piles_free_until():
+    """(expiry, note): the instant before which ready landing piles are left out of the open-PR cap count, read from the
+    home's config/open-pr-cap-piles-free-until (one ISO UTC timestamp). (None, '') when the file is absent or the expiry has
+    passed; (None, note) when the file is malformed, so the gate says so and counts as usual. FM_PR_DRAIN_NOW (an ISO UTC
+    timestamp) replaces the clock (tests)."""
+    path = os.path.join(os.environ.get('FM_HOME') or os.path.dirname(BIN), 'config', 'open-pr-cap-piles-free-until')
+    try:
+        with open(path) as handle:
+            text = handle.read().strip()
+    except OSError:
+        return None, ''
+    try:
+        expiry = when(text)
+        if expiry.tzinfo is None:
+            raise ValueError(text)
+        now = when(os.environ['FM_PR_DRAIN_NOW']) if os.environ.get('FM_PR_DRAIN_NOW') else datetime.now(timezone.utc)
+    except ValueError:
+        return None, ' (config/open-pr-cap-piles-free-until is not one ISO UTC timestamp, so it is ignored)'
+    return (text, '') if now < expiry else (None, '')
+
+
 def gate(project, name):
     """The worker's CI slots check: `hold`, `open`, `unknown` or `none`, as one line."""
     found = open_prs(project)
@@ -234,13 +259,18 @@ def gate(project, name):
         return f'open {repo}'
     seen = tally(project, prs)
     counted = seen['cap']
+    until, note = piles_free_until()
+    piles = sum(1 for pr in seen['units'] if pr['head'].startswith(PILE_HEAD)) if until else 0
+    counted -= piles
+    if piles:
+        note = f' ({piles} landing pile(s) not counted until {until})'
     if counted >= int(cap):
         return (f'hold {repo} open-PR cap reached: {counted} eligible open PR(s) against the open-PR cap of {cap} '
                 f"(config/open-pr-cap; min(2 x {slots} CI slots, 16) unless declared; {seen['drafts']} draft PR(s) and "
                 f"{seen['promotion']} promotion PR(s) are not counted; {seen['held']} PR(s) waiting for the captain's merge word and "
                 f"{seen['labelled']} PR(s) labelled `{HELD_LABEL}` use no CI slot but are counted; "
-                f"{seen['folded']} member PR(s) are counted in the landing pile that carries them); open no pull request until one merges or closes")
-    return f'open {repo}'
+                f"{seen['folded']} member PR(s) are counted in the landing pile that carries them); open no pull request until one merges or closes{note}")
+    return f'open {repo}{note}'
 
 
 def state(project, name=None):
