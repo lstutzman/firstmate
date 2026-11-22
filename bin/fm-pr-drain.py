@@ -81,11 +81,12 @@ PROMOTION_HEAD = 'staging'
 # hold ends: the PR uses no CI slot, so it leaves the slot counts, but it still counts toward the open-PR cap.
 HELD_LABEL = 'held'
 # A landing pile (Slarti's merge train: several member PRs merged onto one branch, gated once on its merged tree) is a PR
-# whose head branch starts with PILE_HEAD and whose body names its members in one clause: `Member: PR 6239 ...` or
-# `Members in order: PR 6268 ... and PR 6271 ...`, ending at the first sentence end. Only that clause is read, so the
-# pile it is laid on (`after PR 6276`) is never taken for a member.
+# whose head branch starts with PILE_HEAD and whose body names its members in one clause: `Member: PR 6239 ...`,
+# `One member: PR 6239 ...` or `Members in order: PR 6268 ... and PR 6271 ...` (any letter case, the colon required),
+# ending at the first sentence end. Only that clause is read, so the pile it is laid on (`after PR 6276`) and prose such
+# as `the member carries ...` are never taken for members.
 PILE_HEAD = 'landing/pile-'
-MEMBERS = re.compile(r'\bMembers?(?: in order)?\s*:\s*(.*?)(?:\.(?:\s|$)|\n\s*\n|$)', re.S)
+MEMBERS = re.compile(r'\bMembers?(?: in order)?\s*:\s*(.*?)(?:\.(?:\s|$)|\n\s*\n|$)', re.S | re.I)
 MEMBER_REF = re.compile(r'(?:\bPR\s+#?|#|/pull/)(\d+)')
 WINDOW_DAYS = 14
 CLOSED_LIMIT = 1000
