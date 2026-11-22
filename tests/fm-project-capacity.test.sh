@@ -17,6 +17,8 @@ set -u
 
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=tests/fixtures.sh
+. "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 
 unset TASKS_AXI_BACKEND || :
 
@@ -1282,7 +1284,7 @@ test_pr_drain_lee_explicit_needs_the_quoted_word() {
 }
 
 test_pr_drain_security_needs_a_qualifying_linear_item() {
-  local case_dir home out rc reader id json
+  local case_dir home out rc reader id json rl
   case_dir=$(make_case drain-security sec-ok sec-nolabel sec-low sec-noitem sec-down)
   home="$case_dir/home"
   drain_gh "$case_dir" 25
@@ -1330,7 +1332,24 @@ STUB
     grep -q 'PR drain check: just before you open a new pull request' "$home/data/$id/launch-brief.md" ||
       fail "an unqualified security ship $id kept its PR drain exemption: its launch brief has no PR drain check"
   done
-  pass "a security ship in drain always launches, and keeps its PR drain exemption only with a qualifying Linear item"
+  rl="$case_dir/relaunch"
+  mkdir -p "$rl/fake"
+  fm_test_fake_tmux_relaunch "$rl/fakebin"
+  printf 'zsh' > "$rl/fake/command"
+  sed -n 's/^window=.*:\(.*\)$/\1/p' "$home/state/sec-nolabel.meta" > "$rl/fake/windows"
+  sed -n 's/^worktree=//p' "$home/state/sec-nolabel.meta" | tr -d '\n' > "$rl/fake/cwd"
+  : > "$rl/fake/literal"
+  : > "$rl/fake/keys"
+  rc=0
+  out=$(FM_ROOT_OVERRIDE='' FM_HOME="$home" \
+    FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE='' FM_PROJECTS_OVERRIDE='' FM_CONFIG_OVERRIDE='' \
+    FM_SPAWN_NO_GUARD=1 TMUX="fake,1,0" FM_BACKEND=tmux FM_FAKE_DIR="$rl/fake" \
+    PATH="$rl/fakebin:$case_dir/fakebin:$PATH" "$SPAWN" sec-nolabel --relaunch 2>&1) || rc=$?
+  expect_code 0 "$rc" "an unqualified security ship could not be relaunched: $out"
+  assert_contains "$out" "spawned sec-nolabel" "the unqualified security ship did not relaunch: $out"
+  grep -q 'PR drain check: just before you open a new pull request' "$home/data/sec-nolabel/launch-brief.md" ||
+    fail "a relaunch gave an unqualified security ship its PR drain exemption back"
+  pass "a security ship in drain always launches, and keeps its PR drain exemption only with a qualifying Linear item, across a relaunch too"
 }
 
 test_pr_drain_security_out_of_drain_reads_no_linear() {

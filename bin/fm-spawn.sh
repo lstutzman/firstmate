@@ -4519,6 +4519,7 @@ spawn_security_item_qualifies() {
 # class while in drain: an unqualified security ship launches without the exemption.
 # It runs before the shared project lock, so a slow GitHub read never holds it.
 SPAWN_SECURITY_UNEXEMPT=
+[ "$RELAUNCH" -eq 0 ] || SPAWN_SECURITY_UNEXEMPT=$(fm_meta_get "$RELAUNCH_META" pr_drain_unexempt)
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ]; then
   SPAWN_DRAIN_CLASS=$(sed -n 's/^PR drain: \([^ ]*\)$/\1/p' "$BRIEF" 2>/dev/null | head -n 1)
   if [ "$SPAWN_DRAIN_CLASS" = lee-explicit ]; then
@@ -7884,6 +7885,7 @@ preserve_relaunch_meta() {
   # Written only by an office's fresh spawn, so every other record stays
   # byte-identical; a relaunch keeps the original line.
   [ "$RELAUNCH" -eq 1 ] || [ -z "$FM_OFFICE_ID" ] || echo "office=$FM_OFFICE_ID"
+  [ "$RELAUNCH" -eq 1 ] || [ -z "$SPAWN_SECURITY_UNEXEMPT" ] || echo "pr_drain_unexempt=1"
   # Read by bin/fm-dod-lib.sh's ready-report gate; absent on every other forge.
   [ "$EXTERNAL_REVIEW" = 0 ] || echo "forge=external"
   [ -z "$EXTERNAL_BACKUP_REMOTE" ] || echo "backup_remote=$EXTERNAL_BACKUP_REMOTE"
