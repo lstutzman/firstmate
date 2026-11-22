@@ -553,6 +553,10 @@ test_a_page_defect_pattern_is_remembered_once() {
   officer patterns run page-check --date "$KEY" >/dev/null || fail "run must succeed"
   assert_equals "1" "$(jq '[.patterns.new[] | select(.line | startswith("Anti-pattern: page-old on Velocity audit "))] | length' "$json")" \
     "a new page-old finding yields one pattern line"
+  assert_equals "1" "$(jq '[.findings[] | select(.id == "page-old:Runs:bad-job" and .linear.issue != null)] | length' "$json")" \
+    "the failing-job finding (route: page owner: fix the job) is still filed for its owner"
+  assert_equals "0" "$(jq '[.patterns.new[].line | select(contains("bad-job") or contains("Safe form: page owner: fix the job."))] | length' "$json")" \
+    "a failing-job finding is a stale run, not a code anti-pattern, so it yields no pattern line"
   assert_contains "$(jq -r '[.patterns.new[] | select(.line | contains("Velocity audit"))][0].line' "$json")" "Safe form: page owner: restore the page's feed" \
     "its safe form is the finding's route"
   assert_equals "true" "$(jq '[.patterns.new[].line] | all(startswith("Anti-pattern: page-old on ") or startswith("Anti-pattern: shown-after-done on "))' "$json")" \

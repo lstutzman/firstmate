@@ -98,7 +98,7 @@ A page-old or shown-after-done finding is a bug in fleet code, so its bad patter
 kind, the page or Runs job, and the route as the safe form, with no timestamps and no
 card id) is remembered once through the shared pattern memory, a repeat on another card
 or day raising its count, and handed on in the digest's `patterns` and one batched
-pattern-memory start request. The officer also closes its own single items
+pattern-memory start request (except a failing job, route "page owner: fix the job", a stale run and not a code pattern). The officer also closes its own single items
 once their finding is over (auto_close: the card settled, or the finding absent from two checks), each after one
 Linear comment giving the reason (docs/officers/page-check-rubric.md "Closing its own items" owns the rules). Without writes: linear nothing is filed,
 closed or started. What the create cap, call budget or a rate limit leaves unfiled is named
@@ -419,11 +419,15 @@ def fix_view(lf):
     return dict(lf, title="%s: %s" % (fix_target(lf), lf["source"]))
 
 
+NO_PATTERN_ROUTES = ("page owner: fix the job",)
+
+
 def pattern_findings(lib, findings):
-    """The bad pattern of each filed page or card-source defect: its kind and fix target, with the route as the safe form."""
+    """The bad pattern of each filed page or card-source defect: its kind and fix target, with the route as the safe form.
+    A failing-job finding (route 'page owner: fix the job') restates a stale run, not a code anti-pattern, so it has none."""
     out = []
     for lf in findings:
-        if (lf["filing"] or {}).get("issue"):
+        if (lf["filing"] or {}).get("issue") and lf["raw"]["route"] not in NO_PATTERN_ROUTES:
             full = lib.text("%s on %s (route: %s)" % (lf["source"], fix_target(lf), lf["raw"]["route"]), lib.FULL_TEXT)
             out.append(dict(lf, title=full[:120], full_title=full, fix=lib.text(lf["raw"]["route"], 200),
                             full_fix=lib.text(lf["raw"]["route"], lib.FULL_TEXT)))
