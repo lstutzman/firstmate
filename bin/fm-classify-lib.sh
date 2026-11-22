@@ -609,7 +609,7 @@ _fm_status_head() {  # <status-line> <out-var> -> 0 and the head
       \[*\]*)
         __fm_head_tag=${__fm_head_rest%%\]*}
         case "${__fm_head_tag#\[}" in
-          *\[*) __fm_head_keep=${__fm_head_keep}[; __fm_head_rest=${__fm_head_rest#\[} ;;
+          *\[*) __fm_head_keep=$__fm_head_keep[; __fm_head_rest=${__fm_head_rest#\[} ;;
           *) __fm_head_keep=$__fm_head_keep$__fm_head_tag]; __fm_head_rest=${__fm_head_rest#*\]} ;;
         esac ;;
       *) __fm_head_keep=$__fm_head_keep${__fm_head_rest:0:1}; __fm_head_rest=${__fm_head_rest:1} ;;
