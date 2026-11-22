@@ -859,7 +859,7 @@ navigator_held_done 'done' held
 [ -z "$(run_alarm check)" ] || fail 'a done child held for a captain call is complete, not an incomplete inventory'
 mate 0 0 3601
 navigator_held_done 'done' unheld
-assert_contains "$(run_alarm check)" 'home inventory incomplete' 'a done child with no captain hold for its task still alarms as incomplete'
+assert_not_contains "$(run_alarm check)" 'inventory' 'a done child with no captain hold and no known done time is normal in-flight work'
 mate 0 0 0
 run_alarm check >/dev/null
 mate 0 0 3601
@@ -871,12 +871,12 @@ pass 'a captain-held in-flight item with a done child counts as complete; other 
 
 # FLEET-171: a done child reports before its merge and clean-up; that is normal in-flight work until
 # it stays uncleaned past done_grace_hours (default 2), when the finding names the task and its age.
-done_in_flight() { # <done age seconds> [task] [summary age seconds] [failed task]
+done_in_flight() { # <done age seconds or null> [task] [summary age seconds] [failed task]
   python3 - "$TMP_ROOT/mate/state/home-summary.json" "$1" "${2:-d1-ci-slots-code}" "${3:-0}" "${4:-}" <<'PY_DONE'
 from pathlib import Path
 import json,sys
 path=Path(sys.argv[1]); value=json.loads(path.read_text())
-age,item,since,failed=int(sys.argv[2]),sys.argv[3],int(sys.argv[4]),sys.argv[5]
+age,item,since,failed=json.loads(sys.argv[2]),sys.argv[3],int(sys.argv[4]),sys.argv[5]
 ids=[item]+([failed] if failed else [])
 endpoints=[dict(id=item, kind='ship', state='done', age_seconds=age)]
 endpoints+=[dict(id=failed, kind='ship', state='failed', age_seconds=age)] if failed else []
@@ -917,6 +917,16 @@ run_alarm check >/dev/null
 mate 0 0 3601
 done_in_flight 3600 d1-ci-slots-code 6000
 assert_contains "$(run_alarm check)" 'Done task not merged and cleaned up: mate: d1-ci-slots-code done 2h40m ago' 'the summary age counts toward the done age'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 3601
+done_in_flight null d1-ci-slots-code 6000
+out=$(run_alarm check)
+assert_not_contains "$out" 'inventory' 'a done child with no known done time is normal in-flight work'
+assert_not_contains "$out" 'not merged and cleaned up' 'a done child with no known done time is inside the grace period'
+mate 0 0 0
+done_in_flight null d1-ci-slots-code 0 f8-mac-paths
+assert_contains "$(run_alarm check)" 'home inventory incomplete' 'an undated done child beside a failed child still alarms as incomplete'
 mate 0 0 0
 run_alarm check >/dev/null
 mate 0 0 0

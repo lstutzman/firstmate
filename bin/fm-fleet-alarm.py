@@ -345,9 +345,9 @@ def held_terminal_complete(summary, counts):
 
 def done_in_grace(summary, counts, cfg):
     # FLEET-171: a done child reports before its merge and clean-up, so an in-flight item whose child
-    # is done is normal work, not an inventory fault. Returns None when the invalidity is anything else
-    # (or a done endpoint carries no age, as in an older summary), else the (id, age seconds) pairs
-    # past done_grace_hours; the endpoint's age_seconds counts from its done line to generated_epoch.
+    # is done is normal work, not an inventory fault. Returns None when the invalidity is anything else,
+    # else the (id, age seconds) pairs past done_grace_hours; the endpoint's age_seconds counts from its
+    # done line to generated_epoch, and a done child with no known done time is inside the grace period.
     invalidity = summary.get('invalidity')
     if not isinstance(invalidity, dict) or invalidity.get('kind') != 'terminal_in_flight':
         return None
@@ -356,11 +356,13 @@ def done_in_grace(summary, counts, cfg):
         return None
     ages = {row.get('id'): row.get('age_seconds') for row in endpoints
             if isinstance(row, dict) and row.get('state') == 'done'}
-    if not all(item in ages and type(ages[item]) in (int, float) and math.isfinite(ages[item]) and ages[item] >= 0
+    if not all(item in ages and (ages[item] is None or (type(ages[item]) in (int, float)
+                                                        and math.isfinite(ages[item]) and ages[item] >= 0))
                for item in ids):
         return None
     since = max(0, time.time() - summary['generated_epoch'])
-    return [(item, ages[item] + since) for item in ids if ages[item] + since >= cfg['done_grace_hours'] * 3600]
+    return [(item, ages[item] + since) for item in ids
+            if ages[item] is not None and ages[item] + since >= cfg['done_grace_hours'] * 3600]
 
 
 def held_work(summary, counts):
