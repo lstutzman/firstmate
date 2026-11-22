@@ -664,7 +664,7 @@ test_superseded_host_leaves_the_owner_untouched() {
 }
 
 test_term_stops_a_host_whose_exit_waits_on_a_held_queue_lock() {
-  local home holder watcher
+  local home holder watcher host queued counts
   home=$(make_home held-queue-lock away)
   FM_SUPERVISION_HOST_EXIT_LOCK_WAIT=2 start_host "$home"
   wait_until 150 watcher_live "$home" || fail "held-queue-lock: the host never started a watcher cycle"
@@ -677,11 +677,22 @@ test_term_stops_a_host_whose_exit_waits_on_a_held_queue_lock() {
   FM_HOME="$home" bash -c '. "$1/bin/fm-wake-lib.sh"; fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK" && : > "$FM_HOME/queue-lock.held"; exec sleep 600' _ "$ROOT" &
   holder=$!
   wait_until 100 test -e "$home/queue-lock.held" || { kill -TERM "$holder" 2>/dev/null; fail "held-queue-lock: the fixture never took the queue lock"; }
-  kill -TERM "$(awk -F '\t' '$1 == "host" { print $2 }' "$home/state/.supervision-host")"
+  host=$(awk -F '\t' '$1 == "host" { print $2 }' "$home/state/.supervision-host")
+  kill -TERM "$host"
   wait_until_deadline 45 host_exited "$home" \
     || { kill -TERM "$holder" 2>/dev/null; fail "held-queue-lock: the host stayed alive behind a held queue lock: $(cat "$home/host.out")"; }
   kill -TERM "$holder" 2>/dev/null
   wait_until 100 sh -c '! kill -0 "$1" 2>/dev/null' _ "$watcher" || fail "held-queue-lock: a stopped host left its watcher running"
+  # The exit path gave up on the lock, so its grant is still on disk. A grant
+  # whose owner is dead must reserve nothing, even with rows published under it.
+  [ "$(sed -n 2p "$home/state/.branch-eligible-owner" 2>/dev/null)" = "$host" ] \
+    || fail "held-queue-lock: the exit path did not leave the stopped host's grant behind"
+  printf '%s\n' "1700000900	900	signal	task	signal: crewmate needs a decision" >> "$home/state/.wake-queue"
+  printf '900\n' > "$home/state/.branch-eligible-rows"
+  queued=$(awk -F '\t' 'NF >= 5' "$home/state/.wake-queue" | wc -l | tr -d ' ')
+  counts=$(FM_HOME="$home" bash -c '. "$1/bin/fm-wake-lib.sh"; printf "%s %s" "$(fm_wake_actor_pending_count branch)" "$(fm_wake_actor_pending_count main)"' _ "$ROOT")
+  [ "$counts" = "0 $queued" ] \
+    || fail "held-queue-lock: a dead host's leftover grant still reserved rows (branch main: $counts, queued: $queued)"
   pass "host: a TERM stops a host whose exit waits on a queue lock another process holds"
 }
 
