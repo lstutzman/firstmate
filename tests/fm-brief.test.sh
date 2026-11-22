@@ -2153,20 +2153,33 @@ test_briefs_end_with_the_complaint_step
 # Direct-PR and local-only workers add no review pass of their own (AGENTS.md
 # section 7: the faster path adds no independent reviewer); no-mistakes owns its review.
 test_fast_path_briefs_forbid_self_review() {
-  local home mode brief
+  local home spec id args brief
+  local open_pr="Do not start your own review sub-agents or a separate review pass before you open the PR; the merge authority and CI are the checks."
+  local publish="Do not start your own review sub-agents or a separate review pass before you publish; the merge authority is the check."
+  local ready="Do not start your own review sub-agents or a separate review pass before you stop at the ready branch; the merge authority is the check."
   home="$TMP_ROOT/no-self-review-home"
-  mkdir -p "$home/data"
-  for mode in direct-PR local-only no-mistakes; do
-    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "brief-nsr-$mode" some-proj --mode "$mode" >/dev/null 2>&1 \
-      || fail "fm-brief.sh $mode scaffold exited non-zero"
+  mkdir -p "$home/data" "$home/config"
+  printf '%s\n' 'Run `review-tool upload --draft`.' > "$home/config/external-review.md"
+  for spec in "direct-PR|--mode direct-PR" "direct-PR-gerrit|--mode direct-PR --forge gerrit" \
+    "direct-PR-external|--mode direct-PR --forge external" "local-only|--mode local-only" \
+    "no-mistakes|--mode no-mistakes" "no-mistakes-gerrit|--mode no-mistakes --forge gerrit"; do
+    id=${spec%%|*}
+    read -r -a args <<<"${spec#*|}"
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "brief-nsr-$id" some-proj "${args[@]}" >/dev/null 2>&1 \
+      || fail "fm-brief.sh $id scaffold exited non-zero"
   done
-  assert_grep "Do not start your own review sub-agents or a separate review pass before you open the PR; the merge authority and CI are the checks." \
-    "$home/data/brief-nsr-direct-PR/brief.md" "the direct-PR brief lost the no-self-review sentence"
-  assert_grep "Do not start your own review sub-agents or a separate review pass before you stop at the ready branch; the merge authority is the check." \
-    "$home/data/brief-nsr-local-only/brief.md" "the local-only brief lost the no-self-review sentence"
-  assert_no_grep "Do not start your own review sub-agents" "$home/data/brief-nsr-no-mistakes/brief.md" \
-    "the no-mistakes brief must not carry the no-self-review sentence"
-  pass "fm-brief.sh: direct-PR and local-only briefs forbid a self-review pass, no-mistakes does not"
+  assert_grep "$open_pr" "$home/data/brief-nsr-direct-PR/brief.md" "the direct-PR brief lost the no-self-review sentence"
+  assert_grep "$publish" "$home/data/brief-nsr-direct-PR-gerrit/brief.md" "the direct-PR gerrit brief lost the no-self-review sentence"
+  brief="$home/data/brief-nsr-direct-PR-external/brief.md"
+  assert_grep "$publish" "$brief" "the direct-PR external brief lost the no-self-review sentence"
+  awk -v s="$publish" '$0 == s { seen = 1 } /^## Review tool instructions \(home configuration\)$/ { ok = seen; exit } END { exit !ok }' "$brief" \
+    || fail "the direct-PR external brief must put the no-self-review sentence before the adapter section"
+  assert_grep "$ready" "$home/data/brief-nsr-local-only/brief.md" "the local-only brief lost the no-self-review sentence"
+  for id in no-mistakes no-mistakes-gerrit; do
+    assert_no_grep "Do not start your own review sub-agents" "$home/data/brief-nsr-$id/brief.md" \
+      "the $id brief must not carry the no-self-review sentence"
+  done
+  pass "fm-brief.sh: direct-PR (GitHub, gerrit, external) and local-only briefs forbid a self-review pass, no-mistakes briefs do not"
 }
 
 test_fast_path_briefs_forbid_self_review
