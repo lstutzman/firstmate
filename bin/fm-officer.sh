@@ -345,7 +345,7 @@ visual_problem() {
 # linear_problem <line> <id> <role>: prints why the Linear fields (writes, max-creates, max-linear-calls, bundle-cap, team)
 # of a filing officer's line are unusable, or nothing.
 linear_problem() {
-  local line=$1 id=$2 role=$3 writes
+  local line=$1 id=$2 role=$3 writes team
   writes=$(line_field "$line" writes || echo none)
   case "$writes" in none|linear) ;; *) printf 'officer %s: writes must be linear or none\n' "$id"; return ;; esac
   case "$(line_field "$line" max-creates || echo 100)" in
@@ -357,12 +357,13 @@ linear_problem() {
   case "$(line_field "$line" bundle-cap || echo 15)" in
     ''|*[!0-9]*|0) printf 'officer %s: bundle-cap must be a whole number, at least 1\n' "$id"; return ;;
   esac
-  [ "$writes" = linear ] || return 0
-  case "$(line_field "$line" team || echo PC)" in
-    PC) ;;
-    PC,FLEET) [ "$role" = progress ] || { printf 'officer %s: a %s files into team PC only\n' "$id" "$role"; return; } ;;
-    *) printf 'officer %s: a %s files into team PC only (a progress officer may read PC,FLEET)\n' "$id" "$role"; return ;;
+  team=$(line_field "$line" team || echo PC)
+  case "$role:$team" in
+    progress:PC|progress:PC,FLEET) return 0 ;;
+    progress:*) printf 'officer %s: a progress officer reads team PC only, or PC,FLEET\n' "$id"; return ;;
   esac
+  [ "$writes" = linear ] || return 0
+  [ "$team" = PC ] || { printf 'officer %s: a %s files into team PC only\n' "$id" "$role"; return; }
 }
 
 # office_read_problem <officer-id> <office> <field> [main]: prints why <office>, named in the registry
@@ -1181,12 +1182,13 @@ action_preflight() {
     echo "FAIL code: $msg"; fail=1
   fi
   # The surgeon's pattern memory asks local-jev on every run; the corpus pass asks it only when it writes Linear.
-  if [ "$(line_field "$OFFICER_LINE" writes || echo none)" = linear ]; then
-    local teams team
+  local writes teams team
+  writes=$(line_field "$OFFICER_LINE" writes || echo none)
+  if [ "$writes" = linear ] || [ "$role" = progress ]; then
     teams=$(line_field "$OFFICER_LINE" team || echo PC)
     for team in ${teams//,/ }; do checks+=("linear=$team"); done
-    checks+=("jev=$(jev_path)")
-  elif [ "$role" = surgeon ]; then
+  fi
+  if [ "$writes" = linear ] || [ "$role" = surgeon ]; then
     checks+=("jev=$(jev_path)")
   fi
   if [ "$role" = surgeon ]; then

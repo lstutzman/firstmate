@@ -2302,6 +2302,9 @@ test_progress_reads_several_teams() {
   local out
   out=$(run_progress 2>&1 || true)
   assert_contains "$out" 'team PC only' 'a team list that does not start with PC is refused'
+  sed -i 's#team: FLEET,PC; writes: linear;#team: FLEET,PC;#' "$WORLD_HOME/data/officers.md"
+  out=$(run_progress 2>&1 || true)
+  assert_contains "$out" 'team PC only' 'a misordered team list is refused at the default writes: none'
   pass 'progress: team PC,FLEET reads both teams and the registry accepts it'
 }
 
