@@ -3218,8 +3218,17 @@ _status_agent_event_scan() {  # <observed-status-log> <contract-path> <now-epoch
       if (index($0, "blocked [key=pending-reply-") == 1 || index($0, "blocked [key=remote-reply-continuity-") == 1) next
       while (j <= n && hi[j] <= start) j++
       if (j <= n && lo[j] <= start && hi[j] >= end) next
-      colon = index($0, ":"); if (!colon) next
-      head = substr($0, 1, colon - 1)
+      # The head ends at the first colon outside a [tag], so a tag carrying a time ([until=...T05:00Z])
+      # cannot hide a later [at=] stamp.
+      head = ""; depth = 0; found = 0
+      for (k = 1; k <= length($0); k++) {
+        c = substr($0, k, 1)
+        if (c == "[") depth++
+        else if (c == "]" && depth > 0) depth--
+        else if (c == ":" && depth == 0) { found = 1; break }
+        head = head c
+      }
+      if (!found) next
       at = index(head, "[at="); if (!at) next
       rest = substr(head, at + 4)
       close_at = index(rest, "]"); if (!close_at) next

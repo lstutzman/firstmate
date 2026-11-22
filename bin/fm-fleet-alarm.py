@@ -482,7 +482,8 @@ while IFS= read -r line || [ -n "$line" ]; do
       until=$(status_paused_until "$line" || true)
       # A paused line may also declare its recheck as a [until=<YYYY-MM-DDTHH:MMZ>] tag before the first colon.
       if [ -z "$until" ] && status_is_paused "$line"; then
-        tag=$(printf '%s' "${line%%:*}" | sed -n 's/.*\[until=\([0-9T:-]*Z\)\].*/\1/p' | head -1)
+        tag=$(printf '%s' "$line" | sed -n 's/^[^[:space:]:]*\(\([[:space:]]*\[[^]]*\]\)*\).*/\1/p' \
+          | sed -n 's/.*\[until=\([0-9T:-]*Z\)\].*/\1/p' | head -1)
         [ -z "$tag" ] || until=$(fm_utc_iso_to_epoch "$tag" || true)
       fi
       cause=$(status_line_cause "$line")
