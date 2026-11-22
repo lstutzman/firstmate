@@ -138,7 +138,7 @@ test_answer_send_closes_open_decision() {
   expect_code 0 "$rc" "an answer send with --resolve-key should succeed"
   grep -qF "go with REST" "$(fm_inbox_record "$home/state/t1.inbox" 001)" \
     || fail "the answer text should reach the worker's durable inbox record"
-  assert_contains "$(cat "$log")" "Firstmate inline steer" "the doorbell should be rung for the answer"
+  assert_contains "$(cat "$log")" "Firstmate instruction waiting" "the doorbell should be rung for the answer"
   sed -E 's/ \[at=[0-9]+\]//' "$home/state/t1.status" | grep -qF 'resolved [key=api-shape]: answered: go with REST' \
     || fail "fm-send did not append the closing resolved line:"$'\n'"$(cat "$home/state/t1.status")"
   # The drain folded the worker's `working:` line but never listed it, so the
@@ -160,8 +160,8 @@ test_answer_send_closes_open_decision() {
 # session that wrote it, while any other writer's later line on the same task
 # still must. Both directions are read through the production seen-signature
 # gate the watcher's signal scan consumes (bin/fm-wake-lib.sh).
-# --resolve-key behaves the same whether the answer rides inline (the case
-# above) or keeps the pointer doorbell (a multi-line answer): the answer is
+# --resolve-key behaves the same whichever doorbell the answer takes (the case
+# above, a short one-line answer) or a multi-line answer: the answer is
 # recorded, the doorbell rung, and the decision closed at enqueue.
 test_pointer_answer_send_closes_open_decision() {
   local dir fb log home rc
@@ -179,7 +179,7 @@ test_pointer_answer_send_closes_open_decision() {
   assert_contains "$(cat "$log")" "Firstmate instruction waiting" "the pointer doorbell should be rung for the answer"
   sed -E 's/ \[at=[0-9]+\]//' "$home/state/t1.status" | grep -qF 'resolved [key=api-shape]: answered: go with REST' \
     || fail "fm-send did not append the closing resolved line for a pointer answer:"$'\n'"$(cat "$home/state/t1.status")"
-  pass "fm-send --resolve-key: a pointer-doorbell answer closes the decision exactly as an inline one does"
+  pass "fm-send --resolve-key: a multi-line answer closes the decision exactly as a one-line one does"
 }
 
 test_answer_close_is_self_announced() {

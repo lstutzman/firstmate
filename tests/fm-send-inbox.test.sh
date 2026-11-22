@@ -31,6 +31,12 @@
 #      its body after a constant prefix; 301 characters, a newline, a tab or an
 #      escape keep the pointer doorbell; an inline ring that did not land falls
 #      back to an unhandled record for the watcher's ladder.
+#  12. A plain short steer is inline only to an agent the backend reports idle:
+#      a busy agent queues typed input and reads an empty composer, so an
+#      inline (born taken) record would be unreachable by the watcher's ladder
+#      if that queued line were lost. A busy or unreadable agent, and one that
+#      turns busy between the probe and the ring, keep the pointer doorbell and
+#      an unhandled record.
 # Every case below that passes a literal `$...` message quotes it on purpose
 # (the point is sending an unexpanded `$` line), so SC2016 is disabled.
 # shellcheck disable=SC2016
@@ -196,23 +202,20 @@ test_deep_home_doorbell_stays_short() {
 # An inline steer (bin/fm-task-inbox-lib.sh): a plain short steer is recorded
 # already taken and its doorbell carries the body.
 test_inline_steer_is_recorded_taken_and_rung_with_its_body() {
-  local dir err rc rec body typed
-  dir=$(setup_case inline)
-  err="$dir/send.err"
-  run_send "$dir" "$err" -- t1 "don't wait for CI; rebase onto main"
-  rc=$?
-  expect_code 0 "$rc" "an inline steer should exit 0"
+  local dir rec body typed
+  dir=$(setup_herdr_case inline)
+  run_herdr_send "$dir" -- t1 "don't wait for CI; rebase onto main" || fail "an inline steer should exit 0"
   rec="$dir/home/state/t1.inbox/handled/001.msg"
   [ -f "$rec" ] || fail "the inline steer was not recorded already taken at $rec"
   [ ! -e "$dir/home/state/t1.inbox/001.msg" ] || fail "an inline steer must never be unhandled"
   body=$(record_body _ "$rec")
   [ "$body" = "don't wait for CI; rebase onto main" ] || fail "the recorded body differs: $body"
-  typed=$(cat "$dir/send.log")
-  [ "$typed" = ": 'Firstmate inline steer, already recorded and taken, no inbox read needed: don'\''t wait for CI; rebase onto main'" ] \
+  typed=$(cat "$dir/herdr.log.submitted")
+  [ "$typed" = ": 'Firstmate inline steer, already recorded and taken, no inbox read needed: don'\\''t wait for CI; rebase onto main'" ] \
     || fail "the inline doorbell should carry the quoted body after the constant prefix, got: $typed"
   [ "$("$ROOT/bin/fm-task-inbox.sh" take "$dir/home/state/t1.inbox")" = "inbox empty" ] \
     || fail "an inline steer must leave nothing for take"
-  pass "fm-send inbox: a plain short steer is recorded taken and rung with its body"
+  pass "fm-send inbox: a plain short steer to an idle agent is recorded taken and rung with its body"
 }
 
 # Eligibility edges at the send surface: exactly 300 printable characters is
@@ -221,10 +224,10 @@ test_inline_steer_is_recorded_taken_and_rung_with_its_body() {
 test_inline_eligibility_edges_at_the_send_surface() {
   local dir err long label msg
   long=$(printf 'a%.0s' $(seq 1 300))
-  dir=$(setup_case edge-300)
-  run_send "$dir" "$dir/send.err" -- t1 "$long" || fail "a 300 character steer should send"
+  dir=$(setup_herdr_case edge-300)
+  run_herdr_send "$dir" -- t1 "$long" || fail "a 300 character steer should send"
   [ -f "$dir/home/state/t1.inbox/handled/001.msg" ] || fail "exactly 300 characters should be inline"
-  case "$(cat "$dir/send.log")" in *"$long'") ;; *) fail "the 300 character body was not rung inline" ;; esac
+  case "$(cat "$dir/herdr.log.submitted")" in *"$long'") ;; *) fail "the 300 character body was not rung inline" ;; esac
   for label in 301 newline tab escape; do
     case "$label" in
     301) msg="${long}a" ;;
@@ -232,11 +235,11 @@ test_inline_eligibility_edges_at_the_send_surface() {
     tab) msg=$'tab\there' ;;
     escape) msg=$'esc\033[0m' ;;
     esac
-    dir=$(setup_case "edge-$label")
-    run_send "$dir" "$dir/send.err" -- t1 "$msg" || fail "a $label steer should send"
+    dir=$(setup_herdr_case "edge-$label")
+    run_herdr_send "$dir" -- t1 "$msg" || fail "a $label steer should send"
     [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "a $label steer must stay an unhandled pointer record"
     [ ! -e "$dir/home/state/t1.inbox/handled/001.msg" ] || fail "a $label steer must not be born taken"
-    assert_contains "$(cat "$dir/send.log")" "Firstmate instruction waiting" "a $label steer should ring the pointer doorbell"
+    assert_contains "$(cat "$dir/herdr.log.submitted")" "Firstmate instruction waiting" "a $label steer should ring the pointer doorbell"
   done
   pass "fm-send inbox: inline holds at 300 characters; 301, newline, tab and escape keep the pointer doorbell"
 }
@@ -244,33 +247,123 @@ test_inline_eligibility_edges_at_the_send_surface() {
 # An inline steer is never in the ladder, so a ring that did not land is handed
 # back to it: the record turns into an ordinary unhandled one the watcher owns.
 test_inline_ring_that_does_not_land_falls_back_to_the_ladder() {
-  local dir err rc
-  dir=$(setup_case inline-fallback)
-  err="$dir/send.err"
-  run_send "$dir" "$err" FM_FAKE_TMUX_SEND_FAIL=1 -- t1 "steer into a dead pane"
-  rc=$?
-  expect_code 0 "$rc" "a failed inline doorbell must not fail the send"
-  [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "a failed inline ring must leave an unhandled record"
-  [ ! -e "$dir/home/state/t1.inbox/handled/001.msg" ] || fail "the failed inline record stayed taken"
-  grep -q '^inline=' "$dir/home/state/t1.inbox/001.msg" && fail "the fallback record kept its inline header"
-  assert_contains "$(cat "$err")" "watcher will re-ring" "the fallback should hand the record to the re-ring ladder"
-  # The fallback rings the pointer once at once, so it is no slower than a
-  # pointer steer: the first (inline) ring fails, the pointer ring lands.
-  dir=$(setup_case inline-fallback-rering)
-  run_send "$dir" "$dir/send.err" FM_FAKE_TMUX_FAIL_FIRST="$dir/failed-once" -- t1 "steer past one lost ring" ||
+  local dir
+  # The inline ring fails, the pointer ring lands: the record turns into an
+  # ordinary unhandled one the watcher owns, rung once at once.
+  dir=$(setup_herdr_case inline-fallback)
+  run_herdr_send "$dir" FM_FAKE_HERDR_SEND_FAIL_FIRST="$dir/failed-once" -- t1 "steer past one lost ring" ||
     fail "a failed inline ring then landed pointer ring must not fail the send"
   [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "the fallback must leave an unhandled pointer record"
-  assert_contains "$(cat "$dir/send.log")" "Firstmate instruction waiting" \
+  [ ! -e "$dir/home/state/t1.inbox/handled/001.msg" ] || fail "the failed inline record stayed taken"
+  grep -q '^inline=' "$dir/home/state/t1.inbox/001.msg" && fail "the fallback record kept its inline header"
+  assert_contains "$(cat "$dir/herdr.log.submitted")" "Firstmate instruction waiting" \
     "the fallback should ring the pointer doorbell at once"
-  case "$(cat "$dir/send.log")" in
+  case "$(cat "$dir/herdr.log.submitted")" in
   *"steer past one lost ring"*) fail "the fallback pointer ring must not carry the body" ;;
   esac
   assert_not_contains "$(cat "$dir/send.err")" "did not reach" "a landed pointer ring should leave no failed-ring notice"
-  dir=$(setup_case inline-fallback-pending)
-  run_send "$dir" "$dir/send.err" FM_FAKE_TMUX_COMPOSER=pending -- t1 "steer past a stuck composer" ||
-    fail "a skipped inline ring must not fail the send"
-  [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "a skipped inline ring must leave an unhandled record"
   pass "fm-send inbox: an inline ring that did not land falls back to an unhandled pointer record"
+}
+
+# A stateful stub herdr: `pane send-text` fills the composer, Enter submits it
+# (logged to $FM_HERDR_LOG.submitted) and empties it, as a busy Claude does when
+# it queues the input; `agent get` reports $FM_FAKE_AGENT_STATUS.
+make_herdr_stub() { # <dir>
+  local fb="$1/fakebin"
+  mkdir -p "$fb"
+  cat >"$fb/herdr" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_HERDR_LOG"
+C="$FM_HERDR_LOG.composer"
+case "$*" in
+  *"status --json"*) printf '{"server":{"running":true,"socket":""}}\n' ;;
+  *"agent get"*)
+    # FM_FAKE_AGENT_FLIP_AFTER_FIRST=<status>: the first read says idle, every
+    # later one says <status>, as an agent that starts a turn mid-send does.
+    st=${FM_FAKE_AGENT_STATUS:-idle}
+    if [ -n "${FM_FAKE_AGENT_FLIP_AFTER_FIRST:-}" ]; then
+      if [ -e "$FM_HERDR_LOG.flipped" ]; then st=$FM_FAKE_AGENT_FLIP_AFTER_FIRST; else : > "$FM_HERDR_LOG.flipped"; st=idle; fi
+    fi
+    printf '{"result":{"agent":{"agent_status":"%s","agent":"claude"}}}\n' "$st" ;;
+  *"pane get"*) printf '{"result":{"pane":{"foreground_cwd":"/x","agent_status":"%s"}}}\n' "${FM_FAKE_AGENT_STATUS:-idle}" ;;
+  *"pane read"*) printf '\n────────────────────────────────────────\n❯ %s\n────────────────────────────────────────\n  ⏵⏵ bypass permissions on (shift+tab to cycle)\n' "$(cat "$C" 2>/dev/null)" ;;
+  *"pane send-text"*)
+    # FM_FAKE_HERDR_SEND_FAIL_FIRST=<marker>: fail exactly the first send-text.
+    if [ -n "${FM_FAKE_HERDR_SEND_FAIL_FIRST:-}" ] && [ ! -e "$FM_FAKE_HERDR_SEND_FAIL_FIRST" ]; then
+      : > "$FM_FAKE_HERDR_SEND_FAIL_FIRST"; exit 1
+    fi
+    shift 3; printf '%s' "$1" > "$C" ;;
+  *"pane send-keys"*)
+    case "$*" in
+      *ctrl+u*) : > "$C" ;;
+      *enter*) { cat "$C"; printf '\n'; } >> "$FM_HERDR_LOG.submitted"; : > "$C" ;;
+    esac ;;
+  *) printf '{"result":{}}\n' ;;
+esac
+exit 0
+SH
+  chmod +x "$fb/herdr"
+}
+
+setup_herdr_case() { # <name> -> echoes case dir with home/state + a herdr-backed t1 meta
+  local dir="$TMP_ROOT/$1"
+  mkdir -p "$dir/home/state"
+  make_herdr_stub "$dir"
+  : >"$dir/herdr.log"
+  fm_write_meta "$dir/home/state/t1.meta" "window=lab:w1:p1" "endpoint_task_id=t1" "kind=ship" \
+    "harness=claude" "backend=herdr" "herdr_session=lab" "herdr_workspace_id=w1" \
+    "herdr_tab_id=w1:t1" "herdr_pane_id=w1:p1"
+  printf '%s\n' "$dir"
+}
+
+run_herdr_send() { # <case-dir> [env...] -- <fm-send args...>; the typed doorbells land in herdr.log.submitted
+  local dir=$1
+  shift
+  local envs=()
+  while [ "$#" -gt 0 ] && [ "$1" != "--" ]; do
+    envs+=("$1")
+    shift
+  done
+  shift
+  env PATH="$dir/fakebin:$PATH" FM_ROOT_OVERRIDE="$dir/home" FM_HOME="$dir/home" \
+    FM_HERDR_LOG="$dir/herdr.log" FM_SEND_SETTLE=0 ${envs[@]+"${envs[@]}"} \
+    "$SEND" "$@" >/dev/null 2>"$dir/send.err"
+}
+
+# A busy agent queues what is typed into it and reads an empty composer, so the
+# ring cannot tell a queued doorbell from a delivered one; an inline record is
+# born taken and no ladder re-rings it. A plain short steer therefore goes
+# inline only to an agent the backend reports idle.
+test_inline_steer_needs_a_proven_idle_agent() {
+  local dir rec status
+  # Only an agent the backend reports idle gets an inline record; a busy agent,
+  # an unreadable one (tmux has no busy read) and one that turns busy between
+  # fm-send's probe and its ring all take the pointer path.
+  for status in working flip; do
+    dir=$(setup_herdr_case "inline-$status")
+    if [ "$status" = flip ]; then
+      run_herdr_send "$dir" FM_FAKE_AGENT_FLIP_AFTER_FIRST=working -- t1 "steer to an agent that turns busy" ||
+        fail "a steer to a flipping agent should send"
+    else
+      run_herdr_send "$dir" FM_FAKE_AGENT_STATUS=working -- t1 "steer to a $status agent" ||
+        fail "a steer to a $status agent should send"
+    fi
+    rec="$dir/home/state/t1.inbox/001.msg"
+    [ -f "$rec" ] || fail "a steer to a $status agent must stay an unhandled record the ladder owns"
+    [ ! -e "$dir/home/state/t1.inbox/handled/001.msg" ] || fail "a steer to a $status agent was born taken"
+    grep -q '^inline=' "$rec" && fail "a steer to a $status agent kept its inline header"
+    assert_contains "$(cat "$dir/herdr.log.submitted")" "Firstmate instruction waiting" \
+      "a $status agent should be rung with the pointer doorbell"
+    case "$(cat "$dir/herdr.log.submitted")" in
+    *"steer to a"*) fail "the body must not ride the doorbell of a $status agent" ;;
+    esac
+  done
+  dir=$(setup_case inline-unknown)
+  run_send "$dir" "$dir/send.err" -- t1 "steer to an unreadable agent" || fail "a steer to an unreadable agent should send"
+  [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "a steer to an agent with no busy read must stay an unhandled record"
+  [ ! -e "$dir/home/state/t1.inbox/handled/001.msg" ] || fail "a steer to an agent with no busy read was born taken"
+  assert_contains "$(cat "$dir/send.log")" "Firstmate instruction waiting" "an unreadable agent should be rung with the pointer doorbell"
+  pass "fm-send inbox: a plain short steer goes inline only to a proven idle agent, otherwise to an unhandled pointer record"
 }
 
 test_multiline_steer_is_legal() {
@@ -404,11 +497,9 @@ test_harness_invocations_stay_typed() {
   dir=$(setup_case dollartext claude)
   err="$dir/send.err"
   run_send "$dir" "$err" -- t1 '$5/month is cheap' || fail "a claude \$-text send should succeed"
-  [ -f "$dir/home/state/t1.inbox/handled/001.msg" ] || fail "a non-codex \$-message should ride the inbox"
-  case "$(cat "$dir/send.log")" in
-  ": 'Firstmate inline steer"*"\$5/month is cheap'") ;;
-  *) fail "a non-codex \$-message should ring as a quoted inline doorbell, got: $(cat "$dir/send.log")" ;;
-  esac
+  [ -f "$dir/home/state/t1.inbox/001.msg" ] || fail "a non-codex \$-message should ride the inbox"
+  assert_contains "$(cat "$dir/send.log")" "Firstmate instruction waiting" \
+    "a non-codex \$-message should ring the pointer doorbell"
   pass "fm-send planes: slash and codex \$skill invocations stay typed; plain \$-text rides the inbox"
 }
 
@@ -641,6 +732,7 @@ test_deep_home_doorbell_stays_short
 test_inline_steer_is_recorded_taken_and_rung_with_its_body
 test_inline_eligibility_edges_at_the_send_surface
 test_inline_ring_that_does_not_land_falls_back_to_the_ladder
+test_inline_steer_needs_a_proven_idle_agent
 test_multiline_steer_is_legal
 test_resend_enqueues_new_sequence
 test_pending_composer_skips_ring_advisorily

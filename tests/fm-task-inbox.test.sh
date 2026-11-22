@@ -1770,6 +1770,7 @@ test_inline_ring_lands_only_on_an_empty_verdict() {
       . "$1"
       fm_backend_agent_state() { printf alive; }
       fm_backend_composer_state() { printf empty; }
+      fm_backend_busy_state() { printf idle; }
       fm_backend_send_text_submit() { printf "%s" "$VERDICT"; }
       fm_task_inbox_ring tmux sess:fm-t1 "$2"' _ "$ROOT/bin/fm-task-inbox-lib.sh" "$2"
   }
@@ -1788,6 +1789,43 @@ test_inline_ring_lands_only_on_an_empty_verdict() {
     [ "$rc" = 0 ] || fail "a pointer ring keeps its best-effort contract (verdict $verdict), got $rc"
   done
   pass "inbox: an inline ring lands only on an empty submit verdict; pointer rings stay best-effort"
+}
+
+# An inline record is born taken, so the ring proves the agent idle before it
+# types anything: a busy, unknown or unreadable read types nothing and returns 4
+# so the sender hands the record to the ladder. A pointer record is unaffected.
+test_inline_ring_types_nothing_unless_the_agent_is_idle() {
+  local dir state rec ptr busy rc
+  dir="$TMP_ROOT/inline-ring-idle"; state="$dir/state"; mkdir -p "$state"
+  rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue" "" inline) || fail "inline write failed"
+  ptr=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 $'pointer\nsteer') || fail "pointer write failed"
+  ring_with_busy() {  # <busy-state> <record>
+    FM_STATE_OVERRIDE="$state" BUSY=$1 TYPED="$dir/typed" bash -c '
+      . "$1"
+      fm_backend_agent_state() { printf alive; }
+      fm_backend_composer_state() { printf empty; }
+      fm_backend_busy_state() { printf "%s" "$BUSY"; }
+      fm_backend_send_text_submit() { printf typed >> "$TYPED"; printf empty; }
+      rc=0
+      fm_task_inbox_ring tmux sess:fm-t1 "$2" || rc=$?
+      printf "%s|%s" "$rc" "$FM_TASK_INBOX_RING_STEP"
+      exit 0' _ "$ROOT/bin/fm-task-inbox-lib.sh" "$2"
+  }
+  for busy in busy unknown ''; do
+    : > "$dir/typed"
+    rc=$(ring_with_busy "$busy" "$rec")
+    [ "$rc" = '4|inline-not-idle' ] || fail "an inline ring to an agent reading '${busy:-empty}' should return 4 naming inline-not-idle, got '$rc'"
+    [ ! -s "$dir/typed" ] || fail "an inline ring to an agent reading '${busy:-empty}' typed something"
+    : > "$dir/typed"
+    rc=$(ring_with_busy "$busy" "$ptr")
+    [ "$rc" = '0|' ] || fail "a pointer ring ignores the busy read (${busy:-empty}), got '$rc'"
+    [ -s "$dir/typed" ] || fail "a pointer ring to an agent reading '${busy:-empty}' should still type its doorbell"
+  done
+  : > "$dir/typed"
+  rc=$(ring_with_busy idle "$rec")
+  [ "$rc" = '0|' ] || fail "an inline ring to an idle agent should land, got '$rc'"
+  [ -s "$dir/typed" ] || fail "an inline ring to an idle agent should type its doorbell"
+  pass "inbox: an inline ring types nothing and returns 4 unless the agent reads exactly idle"
 }
 
 # The watcher never rings a message that is already taken or handled: an inline
@@ -1887,4 +1925,5 @@ test_inline_eligibility_edges
 test_inline_record_is_born_taken
 test_inline_untake_returns_a_pointer_record
 test_inline_ring_lands_only_on_an_empty_verdict
+test_inline_ring_types_nothing_unless_the_agent_is_idle
 test_watcher_never_rerings_a_taken_message

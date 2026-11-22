@@ -1233,7 +1233,7 @@ ok - opencode (1.18.33): the doorbell reached a real worker, which acted and ack
 # harness absent, not verified here: muse
 ```
 
-A plain short steer (one line, at most 300 printable characters, no routing mark) is an inline steer: `bin/fm-send.sh` records it already taken and the doorbell carries the body after a constant prefix, so the worker acts on the body with no inbox read.
+A plain short steer (one line, at most 300 printable characters, no routing mark) to an agent the backend reports idle is an inline steer: `bin/fm-send.sh` records it already taken and the doorbell carries the body after a constant prefix, so the worker acts on the body with no inbox read. Any other agent, including one on a backend with no idle read, gets the pointer doorbell.
 The guard now runs a pointer pass and an inline pass per harness.
 The run below, on 2026-11-09 on tmux 3.6, Linux, with `FM_SEND_INBOX_LIVE_HARNESSES="claude codex"` and the same command, verified the inline doorbell on Claude only:
 
