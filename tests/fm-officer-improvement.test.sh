@@ -21,7 +21,7 @@ TMP_ROOT=$(fm_test_tmproot fm-officer-improvement)
 REPO=lstutzman/PropertyCompass2
 STAGES="work pr_ready review gate_queue gate_run pile_wait merge staging_deploy staging_checks release_cut production"
 
-epoch() { date -u -d "$1" +%s; }
+epoch() { python3 -I -c 'import datetime, sys; print(int(datetime.datetime.fromisoformat(sys.argv[1].replace("Z", "+00:00")).timestamp()))' "$1"; }
 
 # build_world <dir> <spec.json> <visible-until-iso>: writes the fixtures for the PRs in the spec.
 # A PR is in production in the facts when its promoted time is not after <visible-until>.
@@ -86,6 +86,7 @@ with open(os.path.join(fix, "list-%s.txt" % spec.get("list_repo", "PropertyCompa
     for p in sorted(prs, key=lambda q: q["merged"], reverse=True):
         fh.write("PRJSON " + json.dumps({"number": p["n"], "created_at": p["created"], "merged_at": p["merged"], "head": "h%d" % p["n"],
                                          "merge_sha": "m%d" % p["n"], "base": "staging", "draft": False}) + "\n")
+    fh.write("PRPAGE %d\n" % spec.get("page_rows", len(prs)))
 PY
 }
 
@@ -123,6 +124,15 @@ make_world() {
 
 run_improvement() {  # <date> <now-iso>
   PATH="$FAKEBIN:$PATH" FM_OFFICER_NOW="$(epoch "$2")" FM_HOME="$WORLD_HOME" "$OFFICER" run improvement --date "$1"
+}
+
+lane_strays() {  # <lane dir>: the regular files that are not the officer's own or the runner's
+  local f name
+  for f in "$1"/*; do
+    [ -f "$f" ] || continue
+    name=${f##*/}
+    case "$name" in 2026-*|digest|runs.log|prs.json|check-record*) ;; *) printf '%s ' "$name" ;; esac
+  done
 }
 
 lane_json() { printf '%s/data/officers/improvement/%s.json' "$WORLD_HOME" "$1"; }
@@ -199,7 +209,7 @@ test_daily_run_raises_nothing() {
   assert_equals "DIGEST $DAILY_DATE 0 data/officers/improvement/$DAILY_DATE.md" "$digest" "a daily run wakes nobody"
   assert_not_equals 0 "$(grep -c 'api GET' "$GH_LOG")" "GitHub was read"
   assert_no_grep 'POST\|PATCH\|PUT\|DELETE\|-X' "$GH_LOG" "GitHub is only ever read"
-  assert_equals "" "$(find "$WORLD_HOME/data/officers/improvement" -maxdepth 1 -type f ! -name '2026-*' ! -name digest ! -name runs.log ! -name prs.json ! -name 'check-record*' ! -name '.*' -printf '%f ')" "the lane holds only the officer's own files"
+  assert_equals "" "$(lane_strays "$WORLD_HOME/data/officers/improvement")" "the lane holds only the officer's own files"
   pass "fm-officer improvement: a daily run is read-only and raises nothing"
 }
 
@@ -217,7 +227,7 @@ test_rerun_is_byte_identical() {
 test_absent_and_stale_facts_fall_back_to_github() {
   local json
   make_world nofacts "$TMP_ROOT/daily.json" "$DAILY_UNTIL"
-  sed -i "s#facts: [^;]*; ##" "$WORLD_HOME/data/officers.md"
+  sed -i.bak "s#facts: [^;]*; ##" "$WORLD_HOME/data/officers.md"
   run_improvement "$DAILY_DATE" "$DAILY_NOW" >/dev/null || fail "a run without facts must succeed"
   json=$(lane_json "$DAILY_DATE")
   assert_equals 4 "$(jq '.prs | length' "$json")" "without facts the PRs merged on the date are measured (production is unconfirmed)"
@@ -243,7 +253,7 @@ PY
 test_lookup_cap_and_missing_sources_are_named() {
   local json
   make_world cap "$TMP_ROOT/daily.json" "$DAILY_UNTIL" "max-pr-lookups: 2"
-  sed -i "s#gate: [^;]*; ##; s#archive: [^;]*; ##" "$WORLD_HOME/data/officers.md"
+  sed -i.bak "s#gate: [^;]*; ##; s#archive: [^;]*; ##" "$WORLD_HOME/data/officers.md"
   run_improvement "$DAILY_DATE" "$DAILY_NOW" >/dev/null || fail "a capped run must succeed"
   json=$(lane_json "$DAILY_DATE")
   assert_equals 2 "$(grep -c 'pulls/\|timeline' "$GH_LOG")" "the per-PR lookup cap is honoured"
@@ -333,7 +343,7 @@ PYEOF
   assert_equals 3 "$(jq '.prs | length' "$json")" "and keeps the PRs inside it"
   make_world upgrade "$TMP_ROOT/daily.json" "$DAILY_UNTIL"
   cp "$WORLD_HOME/data/officers.md" "$WORLD/with-facts.md"
-  sed -i "s#facts: [^;]*; ##" "$WORLD_HOME/data/officers.md"
+  sed -i.bak "s#facts: [^;]*; ##" "$WORLD_HOME/data/officers.md"
   run_improvement "$DAILY_DATE" "$DAILY_NOW" >/dev/null || fail "run without facts must succeed"
   assert_equals merged "$(pr_field "$(lane_json "$DAILY_DATE")" 201 .cohort)" "first seen as a merge"
   cp "$WORLD/with-facts.md" "$WORLD_HOME/data/officers.md"
@@ -342,10 +352,25 @@ PYEOF
   pass "fm-officer improvement: a first run is windowed and fresh facts upgrade a merge-only record"
 }
 
+test_full_list_page_is_a_named_coverage_gap() {
+  local json
+  jq '. + {page_rows: 100}' "$TMP_ROOT/daily.json" > "$TMP_ROOT/page.json"
+  make_world page "$TMP_ROOT/page.json" "$DAILY_UNTIL"
+  sed -i.bak "s#facts: [^;]*; ##" "$WORLD_HOME/data/officers.md"
+  run_improvement "$DAILY_DATE" "$DAILY_NOW" >/dev/null || fail "a run with a full list page must succeed"
+  json=$(lane_json "$DAILY_DATE")
+  assert_contains "$(jq -r '.findings[] | select(.class == "coverage") | .summary' "$json")" "list page cap" "a full closed-PR page is named, never dropped silently"
+  make_world pagefine "$TMP_ROOT/daily.json" "$DAILY_UNTIL"
+  sed -i.bak "s#facts: [^;]*; ##" "$WORLD_HOME/data/officers.md"
+  run_improvement "$DAILY_DATE" "$DAILY_NOW" >/dev/null || fail "a run with a short list page must succeed"
+  assert_not_contains "$(jq -r '.findings[].summary' "$(lane_json "$DAILY_DATE")")" "list page cap" "a short page raises no gap"
+  pass "fm-officer improvement: a full GitHub list page is a named coverage gap"
+}
+
 test_refuses_linear_writes() {
   local out
   make_world writes "$TMP_ROOT/daily.json" "$DAILY_UNTIL"
-  sed -i "s/writes: none/writes: linear/" "$WORLD_HOME/data/officers.md"
+  sed -i.bak "s/writes: none/writes: linear/" "$WORLD_HOME/data/officers.md"
   out=$(run_improvement "$DAILY_DATE" "$DAILY_NOW" 2>&1) && fail "writes: linear must be refused"
   assert_contains "$out" "writes" "the refusal names the field"
   assert_absent "$GH_LOG" "nothing was read before the refusal"
@@ -359,4 +384,5 @@ test_absent_and_stale_facts_fall_back_to_github
 test_lookup_cap_and_missing_sources_are_named
 test_weekly_digest
 test_first_run_seeds_only_the_window_and_facts_upgrade_a_merge
+test_full_list_page_is_a_named_coverage_gap
 test_refuses_linear_writes

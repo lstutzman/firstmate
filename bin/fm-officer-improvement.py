@@ -97,8 +97,9 @@ STATUS_LINE = re.compile(r"^([a-z][a-z-]*)\s+\[at=(\d+)\]")
 REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 GH_PULL_JQ = ('"PRJSON " + ({number, created_at, merged_at, head: .head.sha, merge_sha: .merge_commit_sha, '
               'base: .base.ref, draft} | tojson)')
-GH_LIST_JQ = ('.[] | select(.merged_at != null) | "PRJSON " + ({number, created_at, merged_at, head: .head.sha, '
-              'merge_sha: .merge_commit_sha, base: .base.ref, draft} | tojson)')
+GH_LIST_JQ = ('(.[] | select(.merged_at != null) | "PRJSON " + ({number, created_at, merged_at, head: .head.sha, '
+              'merge_sha: .merge_commit_sha, base: .base.ref, draft} | tojson)), ("PRPAGE " + (length | tojson))')
+LIST_PAGE = 100
 GH_TIMELINE_JQ = ('.[] | select(.event == "reviewed" or (.event == "commented" and ((.body // "") | contains("pc-review-evidence")))) '
                   '| "EVJSON " + ({kind: (if .event == "reviewed" then "reviewed" else "marker" end), at: (.submitted_at // .created_at)} | tojson)')
 ARCHIVE_PAD_DAYS = 2
@@ -321,6 +322,20 @@ class GitHub:
 
     def get(self, path, jq, prefix, paginate=False):
         """Parsed JSON for each prefixed output line, or None when the budget is spent or the call fails."""
+        lines = self.lines(path, jq, paginate)
+        if lines is None:
+            return None
+        rows = []
+        for line in lines:
+            if line.startswith(prefix + " "):
+                try:
+                    rows.append(json.loads(line[len(prefix) + 1:]))
+                except ValueError:
+                    pass
+        return rows
+
+    def lines(self, path, jq, paginate=False):
+        """The output lines of one read-only call, or None when the budget is spent or the call fails."""
         if self.left <= 0:
             return None
         self.left -= 1
@@ -333,14 +348,7 @@ class GitHub:
         if proc.returncode != 0:
             self.gaps.append("GitHub read failed (exit %d) for %s" % (proc.returncode, path.split("?")[0]))
             return None
-        rows = []
-        for line in proc.stdout.decode("utf-8", "replace").splitlines():
-            if line.startswith(prefix + " "):
-                try:
-                    rows.append(json.loads(line[len(prefix) + 1:]))
-                except ValueError:
-                    pass
-        return rows
+        return proc.stdout.decode("utf-8", "replace").splitlines()
 
 
 def fetch_pull(gh, repo, number):
@@ -565,6 +573,7 @@ def run(args):
     window_lo = (run_day - datetime.timedelta(days=args.window_days - 1)).isoformat()
     facts, facts_state = read_facts(args.facts, args.now, args.max_facts_age)
     gh = GitHub(args.max_pr_lookups)
+    page_gaps = []
 
     # Candidates: (repo, number) -> what the source already gives.
     candidates = {}
@@ -583,9 +592,18 @@ def run(args):
         cohort_basis = "in production, first seen on this run"
     else:
         for repo in repos:
-            rows = gh.get("/repos/%s/pulls?state=closed&sort=updated&direction=desc&per_page=100" % repo, GH_LIST_JQ, "PRJSON")
-            if rows is None:
+            lines = gh.lines("/repos/%s/pulls?state=closed&sort=updated&direction=desc&per_page=%d" % (repo, LIST_PAGE), GH_LIST_JQ)
+            if lines is None:
                 continue
+            rows = []
+            for line in lines:
+                if line.startswith("PRJSON "):
+                    try:
+                        rows.append(json.loads(line[7:]))
+                    except ValueError:
+                        pass
+                elif line.strip() == "PRPAGE %d" % LIST_PAGE:
+                    page_gaps.append("%s: the closed-PR page is full (%d), so PRs merged earlier in the window may be missing" % (repo, LIST_PAGE))
             for row in rows:
                 merged = to_epoch(row.get("merged_at"))
                 key = "%s#%d" % (repo, row["number"])
@@ -657,6 +675,8 @@ def run(args):
     for name, s in sorted(sources.items()):
         if s["state"] != "used":
             findings.append({"class": "coverage", "severity": "low", "summary": "%s %s: %s" % (name, s["state"], s["note"])})
+    for gap in page_gaps:
+        findings.append({"class": "coverage", "severity": "low", "summary": "GitHub list page cap: " + gap})
     if gh.left <= 0:
         findings.append({"class": "coverage", "severity": "low",
                          "summary": "GitHub lookup cap reached; PRs left unread have unmeasured stages naming the cap"})
