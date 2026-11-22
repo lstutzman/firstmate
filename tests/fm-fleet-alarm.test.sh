@@ -139,12 +139,14 @@ pass 'queue depth and age alarm from the summary counts, held rows excepted'
 cat > "$BIN_FIX/fm-send.sh" <<'SH'
 #!/usr/bin/env bash
 [ "$2" = --fire-and-forget ] && printf '%s' "$3" | grep -Eq '^[a-f0-9]{16}$' || exit 1
+! grep -qxF "$3" "$FM_HOME/send-ids" 2>/dev/null || exit 0
+printf '%s\n' "$3" >> "$FM_HOME/send-ids"
 printf '%s\n' "$*" >> "$FM_HOME/send-calls"
 SH
 chmod +x "$BIN_FIX/fm-send.sh"
 touch "$HOME_FIX/config/fleet-ledger"
 status="$HOME_FIX/state/fleet-alarm.status"
-: > "$status"; rm -f "$HOME_FIX/send-calls"
+: > "$status"; rm -f "$HOME_FIX/send-calls" "$HOME_FIX/send-ids"
 queue_lines() { grep -c 'key=queue-' "$status" || true; }
 mate 0 0 9000
 set_mate_queue 31 2
@@ -218,7 +220,7 @@ assert_contains "$(tail -n 1 "$status")" 'Oldest unheld queued item 22 days' 'an
 set_mate_queue 3 none
 run_alarm timer >/dev/null
 mate 0 0 9000
-rm -f "$HOME_FIX/config/fleet-ledger" "$status" "$BIN_FIX/fm-send.sh" "$HOME_FIX/send-calls"
+rm -f "$HOME_FIX/config/fleet-ledger" "$status" "$BIN_FIX/fm-send.sh" "$HOME_FIX/send-calls" "$HOME_FIX/send-ids"
 pass 'a queue finding is one keyed working line per home, again only when worse, never a needs-decision'
 
 # Child liveness can be unknown while the structured in-flight count is complete.

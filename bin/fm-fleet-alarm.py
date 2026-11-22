@@ -957,7 +957,7 @@ def check(channel):
                 if opens:
                     try:
                         run([BIN / 'fm-send.sh', f'fm-{home}', '--fire-and-forget',
-                             hashlib.sha256(f'{key}-{queue[key][0]}'.encode()).hexdigest()[:16], text], 20)
+                             hashlib.sha256(f'{key}-{queue[key][0]}-{now}'.encode()).hexdigest()[:16], text], 20)
                     except ReaderUnavailable as error:
                         print(f'fleet-alarm: queue report for fm-{home} not delivered (fm-send exit {error})',
                               file=sys.stderr)
