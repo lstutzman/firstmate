@@ -173,16 +173,20 @@ def tally(project, prs):
     (labelled held, no record showing them waiting for the captain) and `folded` (members a pile carries). `held` and
     `labelled` PRs use no CI slot, so `units` is the CI-slot count (state and open); the open-PR cap counts them too, so
     `cap` (units + held + labelled) is the cap count (gate), by Lee's word of 2026-11-22. `carried` holds the folded
-    members that were eligible on their own before their pile existed, closed at that pile's creation (state's walk-back)."""
+    members that were eligible on their own (ready, not held by label or record) before their pile existed, closed at
+    that pile's creation (state's walk-back)."""
     prs, members = fold_piles(prs)
+    folded = len(members)
     ready = [pr for pr in prs if not pr['isDraft'] and not pr['promotion']]
-    held = held_urls(project, [pr['url'] for pr in ready]) if ready else set()
+    members = [pr for pr in members if not pr['isDraft'] and not pr['promotion'] and not pr['labelHeld']]
+    urls = [pr['url'] for pr in ready + members]
+    recorded = held_urls(project, urls) if urls else set()
+    held = recorded & {pr['url'] for pr in ready}
     units = [pr for pr in ready if pr['url'] not in held and not pr['labelHeld']]
     labelled = sum(1 for pr in ready if pr['labelHeld'] and pr['url'] not in held)
     return {'units': units, 'cap': len(units) + len(held) + labelled, 'drafts': sum(1 for pr in prs if pr['isDraft']),
             'held': len(held), 'promotion': sum(1 for pr in prs if pr['promotion'] and not pr['isDraft']),
-            'labelled': labelled, 'folded': len(members),
-            'carried': [pr for pr in members if not pr['isDraft'] and not pr['promotion'] and not pr['labelHeld']]}
+            'labelled': labelled, 'folded': folded, 'carried': [pr for pr in members if pr['url'] not in recorded]}
 
 
 def open_count(project):

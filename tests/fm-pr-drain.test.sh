@@ -488,6 +488,28 @@ PY2
   pass "a PR waiting for the captain counts toward the open-PR cap and not toward the CI-slot count, labelled or not"
 }
 
+test_drain_walk_back_leaves_record_held_pile_members_out() {
+  printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
+  rm -f "$GATE_HOME"/state/held-*.meta
+  fm_write_meta "$GATE_HOME/state/held-61.meta" "project=$PROJECT" "kind=ship" "yolo=off" "pr=https://github.com/o/r/pull/61"
+  fm_write_meta "$GATE_HOME/state/held-62.meta" "project=$PROJECT" "kind=ship" "yolo=off" "pr=https://github.com/o/r/pull/62"
+  python3 -I - "$GHDATA" <<'PY2'
+import json, sys, time
+def iso(hours):
+    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - hours * 3600))
+pr = lambda n, hours, head='fm/b%d', body='': {'number': n, 'createdAt': iso(hours), 'isDraft': False, 'url': f'https://github.com/o/r/pull/{n}',
+                                                'headRefName': head % n if '%d' in head else head, 'body': body}
+others = [pr(n, 200) for n in range(1, 23)]
+pile = pr(50, 1, 'landing/pile-a', 'Members in order: PR 61 and PR 62 ...')
+json.dump(others + [pile, pr(61, 96), pr(62, 96)], open(sys.argv[1] + '/open.json', 'w'))
+json.dump([], open(sys.argv[1] + '/closed.json', 'w'))
+PY2
+  assert_equals "off o/r 23" "$(state_r)" "two pile members waiting for the captain were counted before their pile (22, not 22 + 2 = 24)"
+  rm -f "$GATE_HOME"/state/held-*.meta
+  assert_equals "on o/r 23" "$(state_r)" "two unheld pile members were not counted before their pile (22 + 2 = 24)"
+  pass "drain's walk-back leaves pile members waiting for the captain out of the time before their pile"
+}
+
 test_drain_leaves_label_held_prs_out() {
   printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
   rm -f "$GATE_HOME"/state/held-*.meta
@@ -727,6 +749,7 @@ fm_test_run \
   test_a_pile_folds_only_the_members_it_names \
   test_drain_walk_back_counts_a_closed_pile_once \
   test_drain_walk_back_counts_pile_members_before_their_pile \
+  test_drain_walk_back_leaves_record_held_pile_members_out \
   test_drain_leaves_label_held_prs_out \
   test_unreadable_s_makes_drain_unknown \
   test_brief_carries_the_ci_slots_gate_only_when_slots_are_declared \
