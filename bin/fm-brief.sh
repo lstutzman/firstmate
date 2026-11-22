@@ -87,10 +87,10 @@
 # bin/fm-spawn.sh adds that line to the launch brief only when its `--model`
 # also names a Fable 5.x model; bin/fm-dod-lib.sh's fm_brief_ownership_section
 # owns the rule and the text. Refused on --scout and --secondmate.
-# --pr-drain <class> declares why a ship may launch while its repository is in PR
-# drain: an exemption class or a landing job that bin/fm-pr-drain.py's class
-# command accepts. It writes a "PR drain: <class>" line under `# Setup`, which
-# bin/fm-spawn.sh reads before refusing a ship on a drained repository. When
+# --pr-drain <class> declares why a ship's PR opening is exempt from PR drain:
+# an exemption class or a landing job that bin/fm-pr-drain.py's class
+# command accepts. It writes a "PR drain: <class>" line under `# Setup`. A drain
+# never holds a ship start (bin/fm-spawn.sh launches it); it holds the PR opening. When
 # --project names a GitHub clone whose repository is in drain at scaffold time
 # (bin/fm-pr-drain.py owns the state), the brief also gets a `# PR drain`
 # section saying so, unless the class is production-outage, cve, security or a landing
@@ -1237,6 +1237,7 @@ case "$PR_DRAIN" in
 
 # PR drain
 $PR_DRAIN_REPO was in PR drain ($PR_DRAIN_OPEN open PRs) when this brief was written: it takes no new pull requests until its eligible open PRs are merged down to its CI slots S or fewer (0 when it declares none).
+A PR drain holds pull request openings, never ship starts: build and test as usual, and only the opening of the pull request waits.
 ${PR_DRAIN_DOD:+Follow the PR drain check in the Definition of done before you open a pull request.}${PR_DRAIN_DOD:-$PR_DRAIN_RULE}"
     fi
     ;;

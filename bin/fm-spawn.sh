@@ -280,12 +280,8 @@
 #   cannot be read prints one `warning:` line and launches. --landing-exempt
 #   marks a ship as a fix or landing work that is never held for lag, and is
 #   refused on --scout and --secondmate spawns, which are never held for it.
-#   PR drain: a fresh ship whose project's GitHub repository is in PR drain
-#   (bin/fm-pr-drain.py owns the state and the accepted classes) is deferred
-#   exactly like a capacity deferral unless its brief carries a valid
-#   "PR drain: <class>" line (bin/fm-brief.sh --pr-drain). An unknown state prints
-#   one `warning:` line and launches; scouts are never held.
-#   CI slots (config/ci-slots) and the open-PR cap (config/open-pr-cap) never
+#   PR drain (bin/fm-pr-drain.py owns the state and the accepted classes), CI
+#   slots (config/ci-slots) and the open-PR cap (config/open-pr-cap) never
 #   hold a ship start: they hold PR openings, checked by the worker just before
 #   it opens a PR (bin/fm-pr-drain.py gate; bin/fm-project-capacity-lib.sh).
 #   Office authority: in an office home (bin/fm-office-authority-lib.sh owns
@@ -2382,7 +2378,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
     pair_rc=0
     FM_SPAWN_NO_GUARD=1 "$FM_ROOT/bin/fm-spawn.sh" "${pair_args[@]}" || pair_rc=$?
     if [ "$pair_rc" -eq "$FM_PROJECT_CAPACITY_DEFER_EXIT" ]; then
-      echo "batch: DEFERRED ${pair%%=*} (${pair#*=}) - its project or this machine's lanes are at capacity, its project's landing lags, or its repository is in PR drain, so it stays queued" >&2
+      echo "batch: DEFERRED ${pair%%=*} (${pair#*=}) - its project or this machine's lanes are at capacity or its project's landing lags, so it stays queued" >&2
       [ "$rc" -ne 0 ] || rc=$FM_PROJECT_CAPACITY_DEFER_EXIT
     elif [ "$pair_rc" -ne 0 ]; then
       echo "batch: FAILED to spawn ${pair%%=*} (${pair#*=})" >&2
@@ -4516,10 +4512,10 @@ spawn_require_security_item() {
     exit 1
   }
 }
-# PR-drain admission (bin/fm-pr-drain.py owns the state and the classes): a fresh
-# ship for a repository in drain launches only with a declared exemption class or
-# landing job, and is otherwise deferred like a capacity deferral. It runs
-# before the shared project lock, so a slow GitHub read never holds it.
+# PR-drain checks (bin/fm-pr-drain.py owns the state and the classes): a drain
+# holds PR openings only, never a ship start, so this refuses nothing for a
+# drained repository; it only validates a declared lee-explicit or security class.
+# It runs before the shared project lock, so a slow GitHub read never holds it.
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ]; then
   read -r SPAWN_DRAIN_STATE SPAWN_DRAIN_REPO SPAWN_DRAIN_REST < <(python3 "$FM_ROOT/bin/fm-pr-drain.py" state "$PROJ_ABS") || true
   SPAWN_DRAIN_CLASS=$(sed -n 's/^PR drain: \([^ ]*\)$/\1/p' "$BRIEF" 2>/dev/null | head -n 1)
@@ -4531,12 +4527,6 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ]; then
   fi
   if [ "$SPAWN_DRAIN_STATE" = on ] && [ "$SPAWN_DRAIN_CLASS" = security ]; then
     spawn_require_security_item
-  fi
-  if [ "$SPAWN_DRAIN_STATE" = unknown ]; then
-    echo "warning: PR drain state of $SPAWN_DRAIN_REPO is unknown ($SPAWN_DRAIN_REST); launching task $ID anyway" >&2
-  elif [ "$SPAWN_DRAIN_STATE" = on ] && ! { [ -n "$SPAWN_DRAIN_CLASS" ] && python3 "$FM_ROOT/bin/fm-pr-drain.py" class "$SPAWN_DRAIN_CLASS"; }; then
-    echo "deferred: $SPAWN_DRAIN_REPO is in PR drain with $SPAWN_DRAIN_REST eligible open PRs (drain holds from 24 eligible open PRs until S or fewer), so new ship work is refused; task $ID was not launched and its backlog item stays queued - dispatch it again once the drain ends, or rescaffold its brief with bin/fm-brief.sh --pr-drain <class> for an exemption (production-outage, cve, security, wolverine, lee-research, lee-explicit, officer, scheduled) or landing job (restack, red-gate-fix, returned-pr-fix, review)" >&2
-    exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
   fi
 fi
 # Project capacity admission (bin/fm-project-capacity-lib.sh owns the
