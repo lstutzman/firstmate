@@ -249,6 +249,8 @@ esac
 . "$SCRIPT_DIR/fm-pr-lib.sh"  # fm_pr_poll_artifacts_valid: the armed merge poll
 # shellcheck source=bin/fm-office-authority-lib.sh
 . "$SCRIPT_DIR/fm-office-authority-lib.sh"  # fm_office_task_landing: the parked-handoff predicate
+# shellcheck source=bin/fm-nm-run-lib.sh
+. "$SCRIPT_DIR/fm-nm-run-lib.sh"  # fm_nm_run: the bounded runs-ledger read behind run_active
 SNAPSHOT_OFFICE_ID=
 ! fm_office_detect "$FM_HOME" "$DATA" || SNAPSHOT_OFFICE_ID=$FM_OFFICE_DETECT_ID
 
@@ -296,6 +298,9 @@ a declared wait too: it is listed in waiting_on_merge with hold_kind "external"
 and counted in counts.waiting_on_merge, so a PR held for another item's landing
 is not handed to its merger early. An expired hold_until or a failed child does
 not exempt; captain holds are unchanged.
+A done or failed no-mistakes ship whose branch has a live newest run in the runs ledger
+(shown as run_active) is mid-validation, not terminal_in_flight: a failed run a newer run supersedes, or a
+handoff done line followed by a starting run, stays live work. A done line with no live run is unchanged.
 A done ship that finished as a parked ready branch (ready_branch= and no pr=, fm_office_task_ready_branch_waiting,
 shown as pr.ready_branch_waiting) is waiting for a PR place by design: it is not terminal_in_flight, is listed in
 waiting_on_merge with pr null and ready_branch true.
@@ -698,6 +703,32 @@ snapshot_task_generation_is_current() {  # <captured-meta> <id>
   fi
 }
 
+# Prints 1 when a done or failed local no-mistakes ship still has a live run on
+# its branch, else 0. crew-state reads one run at a time and can answer done or
+# failed while the pipeline is between runs or the handoff run is starting; the
+# runs ledger's newest row for the branch is the authority on whether a newer
+# run is live. Only done and failed rows pay for the read, one bounded call each.
+snapshot_run_active() {  # <captured-meta> <id>
+  local meta=$1 id=$2 state kind mode branch worktree row runs
+  state=$(jq -r '.state // ""' "$SNAPSHOT_TASK_DIR/$id.json" 2>/dev/null) || state=
+  kind=$(meta_value "$meta" kind)
+  mode=$(meta_value "$meta" mode)
+  branch=$(meta_value "$meta" branch)
+  worktree=$(meta_value "$meta" worktree)
+  if { [ "$state" = "done" ] || [ "$state" = "failed" ]; } && [ "${kind:-ship}" = ship ] \
+    && { [ -z "$mode" ] || [ "$mode" = no-mistakes ]; } \
+    && [ -z "$(meta_value "$meta" remote_host)" ] && [ -n "$branch" ] && [ -d "$worktree" ] \
+    && command -v no-mistakes >/dev/null 2>&1; then
+    runs=$(fm_nm_run "$worktree" "$FM_SNAPSHOT_CREW_STATE_TIMEOUT" runs --limit 200)
+    row=$(fm_nm_runs_newest_for_branch "$branch" "$runs")
+    if [ "$(fm_nm_run_status_class "${row%%|*}")" = live ]; then
+      printf '1\n'
+      return 0
+    fi
+  fi
+  printf '0\n'
+}
+
 prefetch_task_observations() {  # <meta> <id>
   local meta=$1 id=$2 remote_host current_file endpoint_file current_pid='' current_rc=0
   local status_log status_capture report_path report_capture open_file
@@ -770,6 +801,7 @@ prefetch_task_observations() {  # <meta> <id>
   fi
   printf 'endpoint_exists=%s\nagent_alive=%s\n' "$endpoint_exists" "$agent_alive" > "$endpoint_file" || current_rc=1
   [ "$current_rc" -eq 0 ] || return "$current_rc"
+  snapshot_run_active "$meta" "$id" > "$SNAPSHOT_TASK_DIR/$id.run-active" || return 1
   task_json_row "$meta" "$id" > "$SNAPSHOT_TASK_DIR/$id.row"
 }
 
@@ -839,7 +871,7 @@ task_json_row() {  # <captured-meta> <id>
   local pr pr_source endpoint_exists agent_alive meta_json report_json worktree_json home_json
   local event_file decisions_file merge_check_armed parked_handoff ready_branch_waiting
   local current_state current_source pending_decision blocked_event report_present=0 pr_from_status
-  local open_decisions_tsv open_decisions_json
+  local open_decisions_tsv open_decisions_json run_active=0
 
   original_meta="$STATE/$id.meta"
   kind=$(meta_value "$meta" kind)
@@ -941,6 +973,7 @@ task_json_row() {  # <captured-meta> <id>
     esac
   done < "$endpoint_file" || return 1
   [ -f "$report_path" ] && report_present=1 || report_present=0
+  [ "$(cat "$SNAPSHOT_TASK_DIR/$id.run-active" 2>/dev/null)" = 1 ] && run_active=1
   meta_json=$(path_present_json "$original_meta" "$meta")
   report_json=$(path_present_json "$DATA/$id/report.md" "$report_path")
   if [ -n "$worktree" ]; then worktree_json=$(path_present_json "$worktree"); else worktree_json=$(jq -n '{path:null,present:false}'); fi
@@ -989,6 +1022,7 @@ task_json_row() {  # <captured-meta> <id>
     --argjson merge_check_armed "$(bool_json "$merge_check_armed")" \
     --argjson parked_handoff "$(bool_json "$parked_handoff")" \
     --argjson ready_branch_waiting "$(bool_json "$ready_branch_waiting")" \
+    --argjson run_active "$(bool_json "$run_active")" \
     '($current_state[0]) as $current_state
      | ($status_log[0]) as $status_log
      | ($open_decisions[0]) as $open_decisions
@@ -1012,6 +1046,7 @@ task_json_row() {  # <captured-meta> <id>
       },
       secondmate_projects:($projects | if . == "" then [] else split(",") | map(gsub("^[[:space:]]+|[[:space:]]+$"; "")) | map(select(. != "")) end),
       current_state:($current_state + {observed_at:$observed_at,freshness:"fresh"}),
+      run_active:$run_active,
       endpoint:{target:($target | if . == "" then null else . end),exists:$endpoint_exists,agent_alive:$agent_alive,
         status:(if $endpoint_exists == false then "absent"
                 elif $agent_alive == "alive" or $agent_alive == "dead" then $agent_alive
@@ -1157,6 +1192,7 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
          | select((.current_state.state == "done" and .pr.source == "meta" and .pr.merge_check_armed == true) | not)
          | select((.current_state.state == "done" and .pr.parked_handoff == true) | not)
          | select((.current_state.state == "done" and .pr.ready_branch_waiting == true) | not)
+         | select(.run_active == true | not)
          | select((.current_state.state == "done" and .current_state.source == "status-log"
              and ((.current_state.detail // "") | . == "pipeline handoff: validation run not finished"
                or startswith("pipeline handoff: validation run not finished · ")

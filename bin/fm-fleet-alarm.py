@@ -41,7 +41,7 @@ nothing open (a `needs-decision [key=merge-handoff-<n>]` whose text starts `[han
 does not count) and a complete decision list, is working a long task and
 is not silent either. A `paused [cause=external]` line with no `until` time is a declared wait
 that counts instead while younger than external_wait_ceiling_hours (24), then alarms again; only an
-`until <YYYY-MM-DDTHH:MMZ>` token in a line is read as its `until` time, never a date-only phrase.
+`until <YYYY-MM-DDTHH:MMZ>` token, or a `[until=<YYYY-MM-DDTHH:MMZ>]` tag before the first colon, is read as its `until` time, never a date-only phrase.
 A secondmate waiting on an open captain decision is healthy waiting and is never silent: no
 open decision row has source status unless the mate also holds that task id as a captain-hold row
 (no child is asking it anything), its
@@ -447,20 +447,30 @@ def mate_findings(read, cfg, not_collected):
 . "$1/fm-secondmate-registry-lib.sh"
 . "$1/fm-classify-lib.sh"
 window=$(mktemp) || exit 1
-trap 'rm -f "$window"' EXIT
+norm=$(mktemp) || exit 1
+trap 'rm -f "$window" "$norm"' EXIT
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in
     "- "*)
       secondmate_registry_parse_line "$line" || exit 1
       id=$SECONDMATE_REGISTRY_ID
-      age=$(status_agent_event_age "$3/$id.status" "$3/$id.status" "$4") || exit 1
+      # A [until=<YYYY-MM-DDTHH:MMZ>] tag carries colons that would end a line's tag head early and hide its
+      # [at=] stamp. Read this mate's lines from a same-length copy with those colons written as dots; only
+      # this check does, so every other stamp reader keeps the shared grammar.
+      : > "$norm"
+      if [ -f "$3/$id.status" ] && [ ! -L "$3/$id.status" ]; then
+        LC_ALL=C sed -e 's/\[until=\([0-9]\{4\}-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]\):\([0-9][0-9]\):\([0-9][0-9]\)Z\]/[until=\1.\2.\3Z]/g' \
+          -e 's/\[until=\([0-9]\{4\}-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]\):\([0-9][0-9]\)Z\]/[until=\1.\2Z]/g' \
+          "$3/$id.status" > "$norm" || exit 1
+      fi
+      age=$(status_agent_event_age "$norm" "$3/$id.status" "$4") || exit 1
       : > "$window"
       if [ -f "$3/$id.status" ] && [ ! -L "$3/$id.status" ]; then
         size=$(LC_ALL=C wc -c < "$3/$id.status") || exit 1
-        LC_ALL=C tail -c 65536 "$3/$id.status" | LC_ALL=C awk -v cut=$((size > 65536)) 'NR > cut' \
+        LC_ALL=C tail -c 65536 "$norm" | LC_ALL=C awk -v cut=$((size > 65536)) 'NR > cut' \
           | LC_ALL=C tail -n 200 > "$window" || exit 1
       fi
-      line=$(status_agent_event_line "$3/$id.status" "$3/$id.status" "$4") || exit 1
+      line=$(status_agent_event_line "$norm" "$3/$id.status" "$4") || exit 1
       verb=$(status_line_verb "$line")
       state_age=$age
       # A plain informational done line does not end a declared pause: the most recent earlier
@@ -480,6 +490,12 @@ while IFS= read -r line || [ -n "$line" ]; do
       raw_verb=$verb
       case "$verb" in working|paused) ;; *) verb=other ;; esac
       until=$(status_paused_until "$line" || true)
+      # A paused line may also declare its recheck as a [until=<YYYY-MM-DDTHH:MMZ>] tag (dots in $line, see above).
+      if [ -z "$until" ] && status_is_paused "$line"; then
+        tag=$(printf '%s' "$line" | sed -n 's/^[^[:space:]:]*\(\([[:space:]]*\[[^]]*\]\)*\).*/\1/p' \
+          | sed -n 's/.*\[until=\([0-9T.-]*Z\)\].*/\1/p' | head -1 | tr . :)
+        [ -z "$tag" ] || until=$(fm_utc_iso_to_epoch "$tag" || true)
+      fi
       cause=$(status_line_cause "$line")
       folded=$(status_open_decisions "$window" secondmate)
       # An external merge handoff ([handoff=<home>]) waits on another home, not on the captain or the mate going quiet, so it is not an unanswered decision here.

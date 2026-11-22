@@ -1711,6 +1711,80 @@ SH
   pass "home-summary reads a no-mistakes done as live work only while the branch's run is unfinished"
 }
 
+# A done or failed no-mistakes ship is mid-validation, not terminal, while the runs
+# ledger's newest row for its branch is live: a handoff done line followed by an
+# active run, or a failed run a newer run supersedes. A done line with no run, and a
+# failed run that is still the newest, stay terminal.
+test_home_summary_active_run_makes_done_or_failed_not_terminal() {
+  local home fakebin wt out sha
+  home=$(make_home summary-active-run)
+  fakebin=$(make_fakebin "$home")
+  wt=$home/projects/activerun
+  mkdir -p "$wt"
+  git -C "$wt" init -q
+  fm_git_identity
+  git -C "$wt" commit -q --allow-empty -m init
+  git -C "$wt" checkout -q -b fm/activerun
+  git -C "$wt" update-ref refs/remotes/origin/main "$(git -C "$wt" rev-parse HEAD)"
+  sha=$(git -C "$wt" rev-parse --short=12 HEAD)
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+- [ ] activerun-ship - Mid validation (repo: alpha) (kind: ship) (since 2026-07-11)
+
+## Queued
+
+## Done
+EOF
+  fm_write_meta "$home/state/activerun-ship.meta" \
+    "window=firstmate:fm-activerun-ship" \
+    "worktree=$wt" \
+    "project=$wt" \
+    "harness=claude" \
+    "kind=ship" \
+    "branch=fm/activerun" \
+    "mode=no-mistakes"
+  record_claude_idle "$home/state" activerun-ship
+  write_runs_ledger() {  # <newest-status> [<older-status>]
+    cat > "$fakebin/no-mistakes" <<SH
+#!/usr/bin/env bash
+[ "\${1:-}" = runs ] || exit 0
+printf '%s fm/activerun %s 2026-11-22 10:05\n' '$1' '$sha'
+[ -z '${2:-}' ] || printf '%s fm/activerun %s 2026-11-22 09:00\n' '${2:-}' '$sha'
+SH
+    chmod +x "$fakebin/no-mistakes"
+  }
+
+  printf 'done [at=%s]: committed on fm/activerun, ready for /no-mistakes\n' "$(( $(date +%s) - 7800 ))" > "$home/state/activerun-ship.status"
+  write_runs_ledger running
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
+  printf '%s' "$out" | jq -e '.valid == true and .invalidity.kind == null' >/dev/null \
+    || fail "a handoff done line with a live newest run must not be terminal_in_flight: $out"
+
+  write_runs_ledger failed
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
+  printf '%s' "$out" | jq -e '.invalidity == {kind:"terminal_in_flight",ids:["activerun-ship"]}' >/dev/null \
+    || fail "a done line whose newest run is not live must stay terminal_in_flight: $out"
+
+  printf 'failed [at=%s]: review fix round hit its budget\n' "$(date +%s)" > "$home/state/activerun-ship.status"
+  write_runs_ledger running failed
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
+  printf '%s' "$out" | jq -e '.valid == true and .invalidity.kind == null' >/dev/null \
+    || fail "a failed run superseded by a live run must not be terminal_in_flight: $out"
+
+  write_runs_ledger failed
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
+  printf '%s' "$out" | jq -e '.invalidity == {kind:"terminal_in_flight",ids:["activerun-ship"]}' >/dev/null \
+    || fail "a failed run with no newer run must stay terminal_in_flight: $out"
+
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$fakebin/no-mistakes"
+  printf 'done [at=%s]: ready for /no-mistakes\n' "$(( $(date +%s) - 7800 ))" > "$home/state/activerun-ship.status"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
+  printf '%s' "$out" | jq -e '.invalidity == {kind:"terminal_in_flight",ids:["activerun-ship"]}' >/dev/null \
+    || fail "a done line with no run must stay terminal_in_flight: $out"
+  unset -f write_runs_ledger
+  pass "home-summary treats a live newest run as mid-validation for done and failed ships"
+}
+
 # The exact worker line from the 2026-11-07 false alarms: the pre-validation done
 # names the pipeline it waits for, so it is a handoff even before any run exists.
 test_home_summary_ready_for_no_mistakes_done_is_not_terminal() {
@@ -1809,6 +1883,7 @@ fm_test_run \
   test_home_summary_child_holds_count_survives_truncation \
   test_home_summary_queue_counts_survive_truncation \
   test_home_summary_pipeline_handoff_done_is_live_work \
+  test_home_summary_active_run_makes_done_or_failed_not_terminal \
   test_home_summary_ready_for_no_mistakes_done_is_not_terminal \
   test_undated_captain_hold_phrasing_and_aging \
   test_hold_buckets_are_total_and_text_blind \
