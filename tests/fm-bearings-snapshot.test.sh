@@ -3529,8 +3529,26 @@ test_remote_summary_refresh_keeps_a_cached_copy_when_a_home_is_unreachable() {
   pass "an unreachable remote home keeps its cached copy, and one with no copy fails the refresh loudly"
 }
 
+test_remote_summary_refresh_fails_on_a_fresh_read_older_than_the_max_age() {
+  local parent fakebin out rc=0 cache
+  parent=$(make_home remote-refresh-stale)
+  make_remote_ledger_fleet "$parent" 1
+  write_remote_home_summary "$TMP_ROOT/remote-ledger-home-1" "$(( $(date +%s) - 10800 ))"
+  fakebin=$(make_remote_ledger_ssh "$parent/remote-ssh")
+  cache="$parent/state/secondmate-summary-cache"
+  out=$(FM_HOME="$parent" FM_ROOT_OVERRIDE="$ROOT" FM_SSH_BIN="$fakebin/fake-ssh" \
+    FM_TEST_LEDGER_CALL_LOG="$parent/ledger-calls.log" \
+    "$ROOT/bin/fm-fleet-snapshot.sh" --remote-summary-refresh 2>&1) || rc=$?
+  [ "$rc" -eq 1 ] || fail "a summary three hours old did not fail the refresh (exit $rc): $out"
+  assert_contains "$out" "fresh=0 cached=0 failed=1" "the refresh counted a stale summary as fresh"
+  [ "$(find "$cache" -maxdepth 1 -name '*.json' | wc -l | tr -d ' ')" = 1 ] \
+    || fail "the refresh did not keep the stale copy in the cache"
+  pass "a remote home that serves a summary older than the ship max age fails the refresh but is still cached"
+}
+
 fm_test_run \
   test_remote_summary_refresh_mode_writes_only_the_cache \
+  test_remote_summary_refresh_fails_on_a_fresh_read_older_than_the_max_age \
   test_remote_summary_refresh_keeps_a_cached_copy_when_a_home_is_unreachable \
   test_full_captain_questions_survive_local_and_secondmate_projection \
   test_supplied_secondmate_questions_and_legacy_optional_fields \

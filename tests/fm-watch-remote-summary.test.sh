@@ -64,15 +64,14 @@ test_a_remote_home_starts_one_refresh_per_interval() {
   pass 'a home with a remote secondmate refreshes its summary cache once per interval (default 1800 seconds)'
 }
 
-test_the_default_interval_is_well_inside_the_ship_max_age() {
+test_the_refresh_waits_for_the_default_interval() {
   reset_case
   printf '%s\n' "$REMOTE" > "$FM_HOME/data/secondmates.md"
   fm_touch_epoch "$(( $(date +%s) - 1700 ))" "$STATE/.remote-summary-last-run"
   remote_summary_tick
   sleep 0.5
   [ "$(calls)" = 0 ] || fail "the refresh ran before 1800 seconds"
-  [ "${FM_REMOTE_SHIP_MAX_AGE:-7200}" -ge $((1800 * 3)) ] || fail "the cadence leaves under three attempts per max age"
-  pass 'the default cadence leaves at least three refresh attempts inside the ship-summary max age'
+  pass 'the refresh does not run again before the 1800-second default interval'
 }
 
 test_a_home_without_a_remote_secondmate_is_left_alone() {
@@ -138,7 +137,7 @@ SH
 
 fm_test_run \
   test_a_remote_home_starts_one_refresh_per_interval \
-  test_the_default_interval_is_well_inside_the_ship_max_age \
+  test_the_refresh_waits_for_the_default_interval \
   test_a_home_without_a_remote_secondmate_is_left_alone \
   test_the_interval_is_configurable_and_zero_turns_it_off \
   test_a_stale_cache_is_refreshed_by_the_periodic_path

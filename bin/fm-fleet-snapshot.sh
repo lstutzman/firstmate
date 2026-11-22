@@ -2156,6 +2156,7 @@ scout_report_lines() {
 # "fresh=<n> cached=<n> failed=<n>": a home whose read failed keeps its cached
 # copy and counts as cached only while that copy is younger than
 # FM_REMOTE_SHIP_MAX_AGE (default 7200), the age past which the counts ignore it.
+# A home whose read summary is older than that is stored but counts as failed.
 # Exits 1 when any home counts as failed, so a caller can log the miss.
 remote_summary_refresh() {
   local rows manifest row id home cache slot out fresh=0 cached=0 failed=0 max=${FM_REMOTE_SHIP_MAX_AGE:-7200} age
@@ -2175,7 +2176,12 @@ remote_summary_refresh() {
       out="$SNAPSHOT_COLLECT_DIR/refresh-$slot.json"
       if [ -n "$cache" ] && summary_file_read "$SNAPSHOT_COLLECT_DIR/$slot.fetch" "$home" "$out" \
           && snapshot_cache_store "$out" "$cache"; then
-        fresh=$((fresh + 1))
+        if age=$(snapshot_summary_age "$out") && [ "$age" != null ] && [ "$age" -le "$max" ]; then
+          fresh=$((fresh + 1))
+        else
+          failed=$((failed + 1))
+          echo "fm-fleet-snapshot: remote home $id: its summary is older than $max seconds" >&2
+        fi
       elif [ -n "$cache" ] && summary_file_read "$cache" "$home" "$out" \
           && age=$(snapshot_summary_age "$out") && [ "$age" != null ] && [ "$age" -le "$max" ]; then
         cached=$((cached + 1))
