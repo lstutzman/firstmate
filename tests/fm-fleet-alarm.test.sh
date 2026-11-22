@@ -138,6 +138,7 @@ pass 'queue depth and age alarm from the summary counts, held rows excepted'
 # lets the fleet-alarm needs-decision line carry it.
 cat > "$BIN_FIX/fm-send.sh" <<'SH'
 #!/usr/bin/env bash
+[ "$2" = --fire-and-forget ] && printf '%s' "$3" | grep -Eq '^[a-f0-9]{16}$' || exit 1
 printf '%s\n' "$*" >> "$FM_HOME/send-calls"
 SH
 chmod +x "$BIN_FIX/fm-send.sh"
@@ -172,11 +173,36 @@ run_alarm timer
 [ "$(queue_lines)" = 2 ] || fail 'an improved queue sends nothing'
 set_mate_queue 45 2
 run_alarm timer
-[ "$(queue_lines)" = 3 ] || fail 'a queue that worsens again after improving fires again'
+[ "$(queue_lines)" = 2 ] || fail 'a queue that returns to its peak band after improving does not re-fire'
+set_mate_queue 39 2; run_alarm timer; set_mate_queue 41 2; run_alarm timer
+set_mate_queue 39 2; run_alarm timer; set_mate_queue 41 2; run_alarm timer
+[ "$(queue_lines)" = 2 ] || fail 'a queue hovering at a band boundary below its peak does not re-fire'
+saved="$TMP_ROOT/before-config"; mkdir -p "$saved"
+for file in fleet-alarm.status fleet-ledger.jsonl .fleet-alarm.fleet-ledger-offset; do
+  [ ! -e "$HOME_FIX/state/$file" ] || cp "$HOME_FIX/state/$file" "$saved/$file"
+done
+printf '%s\n' '{"persist_polls":' > "$HOME_FIX/config/fleet-alarm.json"
+run_alarm timer >/dev/null 2>&1 || true
+printf '%s\n' '{"persist_polls":1}' > "$HOME_FIX/config/fleet-alarm.json"
+[ "$(queue_lines)" = 2 ] || fail 'an invalid configuration neither resolves nor re-fires an open queue finding'
+run_alarm timer
+[ "$(queue_lines)" = 2 ] || fail 'a queue finding open across an invalid configuration does not re-fire'
+for file in fleet-alarm.status fleet-ledger.jsonl .fleet-alarm.fleet-ledger-offset; do
+  if [ -e "$saved/$file" ]; then cp "$saved/$file" "$HOME_FIX/state/$file"; else rm -f "$HOME_FIX/state/$file"; fi
+done
 set_mate_queue 3 none
 run_alarm timer
 assert_contains "$(tail -n 1 "$status")" 'resolved' 'a cleared queue finding resolves its key'
 assert_contains "$(tail -n 1 "$status")" '[key=queue-depth-mate]' 'the resolved line names the same key'
+calls=$(wc -l < "$HOME_FIX/send-calls")
+set_mate_queue 31 2
+run_alarm timer
+assert_contains "$(tail -n 1 "$status")" 'Queue depth 31' 'a queue that crosses again after clearing fires'
+[ "$(wc -l < "$HOME_FIX/send-calls")" = $((calls + 1)) ] || fail 'a queue that crosses again after clearing is delivered once'
+run_alarm timer
+[ "$(wc -l < "$HOME_FIX/send-calls")" = $((calls + 1)) ] || fail 'a queue that crossed again does not re-fire'
+set_mate_queue 3 none
+run_alarm timer
 assert_not_contains "$(cat "$status")" 'needs-decision' 'a queue finding never filed a needs-decision across its life'
 set_mate_queue 3 15
 run_alarm timer

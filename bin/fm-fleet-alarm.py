@@ -774,14 +774,14 @@ def collect(cfg):
 
 
 def queue_reports(queue, reported, unread):
-    # One report per new or worse queue finding; an improved one only lowers its recorded band, and a
-    # cleared one resolves its key unless its home could not be read this poll. Updates `reported` and
-    # returns (key, opens, text, home) changes.
+    # One report per new queue finding or new peak band; an improved one keeps its peak until it clears,
+    # and a cleared one resolves its key unless its home could not be read this poll. Updates `reported`
+    # and returns (key, opens, text, home) changes.
     changes = []
     for key, (band, text) in sorted(queue.items()):
         last = reported.get(key)
         worse = last is None or band > last
-        reported[key] = band if worse else min(last, band)
+        reported[key] = band if worse else last
         if worse:
             changes.append((key, True, text, key.split(':', 1)[1]))
     for key in [k for k in reported if k not in queue and k.split(':', 1)[1] not in unread]:
@@ -924,7 +924,7 @@ def check(channel):
                             f'CI slots back within: {repo} has {open_prs} open PRs against {declared} CI slots; ordinary ship work may resume there'))
         queue_reported = dict(stored.get('queue', {}).get(channel, {}))
         unread = set(not_collected) | {key.split(':', 1)[1] for key in raw if key.startswith('mate-read:')}
-        queue_changes = [] if 'mate-read' in raw else queue_reports(queue, queue_reported, unread)
+        queue_changes = [] if 'mate-read' in raw or 'config' in raw else queue_reports(queue, queue_reported, unread)
         announced_orphans = stored.get('orphans', {}).get(channel, 0)
         if orphans is not None:
             host = os.uname().nodename.split('.')[0]
@@ -957,9 +957,10 @@ def check(channel):
                 if opens:
                     try:
                         run([BIN / 'fm-send.sh', f'fm-{home}', '--fire-and-forget',
-                             'queue-' + re.sub(r'[^a-z0-9]+', '-', f'{key}-{queue[key][0]}'), text], 20)
-                    except ReaderUnavailable:
-                        pass
+                             hashlib.sha256(f'{key}-{queue[key][0]}'.encode()).hexdigest()[:16], text], 20)
+                    except ReaderUnavailable as error:
+                        print(f'fleet-alarm: queue report for fm-{home} not delivered (fm-send exit {error})',
+                              file=sys.stderr)
         elif queue_changes:
             print('\n'.join(text for _, opens, text, _ in queue_changes if opens))
         new = {key: sorted(set(old.get(key, [])) | ({channel} if key in fresh else set()))
