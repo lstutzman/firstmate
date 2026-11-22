@@ -32,7 +32,7 @@ REMOTE='- far - a remote mate (host: far.example; root: /srv/fm; home: /srv/home
 LOCAL='- near - a local mate (home: /srv/near; scope: other; projects: project; added 2026-09-01)'
 
 reset_case() {
-  rm -rf -- "$STATE"/* "$STATE"/.[!.]* "$CALLS" "$FM_HOME/data/secondmates.md"
+  rm -rf -- "${STATE:?}"/* "${STATE:?}"/.[!.]* "$CALLS" "$FM_HOME/data/secondmates.md"
   SCRIPT_DIR=$FAKE_DIR
   unset FM_REMOTE_SUMMARY_INTERVAL_SECS
 }
