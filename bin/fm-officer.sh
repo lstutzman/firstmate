@@ -1182,13 +1182,9 @@ action_preflight() {
     echo "FAIL code: $msg"; fail=1
   fi
   # The surgeon's pattern memory asks local-jev on every run; the corpus pass asks it only when it writes Linear.
-  local writes teams team
-  writes=$(line_field "$OFFICER_LINE" writes || echo none)
-  if [ "$writes" = linear ] || [ "$role" = progress ]; then
-    teams=$(line_field "$OFFICER_LINE" team || echo PC)
-    for team in ${teams//,/ }; do checks+=("linear=$team"); done
-  fi
-  if [ "$writes" = linear ] || [ "$role" = surgeon ]; then
+  if [ "$(line_field "$OFFICER_LINE" writes || echo none)" = linear ]; then
+    checks+=("linear=$(line_field "$OFFICER_LINE" team || echo PC)" "jev=$(jev_path)")
+  elif [ "$role" = surgeon ]; then
     checks+=("jev=$(jev_path)")
   fi
   if [ "$role" = surgeon ]; then
