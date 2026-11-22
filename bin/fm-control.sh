@@ -407,9 +407,7 @@ trap control_cleanup EXIT
 # FM_CONTROL_LOCK_HELD_BY. The claim is honored only while the lock's own record
 # names that live pid, so it can never skip a lock somebody else holds; the
 # caller keeps the lock and releases it itself, never this process.
-if [ -n "${FM_CONTROL_LOCK_HELD_BY:-}" ] \
-   && [ "$(cat "$CONTROL_LOCK/pid" 2>/dev/null || true)" = "$FM_CONTROL_LOCK_HELD_BY" ] \
-   && fm_pid_alive "$FM_CONTROL_LOCK_HELD_BY"; then
+if fm_lifecycle_lock_held_by "$CONTROL_LOCK" "${FM_CONTROL_LOCK_HELD_BY:-}"; then
   :
 else
   fm_lock_try_acquire "$CONTROL_LOCK" \
