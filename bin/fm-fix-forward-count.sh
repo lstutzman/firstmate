@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # fm-fix-forward-count.sh - weekly fix-forward evidence for merge-on-green: per repository, how many pull
-# requests merged in the last N days, how many of those carry a `Fixes-regression-from: <full PR URL>` line in
-# their body, and how many are reverts (title starts with "Revert").
+# requests merged in the N days ending on a date (default today), how many of those carry a
+# `Fixes-regression-from: <full PR URL>` line in their body, and how many are reverts (title starts with "Revert").
 #
 # The fleet fixes forward, so reverts alone read near zero while merge-on-green hides regressions; the line
 # links a fix to the PR that caused the bug, and the counts are a velocity evidence source (docs/configuration/officers.md
 # "Officers (data/officers.md)"). The ship brief's rule 9 (bin/fm-brief.sh) tells workers to write the line.
 #
-# Usage: fm-fix-forward-count.sh [--days N] [--json] [--limit N] [--repo owner/name]...
+# Usage: fm-fix-forward-count.sh [--days N] [--until YYYY-MM-DD] [--json] [--limit N] [--repo owner/name]...
 #   --days N    window length in days, default 7
+#   --until D   last UTC day of the window, default today
 #   --json      print one JSON document instead of one line per repository
 #   --limit N   most merged PRs read per repository, default 1000 (a repository that hits it is marked truncated)
 #   --repo R    a repository to count; repeatable. Default: FM_FIX_FORWARD_REPOS (space-separated), else the fleet
@@ -18,7 +19,8 @@
 #   <owner/name> merged=<n> fix_forward=<n> reverts=<n> [truncated]   or   <owner/name> unreadable: <reason>
 # JSON: {"days":N,"since":"YYYY-MM-DD","repos":[{"repo":...,"merged":n,"fix_forward":n,"reverts":n,"truncated":bool}
 # | {"repo":...,"error":"..."}]}
-# The window is the N UTC calendar days ending today, and since is its first day, so runs N days apart never overlap.
+# The window is the N UTC calendar days ending on --until (default today), and since is its first day, so runs N days
+# apart never overlap and a run for a past --until counts the same PRs whenever it runs.
 # Read-only: one `gh repo view` and one `gh pr list` per repository, no write call, no model. The view is needed
 # because `gh pr list --search` answers an empty list, exit 0, for a repository that does not exist or is not
 # readable, which would read as zero merges. Exit 0 when every repository was read,
@@ -28,12 +30,14 @@ set -eu
 DAYS=7
 LIMIT=1000
 JSON=0
+UNTIL=
 REPOS=()
 usage() { sed -n '/^# Usage:/,/^# JSON:/p' "$0" | sed 's/^# \{0,1\}//' >&2; exit 2; }
 while [ $# -gt 0 ]; do
   case $1 in
     --days) [ $# -ge 2 ] || usage; DAYS=$2; shift 2 ;;
     --limit) [ $# -ge 2 ] || usage; LIMIT=$2; shift 2 ;;
+    --until) [ $# -ge 2 ] || usage; UNTIL=$2; shift 2 ;;
     --repo) [ $# -ge 2 ] || usage; REPOS+=("$2"); shift 2 ;;
     --json) JSON=1; shift ;;
     -h|--help) usage ;;
@@ -50,14 +54,26 @@ for tool in gh jq; do
   command -v "$tool" >/dev/null 2>&1 || { echo "error: $tool is required" >&2; exit 2; }
 done
 
-SINCE=$(date -u -d "$((DAYS - 1)) days ago" +%Y-%m-%d 2>/dev/null || date -u -v-"$((DAYS - 1))"d +%Y-%m-%d)
+days_before() {  # <YYYY-MM-DD> <n>: the UTC date n days before, GNU date first, then BSD
+  date -u -d "$1 $2 days ago" +%Y-%m-%d 2>/dev/null || date -u -j -v-"$2"d -f %Y-%m-%d "$1" +%Y-%m-%d 2>/dev/null
+}
+if [ -z "$UNTIL" ]; then
+  UNTIL=$(date -u +%Y-%m-%d)
+else
+  case $UNTIL in
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
+    *) echo "error: --until needs a date as YYYY-MM-DD" >&2; exit 2 ;;
+  esac
+  [ "$(days_before "$UNTIL" 0)" = "$UNTIL" ] || { echo "error: --until is not a real date: $UNTIL" >&2; exit 2; }
+fi
+SINCE=$(days_before "$UNTIL" "$((DAYS - 1))")
 LINE_RE='(^|\n)Fixes-regression-from: https://[^ \n]+/pull/[0-9]+'
 
 rows=()
 failed=0
 for repo in "${REPOS[@]}"; do
   if ! raw=$(gh repo view "$repo" --json nameWithOwner 2>&1) \
-      || ! raw=$(gh pr list --repo "$repo" --state merged --search "merged:>=$SINCE" --limit "$LIMIT" \
+      || ! raw=$(gh pr list --repo "$repo" --state merged --search "merged:$SINCE..$UNTIL" --limit "$LIMIT" \
       --json number,title,body 2>&1); then
     failed=1
     rows+=("$(jq -cn --arg repo "$repo" --arg error "$(printf '%s' "$raw" | head -1)" '{repo:$repo,error:$error}')")

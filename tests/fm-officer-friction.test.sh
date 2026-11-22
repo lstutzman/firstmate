@@ -35,6 +35,11 @@ T=1792749600      # 2026-10-23T10:00:00Z
 PREV=1792663200   # 2026-10-22T10:00:00Z
 NOW=1792818000    # 2026-10-24T05:00:00Z
 export TZ=UTC
+# A Monday-dated run calls the fix-forward count script; this stub keeps every test off the real gh unless it sets
+# FM_FIX_FORWARD_SCRIPT itself (empty means the real bin/fm-fix-forward-count.sh, which only the fake gh then answers).
+mkdir -p "$TMP_ROOT/ffstub"
+printf '#!/usr/bin/env bash\necho "error: fix-forward stub" >&2\nexit 2\n' > "$TMP_ROOT/ffstub/count.sh"
+export FM_FIX_FORWARD_SCRIPT="$TMP_ROOT/ffstub/count.sh"
 
 # fake_linear <bindir>: linear-axi driven by $FAKE_LINEAR_DIR (labels.txt, exists.txt, state.<id>); it logs every
 # call to $FAKE_LINEAR_DIR/log and refuses to run without that variable, so no test can reach the real Linear.
@@ -2107,8 +2112,91 @@ test_the_create_cap_and_the_rubric_bound_what_is_filed_and_started() {
   pass "fm-officer friction: the create cap and the rubric bound what is filed and what starts"
 }
 
+# A gh for the fix-forward counts: `repo view` fails for a repo named in $FAKE_FF_BAD, `pr list` answers one merged PR
+# carrying the Fixes-regression-from line and one revert; every call is logged so a non-Monday run can be shown to make none.
+fake_ff_gh() {  # <bindir>
+  cat > "$1/gh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FAKE_GH_LOG:-/dev/null}"
+case "$1 $2" in
+  "repo view") case " ${FAKE_FF_BAD:-} " in *" $3 "*) echo "GraphQL: Could not resolve to a Repository" >&2; exit 1 ;; esac
+    echo '{"nameWithOwner":"x"}' ;;
+  "pr list") printf '[{"number":1,"title":"Add x","body":"Fixes-regression-from: https://github.com/o/r/pull/9\\n"},{"number":2,"title":"Revert \\"y\\"","body":""},{"number":3,"title":"Other","body":null}]' ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$1/gh"
+}
+
+test_monday_run_adds_fix_forward_counts() {
+  local home fakebin json vel md
+  DATE=2026-10-26   # a Monday (UTC)
+  home=$(make_world monday)
+  fakebin=$(fm_fakebin "$TMP_ROOT/monday")
+  fake_ff_gh "$fakebin"
+  FAKE_GH_LOG="$TMP_ROOT/monday/gh.log" PATH="$fakebin:$PATH" FM_FIX_FORWARD_REPOS="o/r o/gone" FAKE_FF_BAD="o/gone" \
+    FM_FIX_FORWARD_SCRIPT='' run_officer "$home" >/dev/null || { DATE=2026-10-23; fail "a Monday run must succeed"; }
+  json="$home/data/officers/friction/$DATE.json"
+  vel="$home/data/officers/friction/$DATE.velocity-findings.json"
+  md="$home/data/officers/friction/$DATE.md"
+  cp "$json" "$TMP_ROOT/monday/first.json"
+  FAKE_GH_LOG="$TMP_ROOT/monday/gh2.log" PATH="$fakebin:$PATH" FM_FIX_FORWARD_REPOS="o/r o/gone" FAKE_FF_BAD="o/gone" \
+    FM_FIX_FORWARD_SCRIPT='' run_officer "$home" >/dev/null || { DATE=2026-10-23; fail "a Monday re-run must succeed"; }
+  DATE=2026-10-23
+  assert_equals "2026-10-20" "$(jq -r .fix_forward.since "$json")" "the counts cover the 7 days ending the digest's Monday"
+  assert_grep "merged:2026-10-20..2026-10-26" "$TMP_ROOT/monday/gh.log" "gh is asked for that week, not the clock's"
+  cmp -s "$TMP_ROOT/monday/first.json" "$json" || fail "a re-run of a past Monday must give the same digest"
+  assert_equals "3 1 1" "$(jq -r '.fix_forward.repos[0] | "\(.merged) \(.fix_forward) \(.reverts)"' "$json")" \
+    "the digest carries the repository's merged, fix-forward and revert counts"
+  assert_equals "null" "$(jq -r '.fix_forward.repos[1].merged' "$json")" "an unreadable repository carries no count"
+  assert_contains "$(jq -r '.fix_forward.repos[1].error' "$json")" "Could not resolve" "and says why it was unreadable"
+  assert_equals "missing" "$(jq -r '[.evidence[] | select(.name == "fix-forward")][0].state' "$vel")" \
+    "the velocity file's fix-forward evidence is missing while a repository is unreadable"
+  assert_contains "$(jq -r '[.evidence[] | select(.name == "fix-forward")][0].detail' "$vel")" "o/r merged=3 fix_forward=1 reverts=1" \
+    "the velocity evidence names the counts"
+  assert_contains "$(jq -r '[.evidence[] | select(.name == "fix-forward")][0].detail' "$vel")" "o/gone unreadable:" \
+    "and the unreadable repository, never zero merges"
+  assert_contains "$(jq -r '.coverage.notes | join(" ")' "$json")" "o/gone could not be read" "the digest notes the gap"
+  assert_grep "o/r merged=3 fix_forward=1 reverts=1" "$md" "the digest shows the counts"
+  assert_equals "0" "$(jq '.start_requests | length' "$json")" "the counts file nothing and start nothing"
+  pass "fm-officer friction: a Monday run adds the fix-forward counts and reports an unreadable repository"
+}
+
+test_non_monday_run_has_no_fix_forward_counts() {
+  local home fakebin json
+  home=$(make_world nonmonday)   # $DATE is a Friday
+  fakebin=$(fm_fakebin "$TMP_ROOT/nonmonday")
+  fake_ff_gh "$fakebin"
+  FAKE_GH_LOG="$TMP_ROOT/nonmonday/gh.log" PATH="$fakebin:$PATH" FM_FIX_FORWARD_SCRIPT='' run_officer "$home" >/dev/null ||
+    fail "run must succeed"
+  json="$home/data/officers/friction/$DATE.json"
+  assert_equals "false" "$(jq 'has("fix_forward")' "$json")" "a non-Monday digest has no fix-forward section"
+  assert_equals "0" "$(jq '[.evidence[] | select(.name == "fix-forward")] | length' "$home/data/officers/friction/$DATE.velocity-findings.json")" \
+    "and the velocity file has no fix-forward evidence"
+  assert_absent "$TMP_ROOT/nonmonday/gh.log" "and gh is not called"
+  pass "fm-officer friction: a non-Monday run is unchanged"
+}
+
+test_failed_fix_forward_script_leaves_the_run_standing() {
+  local home fakebin json
+  DATE=2026-10-26
+  home=$(make_world mondayfail)
+  fakebin=$(fm_fakebin "$TMP_ROOT/mondayfail")
+  # A count script that fails with a usage error (exit 2), which is not an unreadable repository.
+  printf '#!/usr/bin/env bash\necho "error: gh is required" >&2\nexit 2\n' > "$fakebin/count.sh"
+  FM_FIX_FORWARD_SCRIPT="$fakebin/count.sh" run_officer "$home" >/dev/null || { DATE=2026-10-23; fail "the run must still succeed"; }
+  json="$home/data/officers/friction/$DATE.json"
+  DATE=2026-10-23
+  assert_equals "true" "$(jq '.fix_forward | has("failed")' "$json")" "a failed count script is recorded as not read"
+  assert_contains "$(jq -r '.coverage.notes | join(" ")' "$json")" "fix-forward counts could not be read" "and noted"
+  pass "fm-officer friction: a failed fix-forward script is reported and the rest of the run stands"
+}
+
 test_agent_complaints_become_events
 test_create_denied_needs_a_secret_object
+test_monday_run_adds_fix_forward_counts
+test_non_monday_run_has_no_fix_forward_counts
+test_failed_fix_forward_script_leaves_the_run_standing
 test_merge_word_is_not_a_missing_tool
 test_token_scope_needs_a_token_permission_failure
 test_status_waits_and_root_causes

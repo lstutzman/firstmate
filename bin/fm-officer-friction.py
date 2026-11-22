@@ -323,6 +323,12 @@ Linear item, answers the reply through fleet-axi, and adds its start, discuss or
 pass runs only when such a reply was read and needs --writes linear; the digest's `velocity_taps` section names what it
 handled and what waits.
 
+Fix-forward evidence. On a run whose --date is a Monday (UTC) the pass also runs bin/fm-fix-forward-count.sh --json --until <date>
+(read-only, the 7 days ending that Monday, so a re-run counts the same PRs; no model) and adds its per-repository counts to the digest and to the velocity file's
+evidence, so the office reading the digest sees them; other days are unchanged. A repository the script could not
+read is shown as unreadable, never as zero merges, and a script that fails (a usage error, no gh or jq) is noted as
+not read while the rest of the run stands (FM_FIX_FORWARD_SCRIPT names another script, for tests). Nothing is filed in Linear from these counts.
+
 The proposed fix comes from the FIXES table. A group no rule names gets no
 card, and neither does a missing tool in RETIRED_TOOLS (its events are still
 counted, but the fleet no longer uses it, so installing it is never proposed);
@@ -2172,6 +2178,44 @@ def github_merge_lookup(cache_path, gaps):
     return merged_at
 
 
+def fix_forward_evidence(date, gaps):
+    """The fix-forward counts for the 7 days ending `date` (bin/fm-fix-forward-count.sh), or None unless it is a Monday.
+
+    Read-only and model-free: the script asks GitHub for counts only. {"days", "since", "repos": [...]} on success, where a
+    repository it could not read carries "error" instead of counts, so it never reads as zero merges. A usage error,
+    a missing gh or jq, or output that is not JSON gives {"failed": reason}, and a note goes to gaps either way.
+    """
+    if datetime.date.fromisoformat(date).weekday() != 0:
+        return None
+    script = os.environ.get("FM_FIX_FORWARD_SCRIPT") or os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "fm-fix-forward-count.sh")
+    reason = None
+    try:
+        proc = subprocess.run(["bash", script, "--json", "--until", date], capture_output=True, text=True, timeout=300, check=False)
+        got = json.loads(proc.stdout) if proc.returncode in (0, 1) else None
+        if proc.returncode not in (0, 1):
+            reason = (proc.stderr.strip().splitlines() or ["exit %d" % proc.returncode])[0]
+        elif not isinstance(got, dict) or not isinstance(got.get("repos"), list):
+            reason, got = "its output was not the expected JSON", None
+    except (OSError, subprocess.SubprocessError, ValueError) as exc:
+        reason, got = str(exc) or type(exc).__name__, None
+    if reason:
+        gaps.append("The weekly fix-forward counts could not be read (%s)." % clip(reason, 200))
+        return {"failed": reason}
+    bad = [r["repo"] for r in got["repos"] if "error" in r]
+    if bad:
+        gaps.append("Fix-forward counts: %s could not be read, so no count is given for it." % ", ".join(bad))
+    return got
+
+
+def fix_forward_lines(ff):
+    """One line per repository for the digest and the velocity file's evidence."""
+    return ["%s unreadable%s" % (r["repo"], ": " + r["error"] if r["error"] else "") if "error" in r else
+            "%s merged=%d fix_forward=%d reverts=%d%s" % (r["repo"], r["merged"], r["fix_forward"], r["reverts"],
+                                                           " truncated" if r.get("truncated") else "")
+            for r in ff["repos"]]
+
+
 def load_recorded_fixes(path):
     """{finding id: [{date, link, what}, ...] oldest first} from the fixes file; RuntimeError when it cannot be read."""
     try:
@@ -2432,6 +2476,15 @@ def velocity_doc(doc, now, states=None):
     evidence = [{"name": "session archive", "state": "read", "detail": clip(
         "%d session(s) analysed; harvester last ran %s" % (cov["sessions_analysed"],
                                                           cov["harvester_last_run"] or "never"), 400)}]
+    ff = doc.get("fix_forward")
+    if ff:  # Mondays only; placed before the homes so the 12-entry cap drops a home first
+        if ff.get("failed"):
+            evidence.append({"name": "fix-forward", "state": "missing",
+                             "detail": clip("Not read: %s." % ff["failed"], 400)})
+        else:
+            evidence.append({"name": "fix-forward", "state": "missing" if any("error" in r for r in ff["repos"]) else "read",
+                             "detail": clip("Last %d day(s) from %s: %s" % (ff["days"], ff["since"], "; ".join(
+                                 fix_forward_lines(ff))), 400)})
     for home in cov["homes"][:10]:
         evidence.append({"name": clip("status logs " + place(home["path"]), 40), "state": "read",
                          "detail": clip("%d task log(s); fleet ledger %s" % (
@@ -2849,6 +2902,14 @@ def render_md(doc):
             lines += ["", "Unsettled, for the Quartermaster (no rule settles them from facts the officer reads):", ""]
             for u in bosun["unsettled"]:
                 lines.append("- %s %s `%s`: %s" % (u["host"], u["kind"], u["item"].replace("`", "'"), u["reason"]))
+    ff = doc.get("fix_forward")
+    if ff:
+        lines += ["", "## Fix-forward evidence", ""]
+        if ff.get("failed"):
+            lines.append("- Not read: %s." % ff["failed"])
+        else:
+            lines.append("- Last %d day(s) from %s (bin/fm-fix-forward-count.sh):" % (ff["days"], ff["since"]))
+            lines += ["  - " + line for line in fix_forward_lines(ff)]
     taps = doc.get("velocity_taps")
     if taps:
         lines += ["", "## Velocity taps", ""]
@@ -3000,6 +3061,11 @@ def main(argv):
     states = finding_states(doc["findings"], homes, replies, args.date, eligible,
                             github_merge_lookup(os.path.join(args.out, "pr-merges.json"), gh_gaps), shipped)
     doc["coverage"]["notes"].extend(gh_gaps)
+    ff_gaps = []
+    ff = fix_forward_evidence(args.date, ff_gaps)
+    if ff is not None:
+        doc["fix_forward"] = ff
+        doc["coverage"]["notes"].extend(ff_gaps)
     # The end of the digest's day, not the clock: a re-run stays byte-identical, and an office delivers the start
     # requests only within 36 hours of it (bin/fm-office.sh), so a digest for a long-past day starts nothing.
     doc["source"], doc["generated_at"] = "friction-officer", iso_utc(day_bounds(args.date)[1])
