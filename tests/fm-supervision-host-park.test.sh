@@ -663,6 +663,28 @@ test_superseded_host_leaves_the_owner_untouched() {
   pass "host: a host under a superseded auto-arm generation stands down without touching the owner"
 }
 
+test_term_stops_a_host_whose_exit_waits_on_a_held_queue_lock() {
+  local home holder watcher
+  home=$(make_home held-queue-lock away)
+  FM_SUPERVISION_HOST_EXIT_LOCK_WAIT=2 start_host "$home"
+  wait_until 150 watcher_live "$home" || fail "held-queue-lock: the host never started a watcher cycle"
+  append_status "$home" 'one close'
+  wait_until 250 handled_at_least "$home" 1 || fail "held-queue-lock: the wake was not handled: $(cat "$home/state/.supervision-host.log")"
+  wait_until 150 watcher_live "$home" || fail "held-queue-lock: the host never re-armed its watcher"
+  watcher=$(cat "$home/state/.watch.lock/pid")
+  # A live process outside the host holds the home's wake-queue lock for the
+  # whole stop: the host's grant release has nothing to take but the wait.
+  FM_HOME="$home" bash -c '. "$1/bin/fm-wake-lib.sh"; fm_lock_acquire_wait "$FM_WAKE_QUEUE_LOCK" && : > "$FM_HOME/queue-lock.held"; exec sleep 600' _ "$ROOT" &
+  holder=$!
+  wait_until 100 test -e "$home/queue-lock.held" || { kill -TERM "$holder" 2>/dev/null; fail "held-queue-lock: the fixture never took the queue lock"; }
+  kill -TERM "$(awk -F '\t' '$1 == "host" { print $2 }' "$home/state/.supervision-host")"
+  wait_until_deadline 45 host_exited "$home" \
+    || { kill -TERM "$holder" 2>/dev/null; fail "held-queue-lock: the host stayed alive behind a held queue lock: $(cat "$home/host.out")"; }
+  kill -TERM "$holder" 2>/dev/null
+  wait_until 100 sh -c '! kill -0 "$1" 2>/dev/null' _ "$watcher" || fail "held-queue-lock: a stopped host left its watcher running"
+  pass "host: a TERM stops a host whose exit waits on a queue lock another process holds"
+}
+
 fm_test_run \
   test_latch_trips_after_two_engine_errors_then_probes_and_recovers \
   test_latch_keeps_attended_closes_on_main_and_skips_unopted_homes \
@@ -683,4 +705,5 @@ fm_test_run \
   test_unverified_engine_hands_every_away_wake_to_main \
   test_host_outside_the_lock_owner_stands_down \
   test_tagged_lock_holder_reaches_the_engine_whole \
-  test_superseded_host_leaves_the_owner_untouched
+  test_superseded_host_leaves_the_owner_untouched \
+  test_term_stops_a_host_whose_exit_waits_on_a_held_queue_lock

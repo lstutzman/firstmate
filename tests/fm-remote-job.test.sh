@@ -1283,14 +1283,18 @@ kill -0 "$STALL_REPLACEMENT_PID" 2>/dev/null \
   && [ "$(file_inode "$STALL_STATE/worker.lock/quarantine")" = "$STALL_QUARANTINE_INODE" ] \
   || fail "the ousted worker wrote or cleared the replacement quarantine during shutdown"
 kill -TERM "$STALL_REPLACEMENT_PID"
-STALL_DEADLINE=$((SECONDS + 30))
+# The shutdown stops each recorded execution in a loop that spawns several
+# processes per pass, so its time follows machine load: wait for the real exit
+# (a zombie or gone) under a generous cap, and show what it was doing if the
+# cap passes.
+STALL_DEADLINE=$((SECONDS + 120))
 until [ "$(ps -o state= -p "$STALL_REPLACEMENT_PID" 2>/dev/null | cut -c1)" = Z ] \
   || ! kill -0 "$STALL_REPLACEMENT_PID" 2>/dev/null || [ "$SECONDS" -ge "$STALL_DEADLINE" ]; do
   sleep 0.05
 done
 [ "$(ps -o state= -p "$STALL_REPLACEMENT_PID" 2>/dev/null | cut -c1)" = Z ] \
   || ! kill -0 "$STALL_REPLACEMENT_PID" 2>/dev/null \
-  || fail "the replacement did not finish its own TERM shutdown"
+  || fail "the replacement did not finish its own TERM shutdown within 120s: $(ps -o pid,ppid,state,wchan:24,etime,args -p "$STALL_REPLACEMENT_PID" --ppid "$STALL_REPLACEMENT_PID" 2>&1 | cut -c1-200)"
 wait "$STALL_REPLACEMENT_PID" 2>/dev/null || true
 STALL_REPLACEMENT_PID=
 STALL_JOB_GROUP=
