@@ -869,6 +869,50 @@ mate 0 0 0
 run_alarm check >/dev/null
 pass 'a captain-held in-flight item with a done child counts as complete; other terminal items still alarm'
 
+# FLEET-171: a done child reports before its merge and clean-up; that is normal in-flight work until
+# it stays uncleaned past done_grace_hours (default 2), when the finding names the task and its age.
+done_in_flight() { # <done age seconds> [task]
+  python3 - "$TMP_ROOT/mate/state/home-summary.json" "$1" "${2:-d1-ci-slots-code}" <<'PY_DONE'
+from pathlib import Path
+import json,sys
+path=Path(sys.argv[1]); value=json.loads(path.read_text())
+age,item=int(sys.argv[2]),sys.argv[3]
+value.update(valid=False, state='unknown',
+             invalidity=dict(kind='terminal_in_flight', ids=[item]),
+             reason=f'in-flight backlog item has terminal child state: {item}=done',
+             counts=dict(in_flight=1, held_in_flight=0, active_children=0, decisions_open=0, holds=0, endpoints=1),
+             decisions_open=[], holds=[],
+             endpoints=[dict(id=item, kind='ship', state='done', age_seconds=age)])
+path.write_text(json.dumps(value))
+PY_DONE
+}
+mate 0 0 0
+done_in_flight 600
+out=$(run_alarm check)
+assert_not_contains "$out" 'inventory unavailable' 'a freshly done child is not an inventory fault'
+assert_not_contains "$out" 'inventory incomplete' 'a freshly done child is not an incomplete inventory'
+assert_not_contains "$out" 'not merged and cleaned up' 'a freshly done child is inside the grace period'
+mate 0 0 0
+done_in_flight 3600
+out=$(run_alarm check)
+assert_not_contains "$out" 'inventory' 'a done child inside the grace period is normal in-flight work'
+assert_not_contains "$out" 'not merged and cleaned up' 'a done child inside the grace period raises no finding'
+mate 0 0 3601
+done_in_flight 7201
+out=$(run_alarm check)
+assert_contains "$out" 'Done task not merged and cleaned up: mate: d1-ci-slots-code done 2h0m ago' 'a done child past the grace period names the task and its age'
+assert_not_contains "$out" 'inventory incomplete' 'an overdue done child is not called an inventory fault'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 3601
+done_in_flight 5400
+printf '%s\n' '{"persist_polls":1,"done_grace_hours":1}' > "$HOME_FIX/config/fleet-alarm.json"
+assert_contains "$(run_alarm check)" 'not merged and cleaned up: mate: d1-ci-slots-code' 'done_grace_hours moves the grace period'
+printf '%s\n' '{"persist_polls":1}' > "$HOME_FIX/config/fleet-alarm.json"
+mate 0 0 0
+run_alarm check >/dev/null
+pass 'a done child is normal in-flight work inside done_grace_hours and an uncleaned-task finding past it'
+
 # cl-keeper and Deep Thought: every in-flight item waits on the mate's own needs-decision for Lee.
 open_ask_mate() { # status lines (one per argument, each stamped 3601 seconds ago)
   mate 0 0 3601

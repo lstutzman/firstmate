@@ -1225,6 +1225,14 @@ EOF
       and (.reason | contains("terminal-ship=failed"))
       and (.reason | contains("mate=") | not)
   ' >/dev/null || fail "ordinary terminal in-flight ship must still produce terminal_in_flight without listing the secondmate: $out"
+  # The alarm's grace period for a done child counts from the done line, so the endpoint row carries its age.
+  printf 'done [at=%s]: ready\n' "$(( $(date +%s) - 5000 ))" > "$home/state/terminal-ship.status"
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
+  printf '%s' "$out" | jq -e '
+    .invalidity == {kind:"terminal_in_flight",ids:["terminal-ship"]}
+      and any(.endpoints[]; .id == "terminal-ship" and .state == "done"
+                and (.age_seconds | type) == "number" and .age_seconds >= 5000 and .age_seconds < 5600)
+  ' >/dev/null || fail "a done endpoint must carry the age of its done line: $out"
   pass "home-summary excludes kind=secondmate from unowned_current and terminal_in_flight"
 }
 
