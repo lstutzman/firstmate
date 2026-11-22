@@ -915,6 +915,7 @@ tests/fm-office-remote.test.sh 16541
 tests/fm-office.test.sh 146699
 tests/fm-officer-corpus.test.sh 46602
 tests/fm-officer-friction.test.sh 41357
+tests/fm-officer-improvement.test.sh 3400
 tests/fm-officer-landing.test.sh 4810
 tests/fm-officer-library.test.sh 7080
 tests/fm-officer-linear.test.sh 30210

@@ -470,6 +470,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/officers/improvement-rubric.md",
+      "audience": "operator-current"
+    },
+    {
       "path": "docs/officers/page-check-rubric.md",
       "audience": "operator-current"
     },
