@@ -1095,6 +1095,7 @@ tests/fm-watch-limit-resume.test.sh 17843
 tests/fm-watch-office-provisioning.test.sh 1397
 tests/fm-watch-open-decisions.test.sh 26977
 tests/fm-watch-recovery-loop.test.sh 64395
+tests/fm-watch-remote-summary.test.sh 3609
 tests/fm-watch-triage-pause.test.sh 651660
 tests/fm-watch-triage-wedge-defer.test.sh 693195
 tests/fm-watch-triage.test.sh 1121723

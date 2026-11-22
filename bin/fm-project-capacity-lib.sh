@@ -135,7 +135,9 @@
 # bin/fm-secondmate-registry-lib.sh (which the local-homes walk reads),
 # bin/fm-backend.sh (fm_meta_get), and bin/fm-tasks-axi-lib.sh with
 # bin/fm-backlog-transition-lib.sh (the backlog row a ready PR is held by) to be
-# sourced first. No side effects on source.
+# sourced first. The remote-ships read (fm_remote_ship_rows) loads the wake and
+# registry libraries itself when they are missing and warns on stderr when it
+# cannot, so it never returns no rows without saying why. No side effects on source.
 
 # Exit status of a spawn deferred because the project is at capacity: the
 # sysexits "temporary failure" code, so a caller can tell a deferral that leaves
@@ -374,14 +376,40 @@ fm_project_capacity_occupants() {  # <project-lock> <project-dir> <first-state> 
 # process. Never fails: an unreadable signal is a warning, not a refusal.
 FM_REMOTE_SHIP_MAX_AGE=${FM_REMOTE_SHIP_MAX_AGE:-7200}
 FM_REMOTE_SHIP_WARNED=
+FM_CAPACITY_LIB_DIR=$(d=${BASH_SOURCE[0]%/*}; [ "$d" != "${BASH_SOURCE[0]}" ] || d=.; cd "${d:-/}" && pwd)
+
+# Load the two libraries fm_remote_ship_rows reads when the caller has not, so a
+# caller that sources only this file still counts remote ships. When one cannot
+# be loaded it warns on stderr, once per process, and the caller gets no rows: a
+# silent empty answer reads as "no remote ships" and lets a spawn through.
+fm_remote_ship_deps() {
+  declare -F fm_firstmate_root_home >/dev/null 2>&1 \
+    || {
+      # shellcheck source=bin/fm-wake-lib.sh
+      . "$FM_CAPACITY_LIB_DIR/fm-wake-lib.sh" 2>/dev/null; }
+  declare -F secondmate_registry_parse_line >/dev/null 2>&1 \
+    || {
+      # shellcheck source=bin/fm-secondmate-registry-lib.sh
+      . "$FM_CAPACITY_LIB_DIR/fm-secondmate-registry-lib.sh" 2>/dev/null; }
+  declare -F fm_firstmate_root_home >/dev/null 2>&1 \
+    && declare -F secondmate_registry_parse_line >/dev/null 2>&1 \
+    && command -v jq >/dev/null 2>&1 && return 0
+  case "$FM_REMOTE_SHIP_WARNED" in *"|deps|"*) ;; *)
+    FM_REMOTE_SHIP_WARNED="$FM_REMOTE_SHIP_WARNED|deps|"
+    echo "warning: cannot read remote homes' ships: fm-wake-lib.sh, fm-secondmate-registry-lib.sh or jq is unavailable (looked in $FM_CAPACITY_LIB_DIR); remote ships are not counted" >&2
+    ;;
+  esac
+  return 1
+}
+
 fm_remote_ship_rows() {  # <project-name> <now-epoch>
   local name=$1 now=$2 root reg cache line mate host home projects key file status row why max=$FM_REMOTE_SHIP_MAX_AGE
   FM_REMOTE_SHIP_ROWS=()
+  fm_remote_ship_deps || return 0
   root=$(fm_firstmate_root_home "$FM_HOME" 2>/dev/null) || return 0
   reg="$root/data/secondmates.md"
   [ -f "$reg" ] && [ ! -L "$reg" ] || return 0
   cache=${FM_SNAPSHOT_CACHE_DIR:-$root/state/secondmate-summary-cache}
-  command -v jq >/dev/null 2>&1 || return 0
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in "- "*) ;; *) continue ;; esac
     secondmate_registry_parse_line "$line" || continue

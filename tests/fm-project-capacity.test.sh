@@ -1508,6 +1508,39 @@ test_landing_lag_reads_a_remote_homes_ready_pr_from_its_cached_summary() {
   pass "landing lag reads a remote home's landable ready PRs from its cached summary"
 }
 
+test_the_capacity_lib_reads_remote_ships_when_sourced_alone() {
+  local case_dir home out
+  case_dir=$(make_case lib-alone)
+  home="$case_dir/home"
+  remote_mate_with_summary "$case_dir" \
+    '[{"id":"far-r","kind":"ship","project":"project","yolo":"on","pr":"https://github.com/o/r/pull/5","pr_at":1,"captain_held":false,"blocked":false}]' 60
+  # shellcheck disable=SC2016  # the inner script is single-quoted on purpose: it expands in the child shell.
+  out=$(env -i PATH="$PATH" HOME="$case_dir" FM_HOME="$home" bash -c '
+    . "$1/bin/fm-project-capacity-lib.sh"
+    fm_remote_ship_rows project "$(date +%s)"
+    printf "%s\n" "${#FM_REMOTE_SHIP_ROWS[@]}" "${FM_REMOTE_SHIP_ROWS[0]%%$(printf "\037")*}"' _ "$ROOT" 2>&1)
+  assert_equals "1
+far-r on far" "$out" "the capacity lib sourced alone did not read the remote home's ship: $out"
+  pass "the capacity lib loads its own dependencies, so a remote ship is counted when it is sourced alone"
+}
+
+test_the_capacity_lib_says_so_when_its_dependencies_are_missing() {
+  local case_dir home lonely out
+  case_dir=$(make_case lib-lonely)
+  home="$case_dir/home"
+  remote_mate_with_summary "$case_dir" '[]' 60
+  lonely="$case_dir/lonely-bin"
+  mkdir -p "$lonely"
+  cp "$ROOT/bin/fm-project-capacity-lib.sh" "$lonely/"
+  # shellcheck disable=SC2016  # the inner script is single-quoted on purpose: it expands in the child shell.
+  out=$(env -i PATH="$PATH" HOME="$case_dir" FM_HOME="$home" bash -c '
+    . "$1/fm-project-capacity-lib.sh"
+    fm_remote_ship_rows project "$(date +%s)"; echo "rc=$?"' _ "$lonely" 2>&1)
+  assert_contains "$out" "cannot read remote homes' ships" "a lib with no sibling libraries returned no rows without saying why: $out"
+  assert_contains "$out" "rc=0" "the missing-dependency warning refused instead of warning"
+  pass "the capacity lib warns on stderr, never silently, when it cannot load what it needs"
+}
+
 test_ci_slots_gate_leaves_captain_held_prs_out() {
   local case_dir home
   if [ "$HAVE_TASKS_AXI" = 0 ]; then
@@ -1624,3 +1657,5 @@ test_ci_slots_gate_counts_every_pr_when_a_record_is_unreadable
 test_ci_slots_gate_leaves_a_remote_captain_held_pr_out
 test_landing_lag_reads_a_remote_homes_ready_pr_from_its_cached_summary
 test_ready_branch_list_shows_parked_branches_only
+test_the_capacity_lib_reads_remote_ships_when_sourced_alone
+test_the_capacity_lib_says_so_when_its_dependencies_are_missing
