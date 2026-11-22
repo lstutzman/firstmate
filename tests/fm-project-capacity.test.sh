@@ -1116,6 +1116,36 @@ test_office_landing_task_frees_a_place() {
   pass "an office's landing task frees its place in the spawn gate, and one with an open finding does not"
 }
 
+# A ship that finished as a pushed ready branch with no PR (bin/fm-ready-branch.sh):
+# a parked ready branch, which holds no place under the office's wip=.
+write_parked() {  # <home> <id> <project-dir>
+  write_live "$1" "$2" "$3" "ready_branch=fm/$2"
+  printf 'done [at=%s]: ready branch fm/%s pushed\n' "$(($(date +%s) - 60))" "$2" > "$1/state/$2.status"
+}
+
+test_office_parked_ready_branch_frees_a_place() {
+  local case_dir home out rc=0 before worktrees
+  case_dir=$(make_case office-parked task-c task-d)
+  home="$case_dir/home"
+  make_office "$home" wip=1
+  write_parked "$home" parked-a "$case_dir/other-project"
+  write_parked "$home" parked-b "$case_dir/other-project"
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "an office whose only tasks are parked ready branches deferred a spawn: $out"
+  assert_contains "$out" "spawned task-c" "an office whose only tasks are parked ready branches did not launch the worker"
+
+  printf 'working [at=%s]: restacking\n' "$(date +%s)" >> "$home/state/parked-a.status"
+  rm -f "$home/state/task-c.meta"
+  before=$(call_count "$case_dir")
+  worktrees=$(worktree_list "$case_dir")
+  rc=0; out=$(spawn_ship "$case_dir" task-d "$case_dir/unused") || rc=$?
+  expect_code "$DEFER_EXIT" "$rc" "an office whose parked branch went back to work was not deferred: $out"
+  assert_contains "$out" "and 1 are live (parked-a), while 1 parked ready branch(es) hold no place (parked-b)" \
+    "the office deferral did not count the resumed branch and name the parked one"
+  assert_nothing_created "$case_dir" "$home" task-d "$before" "$worktrees"
+  pass "an office's parked ready branches free their places in the spawn gate, and one back at work does not"
+}
+
 test_office_landing_keeps_project_capacity_and_landing_lag() {
   local case_dir home out rc=0 before worktrees
   case_dir=$(make_case office-landing-capacity task-c)
@@ -1677,6 +1707,7 @@ test_non_office_spawn_records_no_office
 test_office_refuses_spawns_outside_its_record
 test_office_wip_defers_without_leaving_anything_behind
 test_office_landing_task_frees_a_place
+test_office_parked_ready_branch_frees_a_place
 test_office_landing_keeps_project_capacity_and_landing_lag
 test_lane_capacity_gate_is_opt_in
 test_lane_capacity_gate_defers_without_leaving_anything_behind
