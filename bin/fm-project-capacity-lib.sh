@@ -410,7 +410,7 @@ $(jq -r --arg name "$name" --arg mate "$mate" '
   .ships[] | select(type == "object" and .project == $name
       and (.id | type) == "string" and (.id | test("^[A-Za-z0-9._-]+$")))
   | [(.id + " on " + $mate), (.kind // "ship"), ((.pr // "") | tostring), ((.pr_at // "") | tostring),
-     (.yolo // ""), ((.held // false) | tostring)]
+     (.yolo // ""), ((.captain_held // false) | tostring), ((.blocked // false) | tostring)]
   | select(all(.[]; test("[[:cntrl:]]") | not))
   | join("\u001f")' "$file" 2>/dev/null)
 EOF
@@ -447,7 +447,7 @@ EOF
 # Sets FM_CI_SLOTS_HELD to the number of distinct PRs left out. Returns 1 with
 # FM_PROJECT_CAPACITY_ERROR when fm_project_records does.
 fm_ci_slots_held() {  # <project-lock> <project-dir> <first-state> <first-config> <first-data> <urls>
-  local first=$3 urls=$6 i=0 meta pr state config data id rc row seen=$'\n'
+  local first=$3 urls=$6 i=0 meta pr state config data id rc row seen=$'\n' yolo held
   local wedged=$FM_BACKLOG_ROW_SHOW_WEDGED
   FM_CI_SLOTS_HELD=0
   fm_project_records "$1" "$2" "$3" "" || return 1
@@ -486,10 +486,10 @@ fm_ci_slots_held() {  # <project-lock> <project-dir> <first-state> <first-config
     fi
   done
   # Remote homes: a ready PR of a remote ship that waits for the captain's merge word (yolo not on,
-  # or its remote backlog row held) is left out like a local one.
+  # or its remote backlog row held for the captain) is left out like a local one.
   fm_remote_ship_rows "$(basename "$2")" "$(date +%s)"
   for row in ${FM_REMOTE_SHIP_ROWS[@]+"${FM_REMOTE_SHIP_ROWS[@]}"}; do
-    IFS=$'\037' read -r _ _ pr _ yolo held <<EOF
+    IFS=$'\037' read -r _ _ pr _ yolo held _ <<EOF
 $row
 EOF
     [ -n "$pr" ] || continue
@@ -524,7 +524,7 @@ EOF
 # FM_BACKLOG_ROW_SHOW_WEDGED only for the rest of this walk, so another home's
 # slow backlog never refuses the caller's own later backlog reads.
 fm_project_landing_oldest() {  # <project-lock> <project-dir> <first-state> <own-id> <first-config> <first-data> <now-epoch>
-  local first=$3 now=$7 i=0 meta label pr at age state config data id rc row rpr_at yolo held
+  local first=$3 now=$7 i=0 meta label pr at age state config data id rc row rpr_at yolo held blocked
   local wedged=$FM_BACKLOG_ROW_SHOW_WEDGED
   FM_PROJECT_LANDING_AGE=
   FM_PROJECT_LANDING_PR=
@@ -578,10 +578,10 @@ fm_project_landing_oldest() {  # <project-lock> <project-dir> <first-state> <own
   # (the summary says so) and whose task has yolo on; its pr_at is read like a local one.
   fm_remote_ship_rows "$(basename "$2")" "$now"
   for row in ${FM_REMOTE_SHIP_ROWS[@]+"${FM_REMOTE_SHIP_ROWS[@]}"}; do
-    IFS=$'\037' read -r label _ pr rpr_at yolo held <<EOF
+    IFS=$'\037' read -r label _ pr rpr_at yolo held blocked <<EOF
 $row
 EOF
-    [ -n "$pr" ] && [ "$yolo" = on ] && [ "$held" = false ] || continue
+    [ -n "$pr" ] && [ "$yolo" = on ] && [ "$held" = false ] && [ "$blocked" = false ] || continue
     at=$rpr_at
     if [ -z "$at" ] || [ -n "${at//[0-9]/}" ]; then
       FM_PROJECT_LANDING_UNTIMED_COUNT=$((FM_PROJECT_LANDING_UNTIMED_COUNT + 1))

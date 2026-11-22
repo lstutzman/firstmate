@@ -1144,6 +1144,7 @@ test_home_summary_lists_ships_for_cross_host_capacity() {
 - [ ] ready - Ship with a ready PR (repo: alpha) (kind: ship) (since 2026-07-11)
 - [ ] held - Ship waiting on the captain (repo: alpha) (kind: ship) (since 2026-07-11)
 - [ ] scouting - A scout (repo: beta) (kind: scout) (since 2026-07-11)
+- [ ] waiting - Ship blocked-by: upstream-fix (repo: alpha) (kind: ship) (since 2026-07-11)
 
 ## Queued
 
@@ -1159,16 +1160,21 @@ EOF
     "pr=https://github.com/o/r/pull/8" "pr_at=1790000100"
   fm_write_meta "$home/state/scouting.meta" "window=firstmate:fm-scouting" "worktree=$home/projects/beta" \
     "project=$home/projects/beta" "harness=claude" "kind=scout" "mode=scout"
+  fm_write_meta "$home/state/waiting.meta" "window=firstmate:fm-waiting" "worktree=$home/projects/alpha" \
+    "project=$home/projects/alpha" "harness=claude" "kind=ship" "mode=no-mistakes" "yolo=on" \
+    "pr=https://github.com/o/r/pull/9" "pr_at=1790000200"
   FM_HOME="$home" bash "$ROOT/bin/fm-captain-hold.sh" hold held --reason "merge word" >/dev/null 2>&1 || true
   fakebin=$(make_fakebin "$home")
   out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
   printf '%s' "$out" | jq -e '
-    (.ships | length) == 4
+    (.ships | length) == 5
     and ([.ships[] | select(.id == "plain")][0] | .project == "alpha" and .kind == "ship" and .pr == null and .yolo == "off")
-    and ([.ships[] | select(.id == "ready")][0] | .pr == "https://github.com/o/r/pull/7" and .pr_at == 1790000000 and .yolo == "on" and .held == false)
-    and ([.ships[] | select(.id == "held")][0] | .held == true)
+    and ([.ships[] | select(.id == "ready")][0] | .pr == "https://github.com/o/r/pull/7" and .pr_at == 1790000000 and .yolo == "on"
+      and .captain_held == false and .blocked == false)
+    and ([.ships[] | select(.id == "held")][0] | .captain_held == true and .blocked == false)
+    and ([.ships[] | select(.id == "waiting")][0] | .captain_held == false and .blocked == true)
     and ([.ships[] | select(.id == "scouting")][0] | .kind == "scout" and .project == "beta")
-  ' >/dev/null || fail "the home summary must list each ship with its project, PR, ready time, yolo and hold: $out"
+  ' >/dev/null || fail "the home summary must list each ship with its project, PR, ready time, yolo, captain hold and blocker: $out"
   pass "the home summary lists each ship so another host can count it toward CI slots and landing lag"
 }
 

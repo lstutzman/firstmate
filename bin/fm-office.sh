@@ -95,7 +95,7 @@
 # old, never more often than every FM_OFFICE_FEED_RETRY_SECS (default 120) for one
 # office, within one 25 second bound for the whole sweep. It prints nothing,
 # except one "OFFICE: office <id>: feed coverage gap: ..." (or "feed not pushed: <why>") line the first time
-# that office's feed gains a given gap (record:
+# that office's feed gains a given set of omitted lanes (record:
 # state/office-feed.<id>.over, cleared once the feed fits; FM_OFFICE_FEED_SWEEP_REPORT=0
 # neither prints nor records it). arm-feed (run once in the main home)
 # writes state/office-feed.check.sh, a shim that execs "fm-office.sh feed-sweep",
@@ -528,13 +528,14 @@ remote_push() {
 # feed_stage <id>: sets FEED_FP to the fingerprint of the feed the parent would send now, or empty;
 # when the copy is over its size limit with every lane dropped, FEED_OVER (feed) and FEED_REASON
 # ("feed not pushed: ...") say so. A lane omitted for size still sends the rest and sets FEED_GAP
-# ("feed coverage gap: lane <officer> omitted, ...").
+# ("feed coverage gap: lane <officer> omitted, ...") and FEED_GAP_KEY ("lanes: <sorted officers>").
 feed_stage() {
   local id=$1 stage rc=0
   FEED_FP=
   FEED_OVER=
   FEED_REASON=
   FEED_GAP=
+  FEED_GAP_KEY=
   stage=$(mktemp "${TMPDIR:-/tmp}/fm-office-feed.XXXXXX") || return 0
   if secondmate_registry_line_for_id "$DATA/secondmates.md" "$id"; then
     fm_office_feed_payload "$FM_HOME" "$DATA" "$id" "$SECONDMATE_REGISTRY_HOME" "$stage" "$(now_epoch)" || rc=$?
@@ -549,7 +550,10 @@ feed_stage() {
       FEED_REASON=$FM_OFFICE_ERROR
     elif [ "$rc" -eq 0 ] && [ -f "$stage" ]; then
       FEED_FP=$(fm_office_feed_fingerprint "$stage")
-      [ -z "$FM_OFFICE_FEED_GAP" ] || FEED_GAP="feed coverage gap: $FM_OFFICE_FEED_GAP"
+      if [ -n "$FM_OFFICE_FEED_GAP" ]; then
+        FEED_GAP="feed coverage gap: $FM_OFFICE_FEED_GAP"
+        FEED_GAP_KEY="lanes: $FM_OFFICE_FEED_GAP_LANES"
+      fi
     fi
   fi
   rm -f "$stage"
@@ -601,9 +605,9 @@ cmd_feed_sweep() {
       continue
     fi
     if [ -n "$FEED_GAP" ]; then
-      if [ "${FM_OFFICE_FEED_SWEEP_REPORT:-1}" != 0 ] && [ "$(cat "$over_rec" 2>/dev/null)" != "$FEED_GAP" ]; then
+      if [ "${FM_OFFICE_FEED_SWEEP_REPORT:-1}" != 0 ] && [ "$(cat "$over_rec" 2>/dev/null)" != "$FEED_GAP_KEY" ]; then
         printf 'OFFICE: office %s: %s\n' "$id" "$FEED_GAP"
-        mkdir -p "$STATE" 2>/dev/null && printf '%s\n' "$FEED_GAP" > "$over_rec" 2>/dev/null || true
+        mkdir -p "$STATE" 2>/dev/null && printf '%s\n' "$FEED_GAP_KEY" > "$over_rec" 2>/dev/null || true
       fi
     else
       rm -f "$over_rec" 2>/dev/null || true

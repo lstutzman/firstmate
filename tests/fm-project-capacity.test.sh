@@ -1491,13 +1491,14 @@ test_landing_lag_reads_a_remote_homes_ready_pr_from_its_cached_summary() {
   register_landing_lag "$home" 24
   at=$(( $(date +%s) - 30 * 3600 - 60 ))
   remote_mate_with_summary "$case_dir" \
-    "[{\"id\":\"far-r\",\"kind\":\"ship\",\"project\":\"project\",\"yolo\":\"on\",\"pr\":\"https://github.com/o/r/pull/5\",\"pr_at\":$at,\"held\":true},
-      {\"id\":\"far-s\",\"kind\":\"ship\",\"project\":\"project\",\"yolo\":\"off\",\"pr\":\"https://github.com/o/r/pull/6\",\"pr_at\":$at,\"held\":false}]" 60
+    "[{\"id\":\"far-r\",\"kind\":\"ship\",\"project\":\"project\",\"yolo\":\"on\",\"pr\":\"https://github.com/o/r/pull/5\",\"pr_at\":$at,\"captain_held\":true,\"blocked\":false},
+      {\"id\":\"far-t\",\"kind\":\"ship\",\"project\":\"project\",\"yolo\":\"on\",\"pr\":\"https://github.com/o/r/pull/7\",\"pr_at\":$at,\"captain_held\":false,\"blocked\":true},
+      {\"id\":\"far-s\",\"kind\":\"ship\",\"project\":\"project\",\"yolo\":\"off\",\"pr\":\"https://github.com/o/r/pull/6\",\"pr_at\":$at,\"captain_held\":false,\"blocked\":false}]" 60
   out=$(spawn_ship "$case_dir" task-c) || rc=$?
-  expect_code 0 "$rc" "a held or not-yolo remote PR held the spawn: $out"
+  expect_code 0 "$rc" "a held, blocked or not-yolo remote PR held the spawn: $out"
 
   remote_mate_with_summary "$case_dir" \
-    "[{\"id\":\"far-r\",\"kind\":\"ship\",\"project\":\"project\",\"yolo\":\"on\",\"pr\":\"https://github.com/o/r/pull/5\",\"pr_at\":$at,\"held\":false}]" 60
+    "[{\"id\":\"far-r\",\"kind\":\"ship\",\"project\":\"project\",\"yolo\":\"on\",\"pr\":\"https://github.com/o/r/pull/5\",\"pr_at\":$at,\"captain_held\":false,\"blocked\":false}]" 60
   rc=0
   out=$(spawn_ship "$case_dir" task-d "$case_dir/unused") || rc=$?
   expect_code "$DEFER_EXIT" "$rc" "a lagging remote ready PR did not defer the spawn: $out"
@@ -1554,11 +1555,16 @@ test_ci_slots_gate_leaves_a_remote_captain_held_pr_out() {
   drain_gh "$case_dir" 0
   open_prs "$case_dir" 4 0
   assert_contains "$(slots_gate "$case_dir")" "hold o/r CI slots full: 4 open PR(s)" "no remote summary: every open PR must count"
+  # PR 1 is a remote ship blocked by an unresolved dependency but not held for the captain: it still
+  # takes a CI slot, as a local blocked PR does.
+  remote_mate_with_summary "$case_dir" \
+    '[{"id":"far-a","kind":"ship","project":"project","yolo":"on","pr":"https://github.com/o/r/pull/1","pr_at":1790000000,"captain_held":false,"blocked":true}]' 60
+  assert_contains "$(slots_gate "$case_dir")" "hold o/r CI slots full: 4 open PR(s)" "a blocked remote PR not held for the captain was left out of the count"
   # PR 1 is a remote ship held for the captain, PR 2 a remote yolo-off ship, PR 3 a remote ready ship.
   remote_mate_with_summary "$case_dir" \
-    '[{"id":"far-a","kind":"ship","project":"project","yolo":"on","pr":"https://github.com/o/r/pull/1","pr_at":1790000000,"held":true},
-      {"id":"far-b","kind":"ship","project":"project","yolo":"off","pr":"https://github.com/o/r/pull/2","pr_at":1790000000,"held":false},
-      {"id":"far-c","kind":"ship","project":"project","yolo":"on","pr":"https://github.com/o/r/pull/3","pr_at":1790000000,"held":false}]' 60
+    '[{"id":"far-a","kind":"ship","project":"project","yolo":"on","pr":"https://github.com/o/r/pull/1","pr_at":1790000000,"captain_held":true,"blocked":false},
+      {"id":"far-b","kind":"ship","project":"project","yolo":"off","pr":"https://github.com/o/r/pull/2","pr_at":1790000000,"captain_held":false,"blocked":false},
+      {"id":"far-c","kind":"ship","project":"project","yolo":"on","pr":"https://github.com/o/r/pull/3","pr_at":1790000000,"captain_held":false,"blocked":false}]' 60
   assert_equals "open o/r" "$(slots_gate "$case_dir")" "two remote PRs waiting for the captain, of 4 open, still held against 4 slots"
   pass "a remote ship's PR waiting for the captain's merge word leaves the CI slot count, read from its cached summary"
 }

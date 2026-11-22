@@ -213,7 +213,14 @@ test_oversized_feed_drops_only_the_oversized_lane() {
   assert_contains "$(main_env "$w" "$((NOW + 400))" env FM_OFFICE_FEED_LANE_MAX=10 bash "$OFFICE" ensure)" \
     "OFFICE: office nav: feed coverage gap: lane progress" "ensure reports the oversized lane"
   printf 'x 0\n' > "$w/state/office-feed.nav.pushed"
-  out=$(main_env "$w" "$((NOW + 500))" env FM_OFFICE_FEED_LANE_MAX=10 bash "$OFFICE" feed-sweep)
+  assert_equals "" "$(main_env "$w" "$((NOW + 500))" env FM_OFFICE_FEED_LANE_MAX=10 bash "$OFFICE" feed-sweep)" \
+    "the sweep stays silent when the same lane is still omitted, for a new reason"
+  printf 'more progress\n' >> "$w/data/officers/progress/2026-11-04.md"
+  printf 'x 0\n' > "$w/state/office-feed.nav.pushed"
+  assert_equals "" "$(main_env "$w" "$((NOW + 600))" env FM_OFFICE_FEED_LANE_MAX=10 bash "$OFFICE" feed-sweep)" \
+    "and stays silent while the omitted lane's digest grows"
+  rm -f "$w/state/office-feed.nav.over"
+  out=$(main_env "$w" "$((NOW + 650))" env FM_OFFICE_FEED_LANE_MAX=10 bash "$OFFICE" feed-sweep)
   assert_contains "$out" "OFFICE: office nav: feed coverage gap: lane progress" "the sweep reports a newly oversized lane"
 
   printf 'x 0\n' > "$w/state/office-feed.nav.pushed"

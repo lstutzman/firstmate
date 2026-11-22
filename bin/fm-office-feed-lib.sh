@@ -33,7 +33,9 @@
 #       registry names no such office line; returns 1 with FM_OFFICE_ERROR
 #       when the line is malformed or the copy cannot be staged. A lane
 #       omitted for size leaves the return 0 and sets FM_OFFICE_FEED_GAP to
-#       "lane <officer> omitted, <reason>" entries joined by "; ". Return 2 with
+#       "lane <officer> omitted, <reason>" entries joined by "; " and
+#       FM_OFFICE_FEED_GAP_LANES to the omitted officers, sorted and joined by
+#       spaces. Return 2 with
 #       FM_OFFICE_ERROR ("feed not pushed: ...") and FM_OFFICE_FEED_OVER (feed)
 #       only when the copy is over FM_OFFICE_FEED_MAX with every lane dropped.
 #   fm_office_feed_fingerprint <file>
@@ -103,10 +105,11 @@ sys.stdout.write(json.dumps(doc, sort_keys=True, separators=(",", ":")))
 
 fm_office_feed_payload() {  # <src-home> <src-data> <dest-id> <remote-home> <out-file> <now>
   local home=$1 data=$2 want=$3 remote=$4 out=$5 now=$6 REGISTRY="$2/offices.md" line match='' n=0 src officer seen=' ' tmp rec rc sources
-  local head_lines lane_lines=() lane_names=() lane_sizes=() cover_lines=() gaps='' i big total count cover
+  local head_lines lane_lines=() lane_names=() lane_sizes=() cover_lines=() gaps='' omitted='' i big total count cover
   FM_OFFICE_ERROR=
   FM_OFFICE_FEED_OVER=
   FM_OFFICE_FEED_GAP=
+  FM_OFFICE_FEED_GAP_LANES=
   rm -f "$out" || { FM_OFFICE_ERROR="cannot clear the staged office feed $out"; return 1; }
   [ -n "$want" ] && [ -f "$REGISTRY" ] && [ -r "$REGISTRY" ] || return 0
   while IFS= read -r line; do
@@ -133,6 +136,7 @@ EOF
     if [ "$rc" -eq 2 ]; then
       cover_lines+=("coverage=$officer $rec")
       gaps="${gaps:+$gaps; }lane $officer omitted, $rec"
+      omitted="$omitted$officer"$'\n'
       continue
     fi
     [ "$rc" -ne 0 ] || [ -z "$rec" ] || { lane_lines+=("$rec"); lane_names+=("$officer"); lane_sizes+=("${#rec}"); }
@@ -150,6 +154,7 @@ EOF
     cover="coverage=${lane_names[big]} $rec"
     cover_lines+=("$cover")
     gaps="${gaps:+$gaps; }lane ${lane_names[big]} omitted, $rec"
+    omitted="$omitted${lane_names[big]}"$'\n'
     total=$(( total - lane_sizes[big] - 1 + ${#cover} + 1 ))
     unset "lane_lines[$big]" "lane_names[$big]" "lane_sizes[$big]"
     lane_lines=(${lane_lines[@]+"${lane_lines[@]}"}); lane_names=(${lane_names[@]+"${lane_names[@]}"}); lane_sizes=(${lane_sizes[@]+"${lane_sizes[@]}"})
@@ -167,6 +172,7 @@ EOF
   } > "$tmp" || { rm -f "$tmp"; FM_OFFICE_ERROR="cannot stage the office feed"; return 1; }
   mv -f "$tmp" "$out" || { rm -f "$tmp"; FM_OFFICE_ERROR="cannot stage the office feed"; return 1; }
   FM_OFFICE_FEED_GAP=$gaps
+  [ -z "$omitted" ] || FM_OFFICE_FEED_GAP_LANES=$(printf '%s' "$omitted" | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')
 }
 
 fm_office_feed_fingerprint() {  # <file>
