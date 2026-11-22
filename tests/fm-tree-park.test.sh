@@ -566,6 +566,21 @@ make_ready_lab() {
   rm -f "$dir/meta.new" "$dir/home/state/$ID.merge-handoff" "$dir/home/state/$ID.nm-released"
   printf 'done [at=1700000100]: branch %s pushed, no PR (CI slots)\n' "$BRANCH" > "$dir/home/state/$ID.status"
   printf '#!/bin/sh\necho "gh must not be asked about a branch with no PR" >&2\nexit 1\n' > "$dir/fakebin/gh"
+  # A ready branch never ran a pipeline: `axi status` answers with no run on
+  # the copy's branch (the shape tests/fm-crew-state.test.sh pins), unless a
+  # case sets FM_TEST_NM_STATUS to stand a run up on it.
+  cat > "$dir/fakebin/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_TEST_LAB/nm.log"
+[ "${1:-} ${2:-}" = "axi status" ] || exit 2
+if [ -z "${FM_TEST_NM_STATUS:-}" ]; then
+  printf 'current_branch: %s\nruns_on_current_branch: 0\n' "${FM_TEST_NM_BRANCH:-$(git symbolic-ref --quiet --short HEAD)}"
+  exit 0
+fi
+printf 'current_branch: %s\nruns_on_current_branch: 1\nrun:\n  id: r1\n  branch: %s\n  status: %s\n' \
+  "$(git symbolic-ref --quiet --short HEAD)" "$(git symbolic-ref --quiet --short HEAD)" "$FM_TEST_NM_STATUS"
+SH
+  chmod +x "$dir/fakebin/no-mistakes"
   printf '%s\n' "$dir"
 }
 
@@ -626,8 +641,13 @@ test_ready_branch_refuses_each_unsafe_copy() {
   assert_not_parked "$dir" ready-other-branch
 
   dir=$(make_ready_lab ready-live-run)
-  FM_TEST_NM_STATUS=running park "$dir" >/dev/null 2>&1 && fail "ready-live-run: a copy under a live run was parked"
+  FM_TEST_NM_STATUS=running park "$dir" >/dev/null 2>"$dir/err" && fail "ready-live-run: a copy under a live run was parked"
+  grep -q 'still active' "$dir/err" || fail "ready-live-run: the refusal does not say why: $(cat "$dir/err")"
   assert_not_parked "$dir" ready-live-run
+
+  dir=$(make_ready_lab ready-no-run-elsewhere)
+  FM_TEST_NM_BRANCH=fm/other park "$dir" >/dev/null 2>&1 && fail "ready-no-run-elsewhere: a no-run answer for another branch was parked"
+  assert_not_parked "$dir" ready-no-run-elsewhere
 
   dir=$(make_ready_lab ready-steered)
   mkdir -p "$dir/home/state/$ID.inbox"
@@ -760,6 +780,24 @@ test_recording_a_ready_branch_returns_the_copy_or_says_why() {
   pass "recording a ready branch returns its copy at once, parks again on a repeat record, and says why when it keeps the copy"
 }
 
+# A direct park spends the done line's one attempt as a sweep park does, so a
+# sweep that runs after the release relaunched the worker but before its steer
+# is recorded does not stop the fresh worker to park it again.
+test_ready_branch_direct_park_spends_the_sweep_attempt() {
+  local dir out
+  dir=$(make_ready_lab ready-direct-attempt)
+  park "$dir" >/dev/null 2>"$dir/err" || fail "ready-direct-attempt: setup park failed: $(cat "$dir/err")"
+  out=$(lab_env "$dir" "$dir/root/bin/fm-tree-park.sh" unpark "$ID" 2>&1) || fail "ready-direct-attempt: unpark failed: $out"
+  [ -n "$(meta_value "$dir" worktree)" ] && [ -z "$(meta_value "$dir" parked)" ] || fail "ready-direct-attempt: unpark did not give a fresh copy"
+  : > "$dir/control.log"
+  lab_env "$dir" "$dir/root/bin/fm-tree-park.sh" sweep >/dev/null 2>&1 || fail "ready-direct-attempt: the sweep failed"
+  [ ! -e "$dir/home/state/$ID.park-log" ] || fail "ready-direct-attempt: the sweep started a park of the released branch: $(cat "$dir/home/state/$ID.park-log")"
+  [ -z "$(meta_value "$dir" parked)" ] || fail "ready-direct-attempt: the sweep parked the just-released branch again"
+  ! grep -q 'exit' "$dir/control.log" || fail "ready-direct-attempt: the sweep stopped the relaunched worker: $(cat "$dir/control.log")"
+  [ "$(grep -c '^return' "$dir/treehouse.log")" = 1 ] || fail "ready-direct-attempt: the copy was returned again: $(cat "$dir/treehouse.log")"
+  pass "a direct park spends the done line's attempt, so a sweep during a release leaves the relaunched worker alone"
+}
+
 # The sweep spends one attempt per done line, so a branch that is released, hits
 # the gate again and reports a new done line is parked again.
 test_ready_branch_sweep_parks_again_after_a_new_done_line() {
@@ -827,5 +865,6 @@ fm_test_run \
   test_ready_branch_steer_leases_a_fresh_copy_at_the_pushed_branch \
   test_ready_branch_refused_unpark_stays_parked \
   test_recording_a_ready_branch_returns_the_copy_or_says_why \
+  test_ready_branch_direct_park_spends_the_sweep_attempt \
   test_ready_branch_sweep_parks_again_after_a_new_done_line \
   test_teardown_of_a_parked_ready_branch_matches_an_unparked_one

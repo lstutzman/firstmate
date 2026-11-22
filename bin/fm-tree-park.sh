@@ -247,6 +247,10 @@ park_no_live_run() {
   local out
   [ "$PARK_MODE" = no-mistakes ] || return 0
   out=$(cd "$PARK_WT" && fm_run_timed 30 no-mistakes axi status 2>/dev/null) || { PARK_WHY="its no-mistakes run cannot be read"; return 1; }
+  if [ "$(fm_nm_strip_quotes "$(fm_nm_field "$out" current_branch)")" = "$PARK_BRANCH" ] \
+    && [ "$(fm_nm_strip_quotes "$(fm_nm_field "$out" runs_on_current_branch)")" = 0 ]; then
+    return 0
+  fi
   ! fm_nm_run_is_active "$out" || { PARK_WHY="its no-mistakes run is still active"; return 1; }
 }
 
@@ -356,6 +360,7 @@ cmd_park() {
     exit 1
   fi
   git -C "$PARK_PROJ" branch -D "$PARK_BRANCH" >/dev/null 2>&1 || true
+  printf '%s\n' "$PARK_HANDOFF" > "$STATE/$ID.park-attempt" || true
   if [ -n "$PARK_URL" ]; then
     printf 'parked: %s returned its copy %s; its PR %s waits on its merger at %s\n' "$ID" "$PARK_WT" "$PARK_URL" "$PARK_HEAD"
   else
