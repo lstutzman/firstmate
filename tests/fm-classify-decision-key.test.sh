@@ -69,6 +69,31 @@ test_stated_key_is_honored_in_both_positions() {
   pass "a stated [key=X] opens X whether it precedes or follows the verb colon"
 }
 
+test_key_after_a_note_head_cause_tag_is_honored() {
+  local dir
+  dir=$(case_dir cause-then-key)
+  # The real Slarti sequence (state/slarti.status lines 17520-17525 and 18600):
+  # the decision was opened with its cause tag AHEAD of the key after the colon,
+  # so the key was missed and the open took a synthetic u-<epoch>-<corr> key; a
+  # later resolved line with the exact key then closed nothing.
+  {
+    printf 'needs-decision [corr=b43c750e736da8fc] [at=1794922660]: [cause=decision] [key=pc-2499-sev1-test] pick the Sev 1 test\n'
+    printf 'done [corr=d7ae96f24cd47d29] [at=1794922727]: closed out; the Sev 1 test stays an open call (key pc-2499-sev1-test)\n'
+    printf 'resolved [key=captain-hold-pc-2499-sev1-test-1] [at=1794922861]: answered\n'
+  } > "$dir/a.status"
+  assert_fold "$dir/a.status" \
+    "$(printf 'pc-2499-sev1-test\tneeds-decision\t[cause=decision] pick the Sev 1 test\n')" \
+    "cause tag before the note-head key opens the stated key"
+  printf 'resolved [key=pc-2499-sev1-test] [at=1795308143]: answered by Lee\n' >> "$dir/a.status"
+  assert_fold "$dir/a.status" "" "an exact-key resolved line closes it"
+
+  assert_equals "k" "$(_fm_decision_key 'blocked: [dep=pr/o/r/1] [cause=external] [key=k] x')" \
+    "any run of cause and dep tags may precede the note-head key"
+  assert_equals "default" "$(status_line_decision_key 'blocked: [cause=external] prose [key=k] later')" \
+    "a key after prose is still not a stated key"
+  pass "a note-head [key=X] is honored behind leading [cause=..] and [dep=..] tags"
+}
+
 test_bare_keyless_line_still_folds_to_default() {
   local dir
   dir=$(case_dir keyless)
@@ -265,6 +290,7 @@ test_incremental_agrees_with_full_fold_across_appends() {
 }
 
 test_stated_key_is_honored_in_both_positions
+test_key_after_a_note_head_cause_tag_is_honored
 test_bare_keyless_line_still_folds_to_default
 test_resolution_closes_across_positions
 test_blocked_is_position_tolerant_like_needs_decision

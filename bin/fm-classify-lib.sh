@@ -886,10 +886,13 @@ _fm_key_before_colon() {  # <status-line>
   esac
 }
 # Raw slug of a complete "[key=<slug>]" token at the head of the note (the
-# first thing after the line's first colon, ignoring whitespace). Fails when
-# the line has no colon or no complete token there; slug charset validity is
-# the caller's check via _fm_decision_slug_ok, exactly as for the before-colon
-# position.
+# first thing after the line's first colon, ignoring whitespace, and ignoring
+# any run of "[cause=...]" / "[dep=...]" tags that precede it: a worker who
+# writes the colon first often puts the cause tag ahead of the key, and a key
+# missed there opens a synthetic key that an exact-key resolution never
+# closes). Fails when the line has no colon or no complete token there; slug
+# charset validity is the caller's check via _fm_decision_slug_ok, exactly as
+# for the before-colon position.
 _fm_key_at_note_head() {  # <status-line> [<out-var>] -> raw slug
   local __fm_head_rest
   case "$1" in
@@ -897,6 +900,15 @@ _fm_key_at_note_head() {  # <status-line> [<out-var>] -> raw slug
     *) return 1 ;;
   esac
   __fm_head_rest=${__fm_head_rest#"${__fm_head_rest%%[![:space:]]*}"}
+  while :; do
+    case "$__fm_head_rest" in
+      \[cause=*\]*|\[dep=*\]*)
+        __fm_head_rest=${__fm_head_rest#*\]}
+        __fm_head_rest=${__fm_head_rest#"${__fm_head_rest%%[![:space:]]*}"}
+        ;;
+      *) break ;;
+    esac
+  done
   case "$__fm_head_rest" in
     \[key=*\]*) __fm_head_rest=${__fm_head_rest#\[key=}; __fm_head_rest=${__fm_head_rest%%\]*} ;;
     *) return 1 ;;
@@ -929,7 +941,10 @@ status_line_note() {  # <status-line> [<out-var>] -> text after the first colon,
       if ! _fm_key_before_colon "$__fm_note_unstamped" \
         && _fm_key_at_note_head "$__fm_note_unstamped" __fm_note_key \
         && _fm_decision_slug_ok "$__fm_note_key"; then
-        __fm_note_text=${__fm_note_text#"[key=$__fm_note_key]"}
+        # The token is the first "[key=" in the note: only cause and dep tags
+        # may precede it, and neither can contain one.
+        __fm_note_text=${__fm_note_text/"[key=$__fm_note_key] "/}
+        __fm_note_text=${__fm_note_text/"[key=$__fm_note_key]"/}
         __fm_note_text=${__fm_note_text#"${__fm_note_text%%[![:space:]]*}"}
       fi
       ;;
@@ -1382,6 +1397,12 @@ status_open_decisions() {  # <status-file> [<kind>]
       return substr(s, 1, index(s, "]") - 1)
     }
     function slug(s) { return s ~ /^[A-Za-z0-9._-]+$/ }
+    function note_tags_skipped(s,    stop) {
+      while ((index(s, "[cause=") == 1 || index(s, "[dep=") == 1) && (stop = index(s, "]"))) {
+        s = trim_left(substr(s, stop + 1))
+      }
+      return s
+    }
     function epoch(s,    rest, value, finish) {
       if (!index(s, ":")) return ""
       s = head(s)
@@ -1465,10 +1486,18 @@ status_open_decisions() {  # <status-file> [<kind>]
       if (has_token(h, "[key=")) {
         key = raw_key(h)
         if (!slug(key)) next
-      } else if (has_colon && index(note, "[key=") == 1 && has_token(note, "[key=")) {
-        key = raw_key(note)
+      } else if (has_colon && has_token(note_tags_skipped(note), "[key=") &&
+                 index(note_tags_skipped(note), "[key=") == 1) {
+        # Mirrors _fm_key_at_note_head: leading [cause=..]/[dep=..] tags may
+        # precede the note-head key, and the key token is dropped from the note.
+        rest = note_tags_skipped(note)
+        key = raw_key(rest)
         if (!slug(key)) next
-        note = trim_left(substr(note, length(key) + 7))
+        token = "[key=" key "]"
+        i = index(note, token)
+        note = substr(note, 1, i - 1) substr(note, i + length(token))
+        if (substr(note, i, 1) == " ") note = substr(note, 1, i - 1) substr(note, i + 1)
+        note = trim_left(note)
       }
       unkeyed = key == ""
       if (unkeyed) {
