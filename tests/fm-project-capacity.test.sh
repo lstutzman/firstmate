@@ -1288,6 +1288,7 @@ test_pr_drain_security_needs_a_qualifying_linear_item() {
   case_dir=$(make_case drain-security sec-ok sec-nolabel sec-low sec-noitem sec-down)
   home="$case_dir/home"
   drain_gh "$case_dir" 25
+  declare_slots "$home" "project 4"
   reader="$case_dir/linear-reader"
   cat > "$reader" <<'STUB'
 #!/usr/bin/env bash
@@ -1308,6 +1309,8 @@ STUB
   assert_contains "$out" "spawned sec-ok" "a qualifying security ship did not launch in drain"
   grep -q 'PR drain check:' "$home/data/sec-ok/launch-brief.md" &&
     fail "a qualifying security ship lost its PR drain exemption"
+  grep -q 'CI slots check:' "$home/data/sec-ok/launch-brief.md" &&
+    fail "a qualifying security ship lost its CI slots exemption"
   rc=0
   out=$(FAKE_LINEAR_JSON='{"priority": 1, "labels": ["Bug"]}' spawn_ship "$case_dir" sec-nolabel) || rc=$?
   expect_code 0 "$rc" "a security ship without the label was refused a start: $out"
@@ -1331,6 +1334,8 @@ STUB
     [ -f "$home/state/$id.meta" ] || fail "an unqualified security ship published no task record for $id"
     grep -q 'PR drain check: just before you open a new pull request' "$home/data/$id/launch-brief.md" ||
       fail "an unqualified security ship $id kept its PR drain exemption: its launch brief has no PR drain check"
+    grep -q 'CI slots check: just before you open a new pull request' "$home/data/$id/launch-brief.md" ||
+      fail "an unqualified security ship $id kept its CI slots exemption: its launch brief has no CI slots check"
   done
   rl="$case_dir/relaunch"
   mkdir -p "$rl/fake"

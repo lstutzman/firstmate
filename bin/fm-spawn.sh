@@ -4528,10 +4528,15 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ]; then
       exit 1
     }
   fi
+  SPAWN_DRAIN_FORGE=$(sed -n 's/^Delivery contract: mode=[^ ]*.*[[:space:]]forge=\([^ ]*\).*$/\1/p' "$BRIEF" | head -n 1)
+  SPAWN_DRAIN_MODE=$(sed -n 's/^Delivery contract: mode=\([^ ]*\).*$/\1/p' "$BRIEF" | head -n 1)
+  case "${SPAWN_DRAIN_MODE:-$MODE}:${SPAWN_DRAIN_FORGE:-none}" in
+    local-only:* | *:gerrit | *:external) SPAWN_DRAIN_CLASS= ;;
+  esac
   if [ "$SPAWN_DRAIN_CLASS" = security ]; then
     read -r SPAWN_DRAIN_STATE _ < <(python3 "$FM_ROOT/bin/fm-pr-drain.py" state "$PROJ_ABS") || true
     if [ "$SPAWN_DRAIN_STATE" = on ] && ! spawn_security_item_qualifies; then
-      echo "warning: task $ID launches without its PR drain exemption; its launch brief carries the PR drain check, so its PR opening waits for the drain like any ship" >&2
+      echo "warning: task $ID launches without its PR drain exemption; its launch brief carries the PR drain check, and the CI slots check where the project declares slots, so its PR opening waits like any ship's" >&2
       SPAWN_SECURITY_UNEXEMPT=1
     fi
   fi
@@ -4710,7 +4715,10 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
       fm_brief_model_overlay_section "$CONFIG" "$MODEL" "$EFFORT" &&
       if [ -n "$SPAWN_SECURITY_UNEXEMPT" ]; then
         printf '\n# PR drain\nThis brief declares PR drain class security, but its Linear item did not qualify at spawn, so its PR opening is not exempt from the drain.\n' &&
-          fm_pr_drain_rule "$FM_ROOT" "$BRANCH" "$(basename "$PROJ_ABS")"
+          fm_pr_drain_rule "$FM_ROOT" "$BRANCH" "$(basename "$PROJ_ABS")" &&
+          if [ -n "$(FM_HOME="$FM_HOME" FM_CONFIG_OVERRIDE="$CONFIG" "$FM_ROOT/bin/fm-project-mode.sh" --ci-slots "$(basename "$PROJ_ABS")" 2>/dev/null)" ]; then
+            fm_ci_slots_gate_rule "$FM_ROOT" "$BRANCH" "$(basename "$PROJ_ABS")"
+          fi
       fi &&
       if [ "$KIND" = ship ] && [ "$MODE" = no-mistakes ]; then
         fm_brief_intent_overlay "$CAPTAIN_INTENT"
