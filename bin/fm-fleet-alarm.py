@@ -391,13 +391,15 @@ def held_work(summary, counts):
     return max(0, counts['holds'] - backlog)
 
 
-def working_on_task(summary, counts, open_decisions, last_verb, paused_until, age, cfg, cause=''):
+def working_on_task(summary, counts, open_decisions, last_verb, paused_until, age, cfg, cause, plain_asks):
     # The mate's own latest line says it is working, or paused for work it still holds, and
     # nobody is waiting on it: a long task that reports sparingly, not a mate gone quiet. A
     # declared pause is quiet again once its clearing time is more than the silence window
     # past; an undated external wait once it is older than external_wait_ceiling_hours; any
-    # other line once it is older than working_ceiling_multiple silence windows.
-    if last_verb not in ('working', 'paused') or open_decisions != '0' or child_asking(summary, counts):
+    # other line once it is older than working_ceiling_multiple silence windows. A pause may sit
+    # behind the mate's own plain needs-decision asks; a blocked line or a [handoff= ask still counts.
+    waiting = int(open_decisions) - (int(plain_asks) if last_verb == 'paused' else 0)
+    if last_verb not in ('working', 'paused') or waiting != 0 or child_asking(summary, counts):
         return False
     if not (counts.get('in_flight', 0) or counts['active_children'] or held_work(summary, counts)):
         return False
@@ -475,6 +477,7 @@ while IFS= read -r line || [ -n "$line" ]; do
           state_age=$(( $4 - held_at )); [ "$state_age" -ge 0 ] || state_age=0
         fi
       fi
+      raw_verb=$verb
       case "$verb" in working|paused) ;; *) verb=other ;; esac
       until=$(status_paused_until "$line" || true)
       cause=$(status_line_cause "$line")
@@ -482,10 +485,14 @@ while IFS= read -r line || [ -n "$line" ]; do
       # An external merge handoff ([handoff=<home>]) waits on another home, not on the captain or the mate going quiet, so it is not an unanswered decision here.
       open=$(printf '%s\n' "$folded" | LC_ALL=C awk -F '\t' '($2 == "needs-decision" || $2 == "blocked") && !($2 == "needs-decision" && $1 ~ /^merge-handoff-/ && $3 ~ /^\[handoff=/)' | LC_ALL=C wc -l | tr -d ' ')
       asks=$(printf '%s\n' "$folded" | LC_ALL=C awk -F '\t' '$2 == "needs-decision" { printf "%s%s", sep, $1; sep = " " }')
-      # The latest line is a needs-decision whose key has no resolved line: the mate is parked on an answer.
+      plain=$(printf '%s\n' "$folded" | LC_ALL=C awk -F '\t' '$2 == "needs-decision" && $3 !~ /^\[handoff=/' | LC_ALL=C wc -l | tr -d ' ')
+      # The mate's own latest line is a needs-decision whose key is still open: it is parked on an answer.
       latest_ask=0
-      [ -z "$(status_open_keyed_decision_line "$3/$id.status")" ] || latest_ask=1
-      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$SECONDMATE_REGISTRY_HOST" "$SECONDMATE_REGISTRY_HOME" "$age" "$open" "$verb" "$until" "$asks" "$cause" "$state_age" "$latest_ask"
+      if [ "$raw_verb" = needs-decision ] && key=$(_fm_decision_key "$line" "") && [ -n "$key" ] \
+        && printf '%s\n' "$folded" | LC_ALL=C awk -F '\t' -v k="$key" '$1 == k && $2 == "needs-decision" { f = 1 } END { exit !f }'; then
+        latest_ask=1
+      fi
+      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$SECONDMATE_REGISTRY_HOST" "$SECONDMATE_REGISTRY_HOME" "$age" "$open" "$verb" "$until" "$asks" "$cause" "$state_age" "$latest_ask" "$plain"
       ;;
   esac
 done < "$2"
@@ -493,7 +500,7 @@ done < "$2"
     seen = set()
     routes = list(csv.reader(io.StringIO(roster), delimiter='\t'))
     for index, row in enumerate(routes):
-        name, host, home, age, open_decisions, last_verb, paused_until, asks, cause, state_age, latest_ask = row
+        name, host, home, age, open_decisions, last_verb, paused_until, asks, cause, state_age, latest_ask, plain_asks = row
         if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', name) or name in seen or not Path(home).is_absolute():
             raise ValueError('invalid or duplicate secondmate route')
         seen.add(name)
@@ -575,11 +582,11 @@ done < "$2"
                 continue
             # The mate's own latest line is an open needs-decision: it is parked on an answer, so its
             # silence is expected whatever the key names. A child asking the mate still counts. A
-            # dated pause is covered by working_on_task below, and falls back to the ordinary check
-            # once past its until.
+            # pause is covered by working_on_task below, even behind the mate's own plain asks, and
+            # falls back to the ordinary check once past its until.
             if latest_ask == '1' and not child_asking(summary, counts):
                 continue
-            if working_on_task(summary, counts, open_decisions, last_verb, paused_until, state_age, cfg, cause):
+            if working_on_task(summary, counts, open_decisions, last_verb, paused_until, state_age, cfg, cause, plain_asks):
                 continue
             ages = [] if age == 'null' else [float(age)]
             meta = STATE / (name + '.meta')

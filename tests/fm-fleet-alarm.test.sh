@@ -1116,6 +1116,24 @@ paused_mate -7200
 assert_contains "$(run_alarm check)" 'holding work silent' 'a paused line past its until falls back to the ordinary check'
 mate 0 0 0
 run_alarm check >/dev/null
+open_ask_mate 'needs-decision [at=@AT@] [key=ask-a]: first call' 'needs-decision [at=@AT@] [key=pc1468-native-calls]: waiting on the captain'
+bash -c '. "$1/bin/fm-wake-lib.sh"; . "$1/bin/fm-classify-lib.sh"; f="$2/state/mate.status"; before=$(_fm_status_file_size "$f"); printf "resolved [at=%s] [key=ask-a]: answered\n" "$(date +%s)" >> "$f"; status_home_appends_record "$f" "$before" "$(_fm_status_file_size "$f")"' fleet-alarm-test "$ROOT" "$HOME_FIX"
+[ -z "$(run_alarm check)" ] || fail 'an answer to another key after the open latest needs-decision leaves the mate waiting, not silent'
+mate 0 0 0
+run_alarm check >/dev/null
+paused_ask_mate() { # until offset in seconds
+  paused_mate "$1"
+  { printf 'needs-decision [at=%s] [key=ask-x]: waiting on the captain\n' "$((now - 7300))"; cat "$HOME_FIX/state/mate.status"; } > "$HOME_FIX/state/mate.status.new"
+  mv "$HOME_FIX/state/mate.status.new" "$HOME_FIX/state/mate.status"
+}
+paused_ask_mate 3000
+[ -z "$(run_alarm check)" ] || fail 'a pause whose until has not passed behind an open needs-decision is waiting, not silent'
+mate 0 0 0
+run_alarm check >/dev/null
+paused_ask_mate -7200
+assert_contains "$(run_alarm check)" 'holding work silent' 'a pause past its until behind an open needs-decision falls back to the ordinary check'
+mate 0 0 0
+run_alarm check >/dev/null
 pass 'an open latest needs-decision or an unexpired pause is not silent'
 
 # Proxy view (a stale account supplies the quota card that carries the context line): a rotated-away exhausted account raises no decision while a headroom account serves.
