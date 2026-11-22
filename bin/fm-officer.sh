@@ -133,8 +133,9 @@
 # triage pass plus Linear intake), landing
 # (bin/fm-officer-landing.py), friction (bin/fm-officer-friction.py),
 # progress (bin/fm-officer-progress.py), pagecheck
-# (bin/fm-officer-page-check.py), corpus (bin/fm-officer-corpus.py), and library
-# (bin/fm-officer-library.py); each role script's header owns its pass.
+# (bin/fm-officer-page-check.py), corpus (bin/fm-officer-corpus.py), library
+# (bin/fm-officer-library.py), and improvement (bin/fm-officer-improvement.py, read-only,
+# writes: none); each role script's header owns its pass.
 #
 # Officers run in the primary home only: register, run, and check refuse in a
 # home carrying .fm-secondmate-home.
@@ -150,7 +151,7 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 REGISTRY="$DATA/officers.md"
-OFFICER_ROLES="triage surgeon landing friction progress pagecheck corpus library"
+OFFICER_ROLES="triage surgeon landing friction progress pagecheck corpus library improvement"
 
 # shellcheck source=bin/fm-atomic-lib.sh
 . "$SCRIPT_DIR/fm-atomic-lib.sh"
@@ -269,6 +270,7 @@ line_problem() {
       [ "$role" != friction ] || linear_problem "$line" "$id" friction
       ;;
     library) linear_problem "$line" "$id" library ;;
+    improvement) improvement_problem "$line" "$id" ;;
     pagecheck)
       [[ "$(line_field "$line" app || true)" == https://* ]] \
         || { printf 'officer %s: a pagecheck officer needs app: <https URL of the fleet app>\n' "$id"; return; }
@@ -292,6 +294,23 @@ line_problem() {
       esac
       ;;
   esac
+}
+
+# improvement_problem <line> <id>: prints why an improvement line is unusable, or nothing. It reads and writes nothing
+# outside its lane, so writes must be none.
+improvement_problem() {
+  local line=$1 id=$2
+  case "$(line_field "$line" writes || echo none)" in
+    none) ;;
+    *) printf 'officer %s: an improvement officer is read-only, so writes must be none\n' "$id"; return ;;
+  esac
+  [[ "$(line_field "$line" repos || echo owner/repo)" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(,[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)*$ ]] \
+    || { printf 'officer %s: repos must be comma-separated owner/repo names\n' "$id"; return; }
+  case "$(line_field "$line" window-days || echo 7)$(line_field "$line" max-pr-lookups || echo 200)$(line_field "$line" max-facts-age || echo 36)" in
+    ''|*[!0-9]*) printf 'officer %s: window-days, max-pr-lookups and max-facts-age must be whole numbers\n' "$id"; return ;;
+  esac
+  [ "$(line_field "$line" window-days || echo 7)" -ge 1 ] \
+    || { printf 'officer %s: window-days must be at least 1\n' "$id"; return; }
 }
 
 # run_host_problem <line> <id> <role>: prints why a line's run-host: or run-host-code: is unusable, or nothing.
@@ -946,6 +965,25 @@ corpus_args() {  # <date>: sets CORPUS_ARGS, the corpus script's run arguments.
   done <<START_HOMES
 $(start_homes)
 START_HOMES
+}
+
+role_improvement() {  # <date>: GitHub, the landing facts, the ledgers and the gate and archive records, read-only.
+  local home
+  local -a args=(run --date "$1" --out "$OFFICER_LANE" --now "$(now_epoch)"
+    --repos "$(line_field "$OFFICER_LINE" repos || echo lstutzman/PropertyCompass2)"
+    --window-days "$(line_field "$OFFICER_LINE" window-days || echo 7)"
+    --max-pr-lookups "$(line_field "$OFFICER_LINE" max-pr-lookups || echo 200)"
+    --max-facts-age "$(line_field "$OFFICER_LINE" max-facts-age || echo 36)")
+  local field
+  for field in facts gate archive; do
+    if line_field "$OFFICER_LINE" "$field" >/dev/null; then args+=("--$field" "$(line_field "$OFFICER_LINE" "$field")"); fi
+  done
+  while IFS= read -r home; do
+    [ -n "$home" ] && args+=(--home "$home")
+  done <<EOF
+$(readable_homes)
+EOF
+  python3 -I "$SCRIPT_DIR/fm-officer-improvement.py" "${args[@]}"
 }
 
 role_corpus() {  # <date>: counts only, read on each host by the script itself.
