@@ -92,9 +92,9 @@
 # oldest PR is at least that old. A home that keeps no backlog holds no PR back.
 # A registered value that is not a whole number of hours still refuses the
 # spawn, like an unreadable capacity declaration.
-# Known limits, by the captain's decision until firstmate has a signal for
-# them: a paused landing is not read, and a ready PR held for a release day
-# counts like any other. A merged PR also counts until its task is cleaned up.
+# Known limit, by the captain's decision until firstmate has a signal for it:
+# a paused landing is not read. A PR another home holds counts unless it carries
+# HELD_LABEL (bin/fm-pr-drain.py). A merged PR also counts until its task is cleaned up.
 # Remote homes count through their cached summaries (Remote homes, below).
 #
 # CI slots: config/ci-slots in the spawning home's own config/ (inherited from
