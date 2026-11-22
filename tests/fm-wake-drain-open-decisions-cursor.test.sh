@@ -528,6 +528,7 @@ test_killed_rebuild_scan_keeps_progress_and_converges() {
   : > "$dir/awk-calls"
   # Hold the third file's awk pass open, then kill the whole scan (its process
   # group, subshells included) while that pass is in flight.
+  # shellcheck disable=SC2016
   FM_OPEN_DECISIONS_READ_PROBE="$probe" setsid bash -c '
     . "$1"
     eval "_fm_orig_$(declare -f status_open_decisions)"
@@ -540,6 +541,7 @@ test_killed_rebuild_scan_keeps_progress_and_converges() {
     }
     scan_open_decisions_incremental "$2" > /dev/null' _ "$ROOT/bin/fm-classify-lib.sh" "$state" "$dir/awk-calls" &
   scan_pid=$!
+  # shellcheck disable=SC2016
   timeout 60 bash -c 'until [ "$(wc -l < "$1")" -ge 3 ]; do sleep 0.1; done' _ "$dir/awk-calls" \
     || { kill -KILL -- "-$scan_pid" 2>/dev/null; fail "the scan never reached its third rebuild"; }
   kill -KILL -- "-$scan_pid"
@@ -550,7 +552,7 @@ test_killed_rebuild_scan_keeps_progress_and_converges() {
     off=$(sed -n 's/^offset=//p' "$state/.t$n.open-decisions-cursor")
     [ "$off" = "$size" ] || fail "t$n: the killed scan did not keep its finished rebuild (offset '$off', size $size)"
   done
-  [ ! -e "$state/.t3.open-decisions-cursor" ] || fail "t3: the file killed mid-rebuild left a cursor: $(ls -a "$state" | tr "\n" " ") calls=$(wc -l < "$dir/awk-calls")"
+  [ ! -e "$state/.t3.open-decisions-cursor" ] || fail "t3: the file killed mid-rebuild left a cursor: $(find "$state" -maxdepth 1 | tr "\n" " ") calls=$(wc -l < "$dir/awk-calls")"
   leftover=$(find "$state" -maxdepth 1 -name '.t3.open-decisions-cursor.read.*' | wc -l | tr -d ' ')
   [ "$leftover" = 1 ] || fail "t3: the kill should leave the rebuild's chunk copy behind, found $leftover"
   : > "$probe"
