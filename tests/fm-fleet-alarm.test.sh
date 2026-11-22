@@ -718,9 +718,17 @@ mate 0 0 0
 run_alarm check >/dev/null
 # The Librarian's shape: the recheck time is a [until=...] tag, not prose.
 now=$(date +%s)
-mate 1 0 7200
-printf 'paused [until=%s] [cause=external] [key=lib-pool-full] [at=%s]: pool full\n' "$(date -u -d "@$((now + 3000))" +%Y-%m-%dT%H:%MZ)" "$((now - 7200))" > "$HOME_FIX/state/mate.status"
+mate 1 0 30000
+printf 'paused [until=%s] [cause=external] [key=lib-pool-full] [at=%s]: pool full\n' "$(date -u -d "@$((now + 3000))" +%Y-%m-%dT%H:%MZ)" "$((now - 30000))" > "$HOME_FIX/state/mate.status"
 [ -z "$(run_alarm check)" ] || fail 'a paused [until=] tag in the future suppresses the silence alarm'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 1 0 30000
+{
+  printf 'paused [until=%s] [cause=external] [key=lib-pool-full] [at=%s]: pool full\n' "$(date -u -d "@$((now + 3000))" +%Y-%m-%dT%H:%MZ)" "$((now - 30000))"
+  printf 'done [at=%s]: relay noted\n' "$((now - 29000))"
+} > "$HOME_FIX/state/mate.status"
+[ -z "$(run_alarm check)" ] || fail 'a done line after a paused [until=] tag in the future keeps the wait in force'
 mate 0 0 0
 run_alarm check >/dev/null
 mate 1 0 20000

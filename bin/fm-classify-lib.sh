@@ -581,8 +581,9 @@ _fm_status_until_epoch() {  # <status-line> -> epoch on stdout
 # and corr tags in any order. Epoch is UTC Unix seconds: canonical unsigned
 # decimal, at most 12 digits (bounded for safe shell arithmetic). For example:
 #   resolved [key=api-shape] [at=1788576000]: answered: use REST
-# No colons appear inside this field, so existing verb/key/note readers retain
-# their grammar. Missing, malformed, or duplicate time fields mean UNKNOWN time;
+# The head ends at the first colon outside a closed [tag] (_fm_status_head), so
+# a tag whose value carries a time, such as [until=2026-11-23T05:00Z], cannot
+# end it early. Missing, malformed, or duplicate time fields mean UNKNOWN time;
 # never infer emission time from file mtime, a wake, or observation time. Relays
 # preserve source tags and leave legacy source events unstamped. Time describes
 # event history only and must never decide current state or decision closure,
@@ -592,10 +593,34 @@ _fm_status_until_epoch() {  # <status-line> -> epoch on stdout
 # so no second spelling of "well-formed" can drift against this one.
 # Internals carry a reserved prefix: bash locals are dynamically scoped, so a
 # plain name here would shadow the caller's out-var of the same name.
+# The head of a status line: the bytes before its first colon outside a closed
+# [tag]. A "[" with no "]" after it, or with another "[" before its "]", is an
+# ordinary byte. Fails when the line has no such colon.
+_fm_status_head() {  # <status-line> <out-var> -> 0 and the head
+  local __fm_head_rest=$1 __fm_head_keep='' __fm_head_seg __fm_head_tag
+  printf -v "$2" '%s' ''
+  while :; do
+    __fm_head_seg=${__fm_head_rest%%[][:]*}
+    __fm_head_rest=${__fm_head_rest:${#__fm_head_seg}}
+    __fm_head_keep=$__fm_head_keep$__fm_head_seg
+    case "$__fm_head_rest" in
+      :*) printf -v "$2" '%s' "$__fm_head_keep"; return 0 ;;
+      '') return 1 ;;
+      \[*\]*)
+        __fm_head_tag=${__fm_head_rest%%\]*}
+        case "${__fm_head_tag#\[}" in
+          *\[*) __fm_head_keep=$__fm_head_keep[; __fm_head_rest=${__fm_head_rest#\[} ;;
+          *) __fm_head_keep=$__fm_head_keep$__fm_head_tag]; __fm_head_rest=${__fm_head_rest#*\]} ;;
+        esac ;;
+      *) __fm_head_keep=$__fm_head_keep${__fm_head_rest:0:1}; __fm_head_rest=${__fm_head_rest:1} ;;
+    esac
+  done
+}
+
 _fm_status_at_epoch() {  # <status-line> <out-var> -> 0 and the epoch when known
   local __fm_at_head __fm_at_value __fm_at_rest
   printf -v "$2" '%s' ''
-  case "$1" in *:*) __fm_at_head=${1%%:*} ;; *) return 1 ;; esac
+  _fm_status_head "$1" __fm_at_head || return 1
   case "$__fm_at_head" in *\[at=*\]*) ;; *) return 1 ;; esac
   __fm_at_rest=${__fm_at_head#*\[at=}
   __fm_at_value=${__fm_at_rest%%\]*}
@@ -640,13 +665,10 @@ status_line_at_epoch() {  # <status-line> -> epoch; nonzero when unknown
 # timestamp a copied historical line.
 status_stamp_line() {  # <new-status-line> -> line (without newline)
   local head epoch
-  case "$1" in
-    *:*) head=${1%%:*} ;;
-    *) printf '%s' "$1"; return 0 ;;
-  esac
+  _fm_status_head "$1" head || { printf '%s' "$1"; return 0; }
   case "$head" in *\[at=*) printf '%s' "$1"; return 0 ;; esac
   if epoch=$(date +%s); then
-    printf '%s [at=%s]:%s' "$head" "$epoch" "${1#*:}"
+    printf '%s [at=%s]:%s' "$head" "$epoch" "${1:${#head}+1}"
   else
     printf '%s' "$1"
   fi
@@ -680,11 +702,11 @@ status_stamp_width() {  # -> characters a stamp adds to a line
 _fm_status_untimed() {  # <status-line> <out-var> -> line without a time tag
   local __fm_untimed_epoch __fm_untimed_head __fm_untimed_tag __fm_untimed_before
   if _fm_status_at_epoch "$1" __fm_untimed_epoch; then
-    __fm_untimed_head=${1%%:*}
+    _fm_status_head "$1" __fm_untimed_head
     __fm_untimed_tag="[at=$__fm_untimed_epoch]"
     __fm_untimed_before=${__fm_untimed_head%%"$__fm_untimed_tag"*}
     printf -v "$2" '%s%s:%s' "${__fm_untimed_before% }" \
-      "${__fm_untimed_head#*"$__fm_untimed_tag"}" "${1#*:}"
+      "${__fm_untimed_head#*"$__fm_untimed_tag"}" "${1:${#__fm_untimed_head}+1}"
     return 0
   fi
   printf -v "$2" '%s' "$1"
@@ -699,21 +721,27 @@ _fm_status_untimed() {  # <status-line> <out-var> -> line without a time tag
 # or whether a decision opens or closes - not when the worker left the brief's
 # <epoch> placeholder unsubstituted, and not when they wrote a readable time
 # whose colons swallow the head/note separator.
-# A run is the stamp only while nothing before it holds a colon; once one does,
-# the head has ended and every later [at=...] is note text the override may
-# legitimately match on, so scanning stops there. The caller's own bytes are
-# untouched: this writes a throwaway copy used for matching only.
+# A run is the stamp only inside the head (_fm_status_head); every later
+# [at=...] is note text the override may legitimately match on. Colons left in
+# the head's other tags are dropped from the copy, so every reader that cuts it
+# at its first colon finds the same head. The caller's own bytes are untouched:
+# this writes a throwaway copy used for matching only.
 _fm_status_unstamped() {  # <status-line> <out-var> -> line with its stamp removed
-  local __fm_unstamped_rest=$1 __fm_unstamped_keep='' __fm_unstamped_before
+  local __fm_unstamped_rest __fm_unstamped_keep='' __fm_unstamped_tail='' __fm_unstamped_before
+  if _fm_status_head "$1" __fm_unstamped_rest; then
+    __fm_unstamped_tail=${1:${#__fm_unstamped_rest}}
+  else
+    __fm_unstamped_rest=$1
+  fi
   while :; do
     case "$__fm_unstamped_rest" in *\[at=*\]*) ;; *) break ;; esac
     __fm_unstamped_before=${__fm_unstamped_rest%%\[at=*}
-    case "$__fm_unstamped_before" in *:*) break ;; esac
     __fm_unstamped_keep=$__fm_unstamped_keep${__fm_unstamped_before% }
     __fm_unstamped_rest=${__fm_unstamped_rest#*\[at=}
     __fm_unstamped_rest=${__fm_unstamped_rest#*\]}
   done
-  printf -v "$2" '%s' "$__fm_unstamped_keep$__fm_unstamped_rest"
+  __fm_unstamped_keep=$__fm_unstamped_keep$__fm_unstamped_rest
+  printf -v "$2" '%s' "${__fm_unstamped_keep//:/}$__fm_unstamped_tail"
 }
 
 # Retry deduplication ignores only a well-formed optional numeric time tag;
@@ -3199,8 +3227,8 @@ _status_agent_event_scan() {  # <observed-status-log> <contract-path> <now-epoch
   [ -f "$status_log" ] || { [ "$mode" = line ] || printf 'null'; return 0; }
   ranges=$(status_home_appends_ranges "$path") || ranges=
   # One pass: ledger ranges are ascending (status_home_appends_covers), so
-  # merge them once and walk them alongside the lines; the stamp rule is
-  # _fm_status_at_epoch's.
+  # merge them once and walk them alongside the lines; the stamp rule and its
+  # head (_fm_status_head) are _fm_status_at_epoch's.
   LC_ALL=C awk -v ranges="$ranges" -v now="$now" -v mode="$mode" '
     BEGIN {
       n = 0
@@ -3218,15 +3246,17 @@ _status_agent_event_scan() {  # <observed-status-log> <contract-path> <now-epoch
       if (index($0, "blocked [key=pending-reply-") == 1 || index($0, "blocked [key=remote-reply-continuity-") == 1) next
       while (j <= n && hi[j] <= start) j++
       if (j <= n && lo[j] <= start && hi[j] >= end) next
-      # The head ends at the first colon outside a [tag], so a tag carrying a time ([until=...T05:00Z])
-      # cannot hide a later [at=] stamp.
-      head = ""; depth = 0; found = 0
-      for (k = 1; k <= length($0); k++) {
+      head = ""; found = 0; k = 1; len = length($0)
+      while (k <= len) {
         c = substr($0, k, 1)
-        if (c == "[") depth++
-        else if (c == "]" && depth > 0) depth--
-        else if (c == ":" && depth == 0) { found = 1; break }
-        head = head c
+        if (c == ":") { found = 1; break }
+        if (c == "[") {
+          close_tag = index(substr($0, k + 1), "]")
+          if (close_tag && !index(substr($0, k + 1, close_tag - 1), "[")) {
+            head = head substr($0, k, close_tag + 1); k += close_tag + 1; continue
+          }
+        }
+        head = head c; k++
       }
       if (!found) next
       at = index(head, "[at="); if (!at) next
