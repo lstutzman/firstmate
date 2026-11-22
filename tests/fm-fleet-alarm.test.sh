@@ -871,18 +871,21 @@ pass 'a captain-held in-flight item with a done child counts as complete; other 
 
 # FLEET-171: a done child reports before its merge and clean-up; that is normal in-flight work until
 # it stays uncleaned past done_grace_hours (default 2), when the finding names the task and its age.
-done_in_flight() { # <done age seconds> [task]
-  python3 - "$TMP_ROOT/mate/state/home-summary.json" "$1" "${2:-d1-ci-slots-code}" <<'PY_DONE'
+done_in_flight() { # <done age seconds> [task] [summary age seconds] [failed task]
+  python3 - "$TMP_ROOT/mate/state/home-summary.json" "$1" "${2:-d1-ci-slots-code}" "${3:-0}" "${4:-}" <<'PY_DONE'
 from pathlib import Path
 import json,sys
 path=Path(sys.argv[1]); value=json.loads(path.read_text())
-age,item=int(sys.argv[2]),sys.argv[3]
-value.update(valid=False, state='unknown',
-             invalidity=dict(kind='terminal_in_flight', ids=[item]),
+age,item,since,failed=int(sys.argv[2]),sys.argv[3],int(sys.argv[4]),sys.argv[5]
+ids=[item]+([failed] if failed else [])
+endpoints=[dict(id=item, kind='ship', state='done', age_seconds=age)]
+endpoints+=[dict(id=failed, kind='ship', state='failed', age_seconds=age)] if failed else []
+value.update(valid=False, state='unknown', generated_epoch=value['generated_epoch']-since,
+             invalidity=dict(kind='terminal_in_flight', ids=ids),
              reason=f'in-flight backlog item has terminal child state: {item}=done',
-             counts=dict(in_flight=1, held_in_flight=0, active_children=0, decisions_open=0, holds=0, endpoints=1),
-             decisions_open=[], holds=[],
-             endpoints=[dict(id=item, kind='ship', state='done', age_seconds=age)])
+             counts=dict(in_flight=len(ids), held_in_flight=0, active_children=0, decisions_open=0, holds=0,
+                         endpoints=len(endpoints)),
+             decisions_open=[], holds=[], endpoints=endpoints)
 path.write_text(json.dumps(value))
 PY_DONE
 }
@@ -909,6 +912,16 @@ done_in_flight 5400
 printf '%s\n' '{"persist_polls":1,"done_grace_hours":1}' > "$HOME_FIX/config/fleet-alarm.json"
 assert_contains "$(run_alarm check)" 'not merged and cleaned up: mate: d1-ci-slots-code' 'done_grace_hours moves the grace period'
 printf '%s\n' '{"persist_polls":1}' > "$HOME_FIX/config/fleet-alarm.json"
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 3601
+done_in_flight 3600 d1-ci-slots-code 6000
+assert_contains "$(run_alarm check)" 'Done task not merged and cleaned up: mate: d1-ci-slots-code done 2h40m ago' 'the summary age counts toward the done age'
+mate 0 0 0
+run_alarm check >/dev/null
+mate 0 0 0
+done_in_flight 600 d1-ci-slots-code 0 f8-mac-paths
+assert_contains "$(run_alarm check)" 'home inventory incomplete' 'a done child beside a failed child still alarms as incomplete'
 mate 0 0 0
 run_alarm check >/dev/null
 pass 'a done child is normal in-flight work inside done_grace_hours and an uncleaned-task finding past it'
