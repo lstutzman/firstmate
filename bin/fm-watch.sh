@@ -71,7 +71,8 @@
 #                          supervisor decision nobody has answered yet - is
 #                          deferred to that same long recheck cadence instead
 #                          (wedge_wait_evidence); a landing task, whose finished
-#                          PR waits only on another home's merger, is skipped
+#                          PR waits only on another home's merger or on an open
+#                          admit-<pr> captain call, is skipped
 #                          with no wake at all, on the first sight of a new pane
 #                          hash as well (wedge_skip_landing, which reads
 #                          fm_office_task_landing); and a pane whose own task
@@ -1640,7 +1641,9 @@ wedge_defer_writing() {  # <window> <since-file> <triage-label> <idle-age>
 }
 
 # Skip ONE wedge escalation, with no wake at all, for a landing task: a ship
-# whose finished PR waits only on another home's merger. Its worker has
+# whose finished PR waits only on another home's merger, or on the captain's
+# word for an admission class (fm_office_task_admit_held; the open
+# <task>-admit-<pr>-<class> call). Its worker has
 # stopped, nothing this home does lands it, and the merge-landed poll wakes this
 # home when it merges, so every alarm on that lane would change nothing. A ship
 # parked as a pushed ready branch with no PR (bin/fm-tree-park.sh) is skipped
@@ -1663,6 +1666,8 @@ wedge_skip_landing() {  # <window> <since-file> <triage-label> <idle-age> <task>
     why="its finished PR waits on another home's merger"
   elif fm_office_task_parked_ready_branch "$STATE" "$task"; then
     why="its pushed branch waits for a CI slot and its copy was returned to the pool"
+  elif fm_office_task_admit_held "$STATE" "$task"; then
+    why="its finished PR waits on the captain's admission word"
   else
     return 1
   fi

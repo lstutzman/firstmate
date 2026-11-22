@@ -37,6 +37,7 @@
 #   fm-captain-hold.sh complete <origin-id> (--none | <task-id>...)
 #   fm-captain-hold.sh verify <origin-id>
 #   fm-captain-hold.sh open <task-id> [--identity] [--distinguish-absent]
+#   fm-captain-hold.sh open-prefix <id-prefix>
 #   fm-captain-hold.sh answered <task-id> [--title <title>]
 #   fm-captain-hold.sh diverged
 #   fm-captain-hold.sh reconcile list
@@ -248,6 +249,12 @@
 # holding the very work item a question gates is safe; only `answer` with the
 # captain's words, evidence-backed `reconcile close`, or the opt-in PR policy
 # below settles the call.
+#
+# `open-prefix` is the same read-only predicate over a family of calls: exit 0
+# when any still-open captain call has an id that starts with <id-prefix>, 1
+# when none does, and 2 when the data directory cannot be resolved. It prints nothing
+# and mutates nothing. bin/fm-watch.sh asks it for `<task>-admit-<pr>-` to
+# recognise a finished PR that waits on the captain's word (wedge_skip_landing).
 # bin/fm-watch.sh asks it when an ordinary
 # crew task reaches a due stale alarm - its open backlog hold need not appear in
 # the task's last status line - and on a 0 bounds repeated alarms from new pane
@@ -3003,6 +3010,20 @@ command_open() {  # <task-id> [--identity] [--distinguish-absent]
   exit 2
 }
 
+command_open_prefix() {  # <id-prefix>
+  local prefix=${1:-} ids
+  [ "$#" -eq 1 ] || { usage >&2; exit 2; }
+  case "$prefix" in
+    ''|*[!A-Za-z0-9._-]*)
+      printf 'fm-captain-hold: id prefix must be a non-empty privacy-safe slug: %s\n' "$prefix" >&2
+      exit 2
+      ;;
+  esac
+  fm_tasks_axi_compatible || { printf 'fm-captain-hold: compatible tasks-axi is required\n' >&2; exit 2; }
+  ids=$(open_captain_task_ids) || { printf 'fm-captain-hold: the backlog could not be read\n' >&2; exit 2; }
+  printf '%s\n' "$ids" | awk -v p="$prefix" 'index($0, p) == 1 { found = 1 } END { exit found ? 0 : 1 }'
+}
+
 command_answered() {  # <task-id> [--title <title>]
   local id=${1:-} rc=0 body want_title='' check_title=0
   [ "$#" -ge 1 ] || { usage >&2; exit 2; }
@@ -3042,6 +3063,7 @@ case "${1:-}" in
   complete) shift; command_complete "$@" ;;
   verify) shift; command_verify "$@" ;;
   open) shift; command_open "$@" ;;
+  open-prefix) shift; command_open_prefix "$@" ;;
   answered) shift; command_answered "$@" ;;
   diverged) shift; command_diverged "$@" ;;
   handed-back) shift; command_handed_back "$@" ;;
