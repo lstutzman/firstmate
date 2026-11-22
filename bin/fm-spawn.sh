@@ -280,12 +280,8 @@
 #   cannot be read prints one `warning:` line and launches. --landing-exempt
 #   marks a ship as a fix or landing work that is never held for lag, and is
 #   refused on --scout and --secondmate spawns, which are never held for it.
-#   PR drain: a fresh ship whose project's GitHub repository is in PR drain
-#   (bin/fm-pr-drain.py owns the state and the accepted classes) is deferred
-#   exactly like a capacity deferral unless its brief carries a valid
-#   "PR drain: <class>" line (bin/fm-brief.sh --pr-drain). An unknown state prints
-#   one `warning:` line and launches; scouts are never held.
-#   CI slots (config/ci-slots) and the open-PR cap (config/open-pr-cap) never
+#   PR drain (bin/fm-pr-drain.py owns the state and the accepted classes), CI
+#   slots (config/ci-slots) and the open-PR cap (config/open-pr-cap) never
 #   hold a ship start: they hold PR openings, checked by the worker just before
 #   it opens a PR (bin/fm-pr-drain.py gate; bin/fm-project-capacity-lib.sh).
 #   Office authority: in an office home (bin/fm-office-authority-lib.sh owns
@@ -2382,7 +2378,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
     pair_rc=0
     FM_SPAWN_NO_GUARD=1 "$FM_ROOT/bin/fm-spawn.sh" "${pair_args[@]}" || pair_rc=$?
     if [ "$pair_rc" -eq "$FM_PROJECT_CAPACITY_DEFER_EXIT" ]; then
-      echo "batch: DEFERRED ${pair%%=*} (${pair#*=}) - its project or this machine's lanes are at capacity, its project's landing lags, or its repository is in PR drain, so it stays queued" >&2
+      echo "batch: DEFERRED ${pair%%=*} (${pair#*=}) - its project or this machine's lanes are at capacity or its project's landing lags, so it stays queued" >&2
       [ "$rc" -ne 0 ] || rc=$FM_PROJECT_CAPACITY_DEFER_EXIT
     elif [ "$pair_rc" -ne 0 ]; then
       echo "batch: FAILED to spawn ${pair%%=*} (${pair#*=})" >&2
@@ -4502,26 +4498,29 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] &&
   echo "error: spawn refused: project $PROJ_ABS has no commit yet (unborn HEAD), so there is nothing to branch a worktree from; make one commit in the project, for example 'git -C $PROJ_ABS commit --allow-empty -m \"chore: initial commit\"', then spawn again" >&2
   exit 1
 fi
-# A brief declaring PR drain class security must name a Linear item that is
-# labelled security with Urgent or High priority (bin/fm-pr-drain.py security
-# reads it); a refusal exits the spawn. Shared by the PR-drain and CI-slots gates.
-spawn_require_security_item() {
+# A brief declaring PR drain class security keeps its PR-drain exemption only
+# when it names a Linear item labelled security with Urgent or High priority
+# (bin/fm-pr-drain.py security reads it); otherwise this names what is missing
+# and returns 1, and the ship still launches without the exemption.
+spawn_security_item_qualifies() {
   SPAWN_SECURITY_ITEM=$(sed -n 's/^> Quoted from Linear \(PC-[0-9][0-9]*\) (read-only.*$/\1/p' "$BRIEF" | head -n 1)
   [ -n "$SPAWN_SECURITY_ITEM" ] || {
-    echo "error: spawn refused: task $ID declares PR drain class security but its brief names no Linear item; rescaffold it with bin/fm-brief.sh --pr-drain security --linear <PC-n>" >&2
-    exit 1
+    echo "warning: task $ID declares PR drain class security but its brief names no Linear item; rescaffold it with bin/fm-brief.sh --pr-drain security --linear <PC-n> to keep the exemption" >&2
+    return 1
   }
   python3 "$FM_ROOT/bin/fm-pr-drain.py" security "$SPAWN_SECURITY_ITEM" || {
-    echo "error: spawn refused: task $ID declares PR drain class security but $SPAWN_SECURITY_ITEM does not qualify (see above); the task was not launched" >&2
-    exit 1
+    echo "warning: task $ID declares PR drain class security but $SPAWN_SECURITY_ITEM does not qualify (see above)" >&2
+    return 1
   }
 }
-# PR-drain admission (bin/fm-pr-drain.py owns the state and the classes): a fresh
-# ship for a repository in drain launches only with a declared exemption class or
-# landing job, and is otherwise deferred like a capacity deferral. It runs
-# before the shared project lock, so a slow GitHub read never holds it.
+# PR-drain checks (bin/fm-pr-drain.py owns the state and the classes): a drain
+# holds PR openings only, never a ship start, so this refuses nothing for a
+# drained repository. It validates a declared lee-explicit class, and a security
+# class while in drain: an unqualified security ship launches without the exemption.
+# It runs before the shared project lock, so a slow GitHub read never holds it.
+SPAWN_SECURITY_UNEXEMPT=
+[ "$RELAUNCH" -eq 0 ] || SPAWN_SECURITY_UNEXEMPT=$(fm_meta_get "$RELAUNCH_META" pr_drain_unexempt)
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ]; then
-  read -r SPAWN_DRAIN_STATE SPAWN_DRAIN_REPO SPAWN_DRAIN_REST < <(python3 "$FM_ROOT/bin/fm-pr-drain.py" state "$PROJ_ABS") || true
   SPAWN_DRAIN_CLASS=$(sed -n 's/^PR drain: \([^ ]*\)$/\1/p' "$BRIEF" 2>/dev/null | head -n 1)
   if [ "$SPAWN_DRAIN_CLASS" = lee-explicit ]; then
     fm_brief_task_heading_body "$BRIEF" "## Captain's intent" | python3 "$FM_ROOT/bin/fm-pr-drain.py" evidence || {
@@ -4529,14 +4528,17 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ]; then
       exit 1
     }
   fi
-  if [ "$SPAWN_DRAIN_STATE" = on ] && [ "$SPAWN_DRAIN_CLASS" = security ]; then
-    spawn_require_security_item
-  fi
-  if [ "$SPAWN_DRAIN_STATE" = unknown ]; then
-    echo "warning: PR drain state of $SPAWN_DRAIN_REPO is unknown ($SPAWN_DRAIN_REST); launching task $ID anyway" >&2
-  elif [ "$SPAWN_DRAIN_STATE" = on ] && ! { [ -n "$SPAWN_DRAIN_CLASS" ] && python3 "$FM_ROOT/bin/fm-pr-drain.py" class "$SPAWN_DRAIN_CLASS"; }; then
-    echo "deferred: $SPAWN_DRAIN_REPO is in PR drain with $SPAWN_DRAIN_REST eligible open PRs (drain holds from 24 eligible open PRs until S or fewer), so new ship work is refused; task $ID was not launched and its backlog item stays queued - dispatch it again once the drain ends, or rescaffold its brief with bin/fm-brief.sh --pr-drain <class> for an exemption (production-outage, cve, security, wolverine, lee-research, lee-explicit, officer, scheduled) or landing job (restack, red-gate-fix, returned-pr-fix, review)" >&2
-    exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
+  SPAWN_DRAIN_FORGE=$(sed -n 's/^Delivery contract: mode=[^ ]*.*[[:space:]]forge=\([^ ]*\).*$/\1/p' "$BRIEF" | head -n 1)
+  SPAWN_DRAIN_MODE=$(sed -n 's/^Delivery contract: mode=\([^ ]*\).*$/\1/p' "$BRIEF" | head -n 1)
+  case "${SPAWN_DRAIN_MODE:-$MODE}:${SPAWN_DRAIN_FORGE:-none}" in
+    local-only:* | *:gerrit | *:external) SPAWN_DRAIN_CLASS= ;;
+  esac
+  if [ "$SPAWN_DRAIN_CLASS" = security ]; then
+    read -r SPAWN_DRAIN_STATE _ < <(python3 "$FM_ROOT/bin/fm-pr-drain.py" state "$PROJ_ABS") || true
+    if [ "$SPAWN_DRAIN_STATE" = on ] && ! spawn_security_item_qualifies; then
+      echo "warning: task $ID launches without its PR drain exemption; its launch brief carries the PR drain check, and the CI slots check where the project declares slots, so its PR opening waits like any ship's" >&2
+      SPAWN_SECURITY_UNEXEMPT=1
+    fi
   fi
 fi
 # Project capacity admission (bin/fm-project-capacity-lib.sh owns the
@@ -4711,6 +4713,13 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
       cat "$SOURCE_BRIEF" &&
       fm_brief_ownership_section "$SOURCE_BRIEF" "$MODEL" &&
       fm_brief_model_overlay_section "$CONFIG" "$MODEL" "$EFFORT" &&
+      if [ -n "$SPAWN_SECURITY_UNEXEMPT" ]; then
+        printf '\n# PR drain\nThis brief declares PR drain class security, but its Linear item did not qualify at spawn, so its PR opening is not exempt from the drain.\n' &&
+          fm_pr_drain_rule "$FM_ROOT" "$BRANCH" "$(basename "$PROJ_ABS")" &&
+          if [ -n "$(FM_HOME="$FM_HOME" FM_CONFIG_OVERRIDE="$CONFIG" "$FM_ROOT/bin/fm-project-mode.sh" --ci-slots "$(basename "$PROJ_ABS")" 2>/dev/null)" ]; then
+            fm_ci_slots_gate_rule "$FM_ROOT" "$BRANCH" "$(basename "$PROJ_ABS")"
+          fi
+      fi &&
       if [ "$KIND" = ship ] && [ "$MODE" = no-mistakes ]; then
         fm_brief_intent_overlay "$CAPTAIN_INTENT"
       fi
@@ -7884,6 +7893,7 @@ preserve_relaunch_meta() {
   # Written only by an office's fresh spawn, so every other record stays
   # byte-identical; a relaunch keeps the original line.
   [ "$RELAUNCH" -eq 1 ] || [ -z "$FM_OFFICE_ID" ] || echo "office=$FM_OFFICE_ID"
+  [ "$RELAUNCH" -eq 1 ] || [ -z "$SPAWN_SECURITY_UNEXEMPT" ] || echo "pr_drain_unexempt=1"
   # Read by bin/fm-dod-lib.sh's ready-report gate; absent on every other forge.
   [ "$EXTERNAL_REVIEW" = 0 ] || echo "forge=external"
   [ -z "$EXTERNAL_BACKUP_REMOTE" ] || echo "backup_remote=$EXTERNAL_BACKUP_REMOTE"

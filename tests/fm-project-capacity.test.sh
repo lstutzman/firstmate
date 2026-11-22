@@ -17,6 +17,8 @@ set -u
 
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=tests/fixtures.sh
+. "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 
 unset TASKS_AXI_BACKEND || :
 
@@ -603,7 +605,7 @@ test_batch_reports_a_deferred_pair() {
   write_live "$home" live-a "$case_dir/project"
   out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" "task-c=$case_dir/project" --mode no-mistakes --yolo off) || rc=$?
   expect_code "$DEFER_EXIT" "$rc" "a batch whose only pair was deferred did not exit with the deferral status: $out"
-  assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - its project or this machine's lanes are at capacity, its project's landing lags, or its repository is in PR drain, so it stays queued" \
+  assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - its project or this machine's lanes are at capacity or its project's landing lags, so it stays queued" \
     "the batch did not report the deferral"
   assert_not_contains "$out" "batch: FAILED" "the batch reported a deferral as a failure"
   pass "a batch reports a capacity deferral as deferred, not failed"
@@ -973,7 +975,7 @@ test_batch_reports_a_landing_lag_deferral() {
   write_ready "$home" ready-a "$case_dir/project" 1 30
   out=$(run_spawn "$case_dir" "$home" "$case_dir/unused" "task-c=$case_dir/project" --mode no-mistakes --yolo off) || rc=$?
   expect_code "$DEFER_EXIT" "$rc" "a batch whose only pair lagged did not exit with the deferral status: $out"
-  assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - its project or this machine's lanes are at capacity, its project's landing lags, or its repository is in PR drain, so it stays queued" \
+  assert_contains "$out" "batch: DEFERRED task-c ($case_dir/project) - its project or this machine's lanes are at capacity or its project's landing lags, so it stays queued" \
     "the batch did not report the landing-lag deferral"
   pass "a batch reports a landing-lag deferral as deferred, not failed"
 }
@@ -1231,19 +1233,15 @@ SH
   chmod +x "$1/fakebin/gh"
 }
 
-test_pr_drain_defers_a_ship_without_a_class() {
-  local case_dir home out rc=0 before worktrees
-  case_dir=$(make_case drain-refused task-c)
-  home="$case_dir/home"
+test_pr_drain_starts_a_ship_without_a_class() {
+  local case_dir out rc=0
+  case_dir=$(make_case drain-starts task-c)
   drain_gh "$case_dir" 25
-  before=$(call_count "$case_dir")
-  worktrees=$(worktree_list "$case_dir")
-  out=$(spawn_ship "$case_dir" task-c "$case_dir/unused") || rc=$?
-  expect_code "$DEFER_EXIT" "$rc" "a ship spawn on a drained repository was not deferred: $out"
-  assert_contains "$out" "deferred: o/r is in PR drain with 25 eligible open PRs" "the deferral did not name the repository and its count: $out"
-  assert_contains "$out" "bin/fm-brief.sh --pr-drain <class>" "the deferral did not name the flag: $out"
-  assert_nothing_created "$case_dir" "$home" task-c "$before" "$worktrees"
-  pass "a ship spawn on a repository in PR drain with no declared class is deferred before anything exists"
+  out=$(spawn_ship "$case_dir" task-c) || rc=$?
+  expect_code 0 "$rc" "a ship spawn on a drained repository was refused: $out"
+  assert_contains "$out" "spawned task-c" "a ship on a drained repository did not launch: $out"
+  assert_not_contains "$out" "deferred" "a drain deferred a ship start: $out"
+  pass "a ship with no declared class starts while its repository is in PR drain; the drain holds only its PR opening"
 }
 
 test_pr_drain_admits_every_class_and_landing_job() {
@@ -1286,10 +1284,11 @@ test_pr_drain_lee_explicit_needs_the_quoted_word() {
 }
 
 test_pr_drain_security_needs_a_qualifying_linear_item() {
-  local case_dir home out rc reader id json
+  local case_dir home out rc reader id json rl
   case_dir=$(make_case drain-security sec-ok sec-nolabel sec-low sec-noitem sec-down)
   home="$case_dir/home"
   drain_gh "$case_dir" 25
+  declare_slots "$home" "project 4"
   reader="$case_dir/linear-reader"
   cat > "$reader" <<'STUB'
 #!/usr/bin/env bash
@@ -1308,29 +1307,68 @@ STUB
   out=$(FAKE_LINEAR_JSON='{"priority": 1, "labels": ["Bug", "agent", "security"]}' spawn_ship "$case_dir" sec-ok) || rc=$?
   expect_code 0 "$rc" "a security ship with a qualifying item was refused: $out"
   assert_contains "$out" "spawned sec-ok" "a qualifying security ship did not launch in drain"
+  grep -q 'PR drain check:' "$home/data/sec-ok/launch-brief.md" &&
+    fail "a qualifying security ship lost its PR drain exemption"
+  grep -q 'CI slots check:' "$home/data/sec-ok/launch-brief.md" &&
+    fail "a qualifying security ship lost its CI slots exemption"
   rc=0
   out=$(FAKE_LINEAR_JSON='{"priority": 1, "labels": ["Bug"]}' spawn_ship "$case_dir" sec-nolabel) || rc=$?
-  expect_code 1 "$rc" "a security ship without the label was not refused: $out"
-  assert_contains "$out" "PC-5174" "the refusal did not name the item: $out"
-  assert_contains "$out" "label" "the refusal did not name the missing label: $out"
+  expect_code 0 "$rc" "a security ship without the label was refused a start: $out"
+  assert_contains "$out" "PC-5174" "the warning did not name the item: $out"
+  assert_contains "$out" "label" "the warning did not name the missing label: $out"
   rc=0
   out=$(FAKE_LINEAR_JSON='{"priority": 3, "labels": ["security"]}' spawn_ship "$case_dir" sec-low) || rc=$?
-  expect_code 1 "$rc" "a security ship at Medium priority was not refused: $out"
-  assert_contains "$out" "priority Urgent or High" "the refusal did not name the priority: $out"
+  expect_code 0 "$rc" "a security ship at Medium priority was refused a start: $out"
+  assert_contains "$out" "priority Urgent or High" "the warning did not name the priority: $out"
   rc=0
   json='{"priority": 1, "labels": ["security"]}'
   out=$(FAKE_LINEAR_JSON=$json spawn_ship "$case_dir" sec-noitem) || rc=$?
-  expect_code 1 "$rc" "a security ship with no Linear item was not refused: $out"
-  assert_contains "$out" "names no Linear item" "the refusal did not name the missing item: $out"
+  expect_code 0 "$rc" "a security ship with no Linear item was refused a start: $out"
+  assert_contains "$out" "names no Linear item" "the warning did not name the missing item: $out"
   rc=0
   out=$(FAKE_LINEAR_FAIL=1 FAKE_LINEAR_JSON=$json spawn_ship "$case_dir" sec-down) || rc=$?
-  expect_code 1 "$rc" "a security ship with Linear unreadable was not refused: $out"
-  assert_contains "$out" "readable Linear item" "the refusal did not say Linear was unreadable: $out"
+  expect_code 0 "$rc" "a security ship with Linear unreadable was refused a start: $out"
+  assert_contains "$out" "readable Linear item" "the warning did not say Linear was unreadable: $out"
   unset FM_PR_DRAIN_LINEAR_READER
   for id in sec-nolabel sec-low sec-noitem sec-down; do
-    assert_absent "$home/state/$id.meta" "a refused security spawn published a task record for $id"
+    [ -f "$home/state/$id.meta" ] || fail "an unqualified security ship published no task record for $id"
+    grep -q 'PR drain check: just before you open a new pull request' "$home/data/$id/launch-brief.md" ||
+      fail "an unqualified security ship $id kept its PR drain exemption: its launch brief has no PR drain check"
+    grep -q 'CI slots check: just before you open a new pull request' "$home/data/$id/launch-brief.md" ||
+      fail "an unqualified security ship $id kept its CI slots exemption: its launch brief has no CI slots check"
   done
-  pass "a security ship launches in drain only when its Linear item has the label and Urgent or High priority"
+  rl="$case_dir/relaunch"
+  mkdir -p "$rl/fake"
+  fm_test_fake_tmux_relaunch "$rl/fakebin"
+  printf 'zsh' > "$rl/fake/command"
+  sed -n 's/^window=.*:\(.*\)$/\1/p' "$home/state/sec-nolabel.meta" > "$rl/fake/windows"
+  sed -n 's/^worktree=//p' "$home/state/sec-nolabel.meta" | tr -d '\n' > "$rl/fake/cwd"
+  : > "$rl/fake/literal"
+  : > "$rl/fake/keys"
+  rc=0
+  out=$(FM_ROOT_OVERRIDE='' FM_HOME="$home" \
+    FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE='' FM_PROJECTS_OVERRIDE='' FM_CONFIG_OVERRIDE='' \
+    FM_SPAWN_NO_GUARD=1 TMUX="fake,1,0" FM_BACKEND=tmux FM_FAKE_DIR="$rl/fake" \
+    PATH="$rl/fakebin:$case_dir/fakebin:$PATH" "$SPAWN" sec-nolabel --relaunch 2>&1) || rc=$?
+  expect_code 0 "$rc" "an unqualified security ship could not be relaunched: $out"
+  assert_contains "$out" "spawned sec-nolabel" "the unqualified security ship did not relaunch: $out"
+  grep -q 'PR drain check: just before you open a new pull request' "$home/data/sec-nolabel/launch-brief.md" ||
+    fail "a relaunch gave an unqualified security ship its PR drain exemption back"
+  grep -q 'CI slots check: just before you open a new pull request' "$home/data/sec-nolabel/launch-brief.md" ||
+    fail "a relaunch gave an unqualified security ship its CI slots exemption back"
+  write_brief "$home" sec-local
+  sed -i 's/^Delivery contract: mode=no-mistakes$/Delivery contract: mode=local-only/' "$home/data/sec-local/brief.md"
+  printf 'PR drain: security\n> Quoted from Linear PC-5174 (read-only, verbatim). Stub.\n' >> "$home/data/sec-local/brief.md"
+  add_item "$home" sec-local
+  printf '#!/usr/bin/env bash\ntouch "%s/linear-called"\nprintf %%s %s\n' "$case_dir" "'{\"priority\": 3, \"labels\": []}'" > "$reader"
+  rc=0
+  out=$(FM_PR_DRAIN_LINEAR_READER="$reader" run_spawn "$case_dir" "$home" "$(new_worktree "$case_dir" sec-local)" sec-local "$case_dir/project" --mode local-only --yolo off) || rc=$?
+  expect_code 0 "$rc" "a local-only security ship in drain was refused a start: $out"
+  assert_contains "$out" "spawned sec-local" "a local-only security ship in drain did not launch: $out"
+  assert_absent "$case_dir/linear-called" "a local-only security ship, which opens no pull request, read Linear"
+  grep -q 'PR drain check:\|CI slots check:' "$home/data/sec-local/launch-brief.md" &&
+    fail "a local-only security ship, which opens no pull request, got a PR drain or CI slots check"
+  pass "a security ship in drain always launches, and keeps its PR drain exemption only with a qualifying Linear item, across a relaunch too"
 }
 
 test_pr_drain_security_out_of_drain_reads_no_linear() {
@@ -1365,13 +1403,12 @@ test_pr_drain_unknown_or_off_launches() {
   drain_gh "$case_dir" fail
   out=$(spawn_ship "$case_dir" task-c) || rc=$?
   expect_code 0 "$rc" "a ship spawn with an unreadable drain state was refused: $out"
-  assert_contains "$out" "warning: PR drain state of o/r is unknown (GitHub unreadable: HTTP 502); launching task task-c anyway" \
-    "an unknown drain state did not warn once: $out"
+  assert_not_contains "$out" "PR drain" "an unknown drain state mentioned the drain at spawn: $out"
   drain_gh "$case_dir" 0
   out=$(spawn_ship "$case_dir" task-d) || rc=$?
   expect_code 0 "$rc" "a ship spawn outside drain was refused: $out"
   assert_not_contains "$out" "PR drain" "a ship spawn outside drain mentioned the drain: $out"
-  pass "an unknown drain state warns and launches, and a repository out of drain launches silently"
+  pass "an unknown drain state and a repository out of drain both launch silently"
 }
 
 # --- CI slots (config/ci-slots): they hold PR openings, never ship starts -----
@@ -1644,7 +1681,7 @@ test_office_landing_keeps_project_capacity_and_landing_lag
 test_lane_capacity_gate_is_opt_in
 test_lane_capacity_gate_defers_without_leaving_anything_behind
 test_lane_capacity_gate_refuses_an_unreadable_opt_in
-test_pr_drain_defers_a_ship_without_a_class
+test_pr_drain_starts_a_ship_without_a_class
 test_pr_drain_admits_every_class_and_landing_job
 test_pr_drain_lee_explicit_needs_the_quoted_word
 test_pr_drain_security_needs_a_qualifying_linear_item

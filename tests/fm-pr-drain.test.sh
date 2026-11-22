@@ -162,6 +162,8 @@ test_brief_tells_workers_to_check_drain_before_a_pr() {
   brief drained no-mistakes || fail "the drained brief did not scaffold"
   grep -qx "# PR drain" "$home/data/drained/brief.md" || fail "a brief written in drain has no PR drain section"
   [ -n "$(drain_check drained)" ] || fail "a brief written in drain has no PR drain check"
+  assert_grep "A PR drain holds pull request openings, never ship starts: build and test as usual" "$home/data/drained/brief.md" \
+    "the drained brief does not say the ship builds as usual and only its PR opening is held"
   for id in cve restack red-gate-fix returned-pr-fix review; do
     brief "x-$id" no-mistakes --pr-drain "$id" || fail "the $id brief did not scaffold"
     assert_no_grep "PR drain check" "$home/data/x-$id/brief.md" "a $id brief was told to check the drain"
