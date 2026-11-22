@@ -1614,15 +1614,15 @@ PY
     printf -- '- %s - Works the %s mandate (role: %s; dispatch: %s; sources: tick,lane:progress; added 2026-11-04)\n' "${office%%:*}" "${office%%:*}" "${office%%:*}" "${office#*:}" >> "$WORLD_HOME/data/offices.md"
     FM_HOME="$dir" "$ROOT/bin/fm-office.sh" register-sources >/dev/null || fail "register-sources must succeed in the ${office%%:*} home"
   done
-  sed -i 's/model: none;/start-home: navigator,quartermaster; model: none;/' "$WORLD_HOME/data/officers.md"
-  printf '## Queued\n\n- [ ] linked - Repair the linked report (kind: bug) (linear: PC-90)\n' > "$WORLD_HOME/data/backlog.md"
+  sed -i 's/team: PC;/team: PC,FLEET;/; s/model: none;/start-home: navigator,quartermaster; model: none;/' "$WORLD_HOME/data/officers.md"
+  printf '## Queued\n\n- [ ] linked - Repair the linked report (kind: bug) (linear: PC-90)\n- [ ] fleet-linked - Repair the digest (kind: bug) (linear: FLEET-7)\n' > "$WORLD_HOME/data/backlog.md"
   linear_item PC-3504 'Fleet rules'
   cp "$WORLD/linear/list.json" "$WORLD/fleet-rules.json"
   linear_item PC-91 'Search revamp ranking'
   jq '.data.issues[0].project = "Search revamp"' "$WORLD/linear/list.json" > "$WORLD/linear-project.json"
   jq '.data.issue.project = "Search revamp"' "$WORLD/linear/PC-91.json" > "$WORLD/linear-project-issue.json"
   mv "$WORLD/linear-project-issue.json" "$WORLD/linear/PC-91.json"
-  linear_item PC-90 'Bug: linked report'
+  linear_items 'PC-90=Bug: linked report' 'FLEET-7=Bug: digest drops a line'
   jq -s '.[0].data.issues += .[1].data.issues + .[2].data.issues | .[0]' "$WORLD/linear/list.json" "$WORLD/fleet-rules.json" "$WORLD/linear-project.json" > "$WORLD/list.json.new"
   mv "$WORLD/list.json.new" "$WORLD/linear/list.json"
   cat > "$WORLD/top-of-mind.json" <<'JSON'
@@ -1660,6 +1660,7 @@ JSON
   assert_equals "$qm" "$(routed skills-link)" 'a skills link goes to the fleet office'
   assert_equals "$qm" "$(routed app-link)" 'a fleet-app link goes to the fleet office'
   assert_equals "$nav" "$(routed linked)" 'a PC Linear id goes to the PropertyCompass2 office'
+  assert_equals "$qm" "$(routed fleet-linked)" 'a FLEET Linear id goes to the office with the quartermaster role'
   assert_equals "$qm" "$(routed fm-text)" 'a project name in the words goes to the office that dispatches it'
   assert_equals "$nav" "$(routed pc-text)" 'a spaced project name in the words matches'
   assert_equals "$qm" "$(routed link-first)" 'a linked repository outranks a project name in the words'
@@ -1692,7 +1693,7 @@ JSON
   assert_not_contains "$(grep '^noul \[Which is this' "$WORLD/jev-calls")" 'Start fix' 'a Start fix tap skips the not-a-start check'
   assert_equals 'null' "$(jq -r '.start_requests[] | select(.id == "pc-link") | .unrouted' "$file")" 'a routed ask carries no unrouted reason'
   assert_contains "$(cat "$lane/$DATE.md")" 'unrouted, stays with this home: ambiguous' 'the Markdown digest lists the unrouted ask'
-  assert_equals '25' "$(jq '[.start_requests[] | select(.execute.env.FM_HOME != null)] | length' "$file")" 'all twenty-four asks and the backlog row become addressed requests'
+  assert_equals '26' "$(jq '[.start_requests[] | select(.execute.env.FM_HOME != null)] | length' "$file")" 'all twenty-four asks and the two backlog rows become addressed requests'
   assert_equals '0' "$(jq '.excluded | length' "$file")" 'no ask is dropped'
   local r
   r=$(cat "$WORLD/receipts"/*.jsonl)
@@ -2283,6 +2284,27 @@ test_top_of_mind_matched_dispositions
 test_top_of_mind_failure
 test_finished_merge_ask_row_renders
 test_backlog_asks_require_a_request
+test_progress_reads_several_teams() {
+  make_world teams
+  stub_sleep
+  sed -i 's#team: PC;#team: PC,FLEET; writes: linear;#' "$WORLD_HOME/data/officers.md"
+  linear_items 'PC-81=Bug: app crash' 'FLEET-5=Bug: officer digest drops a line'
+  printf '{}\n' > "$WORLD/labels.json"
+  local file="$WORLD_HOME/data/officers/progress/$DATE.json"
+  run_progress >/dev/null 2>&1 || fail 'a progress officer with team PC,FLEET must publish state'
+  assert_contains "$(cat "$WORLD/calls")" 'issue list --team PC ' 'team PC is listed'
+  assert_contains "$(cat "$WORLD/calls")" 'issue list --team FLEET ' 'team FLEET is listed'
+  assert_not_contains "$(cat "$WORLD/calls")" 'PC,FLEET' 'no Linear call gets the joined team list'
+  assert_contains "$(jq -r '[.start_requests[].id] | join(" ")' "$file")" 'FLEET-5' 'an unstarted FLEET item enters discovery'
+  assert_contains "$(jq -r '[.start_requests[].id] | join(" ")' "$file")" 'PC-81' 'the PC item still enters discovery'
+  assert_equals 'FLEET PC' "$(sed 's/ auth=.*//' "$WORLD/graphql-calls" | jq -r '.team' | sort -u | tr '\n' ' ' | sed 's/ $//')" 'the label read covers both teams'
+  sed -i 's#team: PC,FLEET;#team: FLEET,PC;#' "$WORLD_HOME/data/officers.md"
+  local out
+  out=$(run_progress 2>&1 || true)
+  assert_contains "$out" 'team PC only' 'a team list that does not start with PC is refused'
+  pass 'progress: team PC,FLEET reads both teams and the registry accepts it'
+}
+
 test_ancestor_asks_hold_only_routed_asks
 test_linear_rate_limit_recovers
 test_merge_ask_pr_state
@@ -2313,3 +2335,4 @@ test_officer_filed_items_are_triaged
 test_triage_writes_need_linear_and_a_rubric
 test_remote_home_and_missing_home
 test_fleet_app_page_schema
+test_progress_reads_several_teams
