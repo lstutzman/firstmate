@@ -206,6 +206,59 @@ test_live_tasks() {
   pass "live tasks count every ship and scout but this one and any second mate"
 }
 
+# parked_world <dir>: a state dir with one live worker and parked ready branches
+# p1 and p2 (ready_branch= and no pr=, a stamped done line, no steer).
+parked_world() {
+  local s=$1 id
+  mkdir -p "$s"
+  fm_write_meta "$s/live.meta" kind=ship
+  printf 'working [at=1000]: building\n' > "$s/live.status"
+  for id in p1 p2; do
+    fm_write_meta "$s/$id.meta" kind=ship ready_branch="fm/$id"
+    printf 'done [at=1000]: ready branch pushed\n' > "$s/$id.status"
+  done
+}
+
+# live_counts <state-dir>: "<live> <live-ids> | <parked> <parked-ids> | <landing>".
+live_counts() {
+  bash -c '. "$1"; fm_office_live_tasks "$2" self; printf "%s %s | %s %s | %s\n" "$FM_OFFICE_LIVE" "$FM_OFFICE_LIVE_IDS" "$FM_OFFICE_PARKED" "$FM_OFFICE_PARKED_IDS" "$FM_OFFICE_LANDING"' _ "$LIB" "$1"
+}
+
+test_parked_ready_branches_hold_no_place() {
+  local s="$TMP_ROOT/parked-state"
+  parked_world "$s"
+  assert_equals "1 live | 2 p1, p2 | 0" "$(live_counts "$s")" "parked ready branches"
+  pass "an office with wip=2, one live worker and two parked ready branches counts one live task"
+}
+
+test_parked_ready_branch_steered_back_counts() {
+  local s="$TMP_ROOT/parked-steer-state"
+  parked_world "$s"
+  mkdir -p "$s/p1.inbox"
+  printf 'restack\n' > "$s/p1.inbox/0001.msg"
+  assert_equals "2 live, p1 | 1 p2 | 0" "$(live_counts "$s")" "an unhandled steer"
+  mkdir -p "$s/p1.inbox/handled"
+  mv "$s/p1.inbox/0001.msg" "$s/p1.inbox/handled/"
+  printf 'schema\nat=2999-01-01T00:00:00Z\nrestack\n' > "$s/p1.inbox/handled/0001.msg"
+  assert_equals "2 live, p1 | 1 p2 | 0" "$(live_counts "$s")" "a handled steer after the done line"
+  rm "$s/p1.inbox/handled/0001.msg"
+  printf 'working [at=1100]: fixing\n' >> "$s/p2.status"
+  assert_equals "2 live, p2 | 1 p1 | 0" "$(live_counts "$s")" "a later working event"
+  pass "a parked ready branch steered back into work counts"
+}
+
+test_parked_ready_branch_counts_on_any_doubt() {
+  local s="$TMP_ROOT/parked-doubt-state"
+  parked_world "$s"
+  printf 'needs-decision [at=1050] [cause=decision] [key=q1]: which base?\n' >> "$s/p1.status"
+  fm_write_meta "$s/p2.meta" kind=ship ready_branch=fm/p2 pr=https://example.test/pr/9
+  fm_write_meta "$s/p3.meta" kind=scout ready_branch=fm/p3
+  printf 'done [at=1000]: ok\n' > "$s/p3.status"
+  fm_write_meta "$s/p4.meta" kind=ship ready_branch=fm/p4
+  assert_equals "5 live, p1, p2, p3, p4 | 0  | 0" "$(live_counts "$s")" "an open decision, a recorded PR, a scout and a missing status"
+  pass "an open decision, a pr=, a non-ship or no status counts the task"
+}
+
 NAV_LINE='- navigator - Drive progress (role: navigator; runs-on: slartibartfast; dispatch: PropertyCompass2; merge: none; merge-via: PropertyCompass2=slarti; auto-merge-classes: none; wip: 2; tick: every 2h; sources: tick; added 2026-11-04)'
 
 # payload <main> <dest-id> <dest-home>: "<rc>|<record or ABSENT>|<error>" from
@@ -284,6 +337,9 @@ test_admission_digest
 test_admission_digest_follows_rules_argument
 test_admission_digest_matches_a_byte_identical_office_copy
 test_live_tasks
+test_parked_ready_branches_hold_no_place
+test_parked_ready_branch_steered_back_counts
+test_parked_ready_branch_counts_on_any_doubt
 test_payload_resolves_only_the_destination
 test_payload_errors
 test_propagation_publishes_per_destination

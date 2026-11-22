@@ -1109,6 +1109,21 @@ test_tick_leaves_landing_tasks_out_of_wip() {
   pass 'tick leaves a ready, handed-off ship out of wip, and counts one with an open finding, a later event or a steer'
 }
 
+test_tick_leaves_parked_ready_branches_out_of_wip() {
+  local w s
+  w=$(source_world parked)
+  s="$w/navigator/state"
+  put_backlog "$w" '- [ ] job-a - A (repo: x) (kind: ship)'
+  printf 'kind=ship\nproject=x\nready_branch=fm/t1\n' > "$s/t1.meta"
+  printf 'done [at=%s]: ready branch fm/t1 pushed\n' "$((SRC_NOW - 600))" > "$s/t1.status"
+  printf 'kind=scout\nproject=x\n' > "$s/t2.meta"
+  assert_contains "$(nav_check "$w" tick)" "1 of 2 places free, 1 queued, 1 parked" "a parked ready branch holds no place"
+  rm -f "$w/navigator/data/office/tick.seen"
+  printf 'working [at=%s]: restacking\n' "$((SRC_NOW - 100))" >> "$s/t1.status"
+  assert_equals "" "$(nav_check "$w" tick)" "a parked ready branch back at work holds its place"
+  pass 'tick leaves a parked ready branch out of wip and reports it, and counts one back at work'
+}
+
 test_landing_needs_a_handoff_to_another_merger() {
   local w s
   w=$(source_world handoff)
@@ -1537,6 +1552,7 @@ test_shim_runs_through_the_watcher_trust_path
 test_tick_prints_once_per_slot_and_only_when_work_could_start
 test_tick_is_silent_when_places_are_full
 test_tick_leaves_landing_tasks_out_of_wip
+test_tick_leaves_parked_ready_branches_out_of_wip
 test_landing_needs_a_handoff_to_another_merger
 test_two_digit_wip_registers_and_ticks
 test_tick_refills_at_once_when_a_place_frees

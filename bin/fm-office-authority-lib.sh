@@ -117,9 +117,10 @@
 #       the one count of an office's places under wip=, used by the tick
 #       (bin/fm-office.sh) and the spawn gate (bin/fm-spawn.sh). Sets
 #       FM_OFFICE_LIVE and FM_OFFICE_LIVE_IDS to this home's task records other
-#       than <own-id>, any secondmate, and any landing task, and
-#       FM_OFFICE_LANDING and FM_OFFICE_LANDING_IDS to the landing tasks it
-#       left out; returns 1 with FM_OFFICE_ERROR when a record cannot be read.
+#       than <own-id>, any secondmate, any landing task and any parked ready
+#       branch, FM_OFFICE_LANDING and FM_OFFICE_LANDING_IDS to the landing
+#       tasks it left out, and FM_OFFICE_PARKED and FM_OFFICE_PARKED_IDS to the
+#       parked ready branches it left out; returns 1 with FM_OFFICE_ERROR when a record cannot be read.
 #   fm_office_task_admit_held <state-dir> <id>
 #       0 when task <id> is a finished ship whose PR waits on an open
 #       <id>-admit-<pr>-<class> captain call (bin/fm-watch.sh skips its stale
@@ -157,9 +158,19 @@
 # `no-mistakes axi handoff` for the worker, and lets the tree-park sweep
 # (bin/fm-tree-park.sh) return the ship's copy to the pool.
 # tests/fm-tree-park.test.sh covers both effects for a routed record.
+# Parked ready branch: a ship that finished as a pushed branch with no PR
+# (bin/fm-ready-branch.sh) holds no place either, because its worker has
+# stopped and it waits only for a PR place. fm_office_task_ready_branch_waiting
+# is the one definition (bin/fm-tree-park.sh and bin/fm-fleet-snapshot.sh read
+# it too) and keeps the same any-doubt guards: ready_branch= and no pr=, a
+# ship, no open decision, a stamped done line as its latest event, and no
+# unhandled or newer steer, so a later working, paused, failed or resolved
+# event or a steer back into work counts the task. It is reported apart from
+# landing tasks, in FM_OFFICE_PARKED and FM_OFFICE_PARKED_IDS.
 # Project capacity (bin/fm-project-capacity-lib.sh) and landing lag
 # (data/projects.md landing-lag=) still bound every spawn, so leaving landing
-# tasks out of wip= never lifts a project's own limits.
+# tasks and parked ready branches out of wip= never lifts a project's own
+# limits.
 #
 # Every FM_OFFICE_* authority variable is set only by fm_office_authority_load
 # and fm_office_authority_parse, so in a home that is not an office they stay
@@ -532,8 +543,8 @@ fm_office_inbox_quiet_since() {  # <state-dir> <id> <epoch>
 # a branch released and finished again reads as a new wait.
 # bin/fm-tree-park.sh parks such a task's copy, and bin/fm-watch.sh skips wedge
 # alarms for the stopped worker of one it has parked. This is deliberately not
-# fm_office_task_landing: that counts only a PR waiting on another home's merger,
-# and an office's wip count and the fleet snapshot read it.
+# fm_office_task_landing: that counts only a PR waiting on another home's merger.
+# An office's wip count (fm_office_live_tasks) and the fleet snapshot read it.
 FM_OFFICE_READY_DONE_AT=
 fm_office_task_ready_branch_waiting() {  # <state-dir> <id>
   local meta=$1/$2.meta status=$1/$2.status last verb
@@ -622,6 +633,8 @@ fm_office_live_tasks() {  # <state-dir> <own-id> <office-id>
   FM_OFFICE_LIVE_IDS=
   FM_OFFICE_LANDING=0
   FM_OFFICE_LANDING_IDS=
+  FM_OFFICE_PARKED=0
+  FM_OFFICE_PARKED_IDS=
   # The landing test reads the status fold, which bin/fm-classify-lib.sh owns.
   if ! declare -F status_open_decisions >/dev/null; then
     # shellcheck source=bin/fm-classify-lib.sh
@@ -639,6 +652,11 @@ fm_office_live_tasks() {  # <state-dir> <own-id> <office-id>
     if fm_office_task_landing "$1" "$id" "${3-}"; then
       FM_OFFICE_LANDING=$((FM_OFFICE_LANDING + 1))
       FM_OFFICE_LANDING_IDS="${FM_OFFICE_LANDING_IDS:+$FM_OFFICE_LANDING_IDS, }$id"
+      continue
+    fi
+    if fm_office_task_ready_branch_waiting "$1" "$id"; then
+      FM_OFFICE_PARKED=$((FM_OFFICE_PARKED + 1))
+      FM_OFFICE_PARKED_IDS="${FM_OFFICE_PARKED_IDS:+$FM_OFFICE_PARKED_IDS, }$id"
       continue
     fi
     FM_OFFICE_LIVE=$((FM_OFFICE_LIVE + 1))

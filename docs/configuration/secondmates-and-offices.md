@@ -82,7 +82,7 @@ Offices live in the primary home's `data/offices.md`, one line per office, in th
 | `merge` | `none`, or the projects the office merges: a subset of `dispatch`, each carrying `admission=<name>` in the office home's `data/projects.md` |
 | `merge-via` | `<project>=<home>` pairs for projects another home merges: a subset of `dispatch`, disjoint from `merge`, each carrying `merger=<home>` in the office home's `data/projects.md` |
 | `auto-merge-classes` | Must be `none`; no class auto-merges yet |
-| `wip` | The most live tasks the office may run at once, 1 to 99; a landing task, a ship whose ready PR is handed to another home's merger with nothing left open, holds no place, while [project capacity](capacity.md#project-capacity-configproject-capacity) and [landing lag](projects-and-forges.md#landing-lag-dataprojectsmd-landing-lag-token) still bound every spawn (`bin/fm-office-authority-lib.sh` owns the definition) |
+| `wip` | The most live tasks the office may run at once, 1 to 99; a landing task, a ship whose ready PR is handed to another home's merger with nothing left open, holds no place, and neither does a parked ready branch, a ship that finished as a pushed branch with no PR (`ready_branch=` and no `pr=`), no open decision, a stamped done line as its latest event and no steer since, while [project capacity](capacity.md#project-capacity-configproject-capacity) and [landing lag](projects-and-forges.md#landing-lag-dataprojectsmd-landing-lag-token) still bound every spawn (`bin/fm-office-authority-lib.sh` owns the definition) |
 | `tick` | `every Nh` (N from 1 to 24) |
 | `sources` | Comma-separated `tick`, `upstream`, `ratchet`, `research`, `lane:<officer-id>` or `lane:<officer-id>:high`; each officer id must be listed in `data/officers.md` |
 
