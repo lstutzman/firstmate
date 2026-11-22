@@ -405,7 +405,7 @@ test_gate_holds_a_pr_opening_at_the_cap() {
   open_prs 9 3 2
   assert_equals "open o/r" "$(gate)" "promotion PRs counted against the cap (9 ready, 2 promotion = 7 eligible)"
   open_prs 10 3 2
-  assert_contains "$(gate)" "3 draft PR(s), 0 PR(s) waiting for the captain's merge word and 2 promotion PR(s) are not counted" "the hold did not say what it left out"
+  assert_contains "$(gate)" "3 draft PR(s) and 2 promotion PR(s) are not counted; 0 PR(s) waiting for the captain's merge word and 0 PR(s) labelled \`held\` use no CI slot but are counted" "the hold did not say what it left out"
   printf '%s\n' 'r 6' > "$GATE_HOME/config/ci-slots"
   open_prs 11 0
   assert_equals "open o/r" "$(gate)" "11 eligible PRs were held against 2 x 6 = 12"
@@ -461,7 +461,8 @@ state_r() {
   FM_HOME="$GATE_HOME" "$DRAIN" state "$PROJECT" r
 }
 
-test_label_on_a_recorded_hold_changes_neither_count() {
+test_a_recorded_hold_counts_toward_the_cap_but_uses_no_slot() {
+  # Lee, 2026-11-22T12:51:39Z (card open-pr-cap-recorded-holds): PRs held for his word count toward the open-PR cap.
   printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
   rm -f "$GATE_HOME/config/open-pr-cap" "$GATE_HOME"/state/held-*.meta
   fm_write_meta "$GATE_HOME/state/held-1.meta" "project=$PROJECT" "kind=ship" "yolo=off" "pr=https://github.com/o/r/pull/1"
@@ -473,14 +474,18 @@ labelled = {int(n) for n in sys.argv[2].split()}
 json.dump([{'createdAt': '2026-11-01T00:00:00Z', 'isDraft': False, 'url': f'https://github.com/o/r/pull/{n}', 'headRefName': f'fm/b{n}',
             'labels': [{'name': 'held'}] if n in labelled else []} for n in range(1, 9)], open(sys.argv[1] + '/open.json', 'w'))
 PY2
-    assert_equals "open o/r" "$(gate)" "PR 1, recorded as waiting for the captain (labels: '$labels'), was counted toward the cap of 8"
+    assert_contains "$(gate)" "hold o/r open-PR cap reached: 8 eligible open PR(s) against the open-PR cap of 8" \
+      "PR 1, recorded as waiting for the captain (labels: '$labels'), was left out of the cap of 8"
+    assert_contains "$(gate)" "1 PR(s) waiting for the captain's merge word and 0 PR(s) labelled" \
+      "a PR both recorded and labelled held was counted twice or not named (labels: '$labels')"
   done
   printf '[]' > "$GHDATA/closed.json"
   printf '%s\n' 'r 7' > "$GATE_HOME/config/ci-slots"
-  assert_equals "off o/r 7" "$(state_r)" "a labelled PR recorded as waiting for the captain was counted in the CI-slot count"
+  assert_equals "off o/r 7" "$(state_r)" "a PR recorded as waiting for the captain was counted in the CI-slot count"
+  assert_equals "open o/r 7" "$(FM_HOME="$GATE_HOME" "$DRAIN" open "$PROJECT")" "open counted a PR recorded as waiting for the captain"
   rm -f "$GATE_HOME/state/held-1.meta"
   printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
-  pass "labelling a PR a task record already shows waiting for the captain changes neither the cap nor the CI-slot count"
+  pass "a PR waiting for the captain counts toward the open-PR cap and not toward the CI-slot count, labelled or not"
 }
 
 test_drain_leaves_label_held_prs_out() {
@@ -563,6 +568,82 @@ PY2
   pass "drain's walk-back leaves out the PRs waiting for the captain, as its starting count does"
 }
 
+# A project's open PRs for the pile tests: plain ready 1-2, draft 3, promotion 4, labelled held 5, then the pile 6 that
+# carries ready members 7-9 in the way Slarti's piles name them (a `Members in order:` clause; the pile it is laid on is
+# named outside that clause and must not be taken for a member).
+pile_prs() {  # <pile-draft: 0|1> [<members-clause>]
+  python3 -I - "$GHDATA" "$1" "${2-}" <<'PY2'
+import json, sys
+draft, clause = sys.argv[2] == '1', sys.argv[3]
+body = ('Linear: PC-1\n\nLanding pile x, a NESTED pile laid on the top of pile w (PR 5), so it lands right after PR 5. '
+        + (clause or 'Members in order: PR 7 at abc (one: `A.test.tsx`) and PR 8 at def (two), and PR 9 at 012 (three).')
+        + ' Both merge clean; see PR 1.\n\n## Testing\n- PR 2 passed.')
+def pr(n, head='fm/b%d', labels=(), isDraft=False, body=''):
+    return {'number': n, 'createdAt': '2026-11-01T00:00:00Z', 'isDraft': isDraft, 'url': f'https://github.com/o/r/pull/{n}',
+            'headRefName': head % n if '%d' in head else head, 'labels': [{'name': x} for x in labels], 'body': body}
+json.dump([pr(1), pr(2), pr(3, isDraft=True), pr(4, head='staging'), pr(5, labels=['held']),
+           pr(6, head='landing/pile-x', isDraft=draft, body=body), pr(7), pr(8), pr(9)], open(sys.argv[1] + '/open.json', 'w'))
+PY2
+}
+
+test_a_pile_and_its_members_count_once_in_every_subcommand() {
+  printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
+  printf '%s\n' 'r 4' > "$GATE_HOME/config/open-pr-cap"
+  rm -f "$GATE_HOME"/state/held-*.meta
+  printf '[]' > "$GHDATA/closed.json"
+  pile_prs 0
+  # Counted once each: plain 1 and 2 and the pile 6 (members 7-9 folded into it). Left out: draft 3, promotion 4.
+  assert_equals "open o/r 3" "$(FM_HOME="$GATE_HOME" "$DRAIN" open "$PROJECT")" "open counted the pile's members or a PR twice"
+  assert_equals "off o/r 3" "$(state_r)" "state counted the pile's members or a PR twice"
+  # The cap counts the same 3 plus labelled-held 5 (still counted, as before this change) = 4.
+  assert_contains "$(gate)" "hold o/r open-PR cap reached: 4 eligible open PR(s) against the open-PR cap of 4" "gate counted differently from open and state"
+  assert_contains "$(gate)" "1 draft PR(s) and 1 promotion PR(s) are not counted" "gate did not report the left-out PRs"
+  assert_contains "$(gate)" "1 PR(s) labelled \`held\` use no CI slot but are counted; 3 member PR(s) are counted in the landing pile" "gate did not report the folded members"
+  printf '%s\n' 'r 5' > "$GATE_HOME/config/open-pr-cap"
+  assert_equals "open o/r" "$(gate)" "4 counted units reached a declared cap of 5"
+  # A recorded captain hold on plain PR 2 leaves the slot count (2) but not the cap count (4).
+  printf '%s\n' 'r 4' > "$GATE_HOME/config/open-pr-cap"
+  fm_write_meta "$GATE_HOME/state/held-2.meta" "project=$PROJECT" "kind=ship" "yolo=off" "pr=https://github.com/o/r/pull/2"
+  assert_equals "open o/r 2" "$(FM_HOME="$GATE_HOME" "$DRAIN" open "$PROJECT")" "open counted a PR recorded as waiting for the captain"
+  assert_equals "off o/r 2" "$(state_r)" "state counted a PR recorded as waiting for the captain"
+  assert_contains "$(gate)" "4 eligible open PR(s) against the open-PR cap of 4" "gate did not count the recorded hold toward the cap"
+  rm -f "$GATE_HOME/state/held-2.meta"
+  pass "a landing pile with three members counts once in open, state and gate, and the three agree on a mixed list"
+}
+
+test_a_pile_folds_only_the_members_it_names() {
+  printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
+  printf '[]' > "$GHDATA/closed.json"
+  pile_prs 1
+  # The draft pile is no landing unit and no slot user: 1, 2 and the three members stand alone.
+  assert_equals "open o/r 5" "$(FM_HOME="$GATE_HOME" "$DRAIN" open "$PROJECT")" "a draft pile folded its members"
+  pile_prs 0 'No member list here.'
+  assert_equals "open o/r 6" "$(FM_HOME="$GATE_HOME" "$DRAIN" open "$PROJECT")" "a pile that names no members folded PRs it only mentions"
+  pile_prs 0 'Member: PR 7 at abc (one).'
+  assert_equals "open o/r 5" "$(FM_HOME="$GATE_HOME" "$DRAIN" open "$PROJECT")" "the PRs a pile mentions outside its member clause were folded, or a named one was not"
+  pile_prs 0 'Members in order: PR 7 and PR 6 and PR 99.'
+  assert_equals "open o/r 5" "$(FM_HOME="$GATE_HOME" "$DRAIN" open "$PROJECT")" "a pile folded itself or a PR the list does not hold"
+  pass "a pile folds only the ready members its own member clause names; a draft pile or one with no clause folds nothing"
+}
+
+test_drain_walk_back_counts_a_closed_pile_once() {
+  printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
+  python3 -I - "$GHDATA" <<'PY2'
+import json, sys, time
+def iso(hours):
+    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - hours * 3600))
+pr = lambda n, head='fm/b%d', body='': {'number': n, 'createdAt': iso(400), 'isDraft': False, 'url': f'https://github.com/o/r/pull/{n}',
+                                         'headRefName': head % n if '%d' in head else head, 'body': body}
+json.dump([pr(n) for n in range(1, 23)], open(sys.argv[1] + '/open.json', 'w'))
+closed = lambda n, head='fm/c%d', body='': {'number': n, 'createdAt': iso(10), 'closedAt': iso(2), 'isDraft': False,
+                                             'headRefName': head % n if '%d' in head else head, 'body': body}
+json.dump([closed(101, 'landing/pile-z', 'Members in order: PR 102, PR 103 and PR 104.'), closed(102), closed(103), closed(104)],
+          open(sys.argv[1] + '/closed.json', 'w'))
+PY2
+  assert_contains "$(state_r)" "unknown o/r" "a closed pile and its three members were counted as four PRs in the walk-back (22 + 4 = 26 reads on)"
+  pass "drain's walk-back counts a closed pile and its members once, as its open count does"
+}
+
 test_unreadable_s_makes_drain_unknown() {
   printf '%s\n' 'r four' > "$GATE_HOME/config/ci-slots"
   peak_then 3
@@ -622,7 +703,10 @@ fm_test_run \
   test_drain_with_slots_ends_at_s_not_zero \
   test_drain_counts_only_eligible_prs \
   test_drain_walk_back_leaves_held_prs_out \
-  test_label_on_a_recorded_hold_changes_neither_count \
+  test_a_recorded_hold_counts_toward_the_cap_but_uses_no_slot \
+  test_a_pile_and_its_members_count_once_in_every_subcommand \
+  test_a_pile_folds_only_the_members_it_names \
+  test_drain_walk_back_counts_a_closed_pile_once \
   test_drain_leaves_label_held_prs_out \
   test_unreadable_s_makes_drain_unknown \
   test_brief_carries_the_ci_slots_gate_only_when_slots_are_declared \

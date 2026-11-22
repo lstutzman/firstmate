@@ -105,21 +105,22 @@
 # starts (Lee, 2026-11-21T20:15:32Z): bin/fm-spawn.sh reads neither S nor the
 # cap, and a ship builds to a finished branch whatever the queue. The check
 # lives in the worker's pre-PR step: `bin/fm-pr-drain.py gate` holds the
-# opening while the project's eligible open PRs (drafts, promotion PRs and PRs waiting for the
-# captain's merge word left out, fm_ci_slots_held below) plus the PRs labelled HELD_LABEL (bin/fm-pr-drain.py) that
-# no record shows waiting reach the open-PR cap, and the worker parks the branch pushed with
+# opening while the project's open PRs (drafts and promotion PRs left out, a landing pile
+# and its member PRs counted once, as the pile) reach the open-PR cap, and the worker parks the branch pushed with
 # no PR. A project with no line is never held; a malformed file makes the gate
-# read unknown. A PR another home holds (a Wednesday pile, a wait for the
-# captain's word) carries the GitHub label HELD_LABEL, which leaves it out of the
-# CI-slot count but not the cap. bin/fm-project-mode.sh --ci-slots and --open-pr-cap read S and the
+# read unknown. A PR waiting for the captain's merge word (fm_ci_slots_held below) and a PR another home holds
+# (a Wednesday pile, a wait for the captain's word), which carries the GitHub label HELD_LABEL
+# (bin/fm-pr-drain.py), use no CI slot, so both leave the CI-slot count but not the cap (Lee,
+# 2026-11-22T12:51:39Z: PRs held for his word count toward the open-PR cap). bin/fm-project-mode.sh --ci-slots and --open-pr-cap read S and the
 # cap back; bin/fm-fleet-alarm.py announces P > S. Ready PRs of a remote home's
 # ships that wait for the captain's merge word stay out of the slots too (Remote homes, below).
 #
 # Open-PR cap: config/open-pr-cap, same format and inheritance, holds one
 # `<project-name> <cap>` line; a project that declares S and no cap line gets
-# min(2 x S, FM_OPEN_PR_CAP_MAX) (Lee 2026-11-21: 2 x S, max 16). The cap counts eligible
-# open PRs: drafts, PRs waiting for the captain's merge word and promotion PRs are left out, and PRs labelled
-# HELD_LABEL (bin/fm-pr-drain.py) count; a project with no S has none.
+# min(2 x S, FM_OPEN_PR_CAP_MAX) (Lee 2026-11-21: 2 x S, max 16). The cap counts open
+# PRs: drafts and promotion PRs are left out, PRs waiting for the captain's merge word and PRs labelled
+# HELD_LABEL (bin/fm-pr-drain.py) count, and a landing pile counts once with its members (bin/fm-pr-drain.py
+# tally, the one count behind state, open and gate); a project with no S has none.
 #
 # Remote homes: a remote secondmate's task records live on its own host and are
 # never walked. Its ships reach the CI-slot hold count and the landing-lag check through
