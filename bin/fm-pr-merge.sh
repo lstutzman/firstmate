@@ -301,7 +301,7 @@
 # while the away-posture record exists, like any other asynchronous merge path.
 # --attended-override, --allow-red, and --allow-missing are refused in stack
 # mode, and the only extra argument accepted is one of --squash, --merge, or
-# --rebase (squash by default). Every constituent task's control lock is held,
+# --rebase (squash by default, a merge commit for a merge=commit project). Every constituent task's control lock is held,
 # and its captain hold must be released, exactly as for a single merge. The
 # merge is refused unless every condition holds, each read live:
 #   - the top pull request's live head is the gated head commit;
