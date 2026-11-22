@@ -1008,8 +1008,8 @@ fi
 # Prints the first extra argument that asks for a method other than a merge
 # commit, deny by default: any spelling of --squash or --rebase (with or
 # without =value, so --squash=false is refused too), --method with a missing,
-# empty or non-merge value, and gh's short flags -s and -r, bundled with the
-# no-value -d and -m. Nothing is printed for a bare --merge or no method.
+# empty or non-merge value, and any short-flag cluster carrying s or r.
+# Nothing is printed for a bare --merge or no method.
 caller_non_merge_method() {
   local arg pending=false
   for arg in "$@"; do
