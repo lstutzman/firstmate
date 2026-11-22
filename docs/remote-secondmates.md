@@ -137,7 +137,7 @@ It never touches a worker whose checkout still exists.
 ### What the remote account must provide
 
 - The remote account must provide the required toolchain, the selected worker runtime, the selected session backend, and credentials that work on that host.
-- A [worker account pin](configuration.md#worker-account-pin-configclaude-account-configpi-account) for the second mate or its workers lives in the remote home's own configuration on that host.
+- A [worker account pin](configuration/worker-launch.md#worker-account-pin-configclaude-account-configpi-account) for the second mate or its workers lives in the remote home's own configuration on that host.
 - The origin URL named for each project must be reachable from the remote account, because projects are cloned on that host rather than copied from the primary.
 
 ## Non-interactive tool contract
@@ -610,7 +610,7 @@ Because of that, the primary treats a missing correlated report as a missed repo
 A remote mate that did answer is therefore never asked to repost while its answer is still in flight.
 A genuinely missing answer still gets exactly one repost once the mirror is known to be current.
 
-The [process-to-event operating contract](configuration.md#process-to-event-sources-stateprocevent) owns automatic application, one-announcement replay deduplication, and the unhandled fallback path.
+The [process-to-event operating contract](configuration/process-events.md#process-to-event-sources-stateprocevent) owns automatic application, one-announcement replay deduplication, and the unhandled fallback path.
 
 ### Source log continuity
 

@@ -2,7 +2,7 @@
 
 tern is an experimental Stencil Tern session-provider backend.
 It provides task sessions, tabs, and blocks while Treehouse continues to provide git worktrees.
-[`configuration.md`](configuration.md#runtime-backend-configbackend--fm_backend) owns shared selection and metadata semantics.
+[`configuration.md`](configuration/runtime-backend.md#runtime-backend-configbackend--fm_backend) owns shared selection and metadata semantics.
 The adapter header in `bin/backends/tern.sh` owns design decisions and measured CLI facts; this page is the operator-facing mirror and must not contradict it.
 
 ## Setup
@@ -13,7 +13,7 @@ Prerequisites:
 
 - Tern 0.9.4 or newer on `PATH` (`tern --version`); bootstrap reports a missing binary as manual install guidance at `https://stencil.so/tern` rather than an executable install command.
 - `jq` for JSON responses.
-- The universal harness and toolchain requirements in [`configuration.md`](configuration.md#toolchain).
+- The universal harness and toolchain requirements in [`configuration.md`](configuration/tools.md#toolchain).
 - A reachable Tern session daemon for scripted `tern ls` / `tern new` / `tern capture` work.
 - A Tern window control endpoint only when native agent-state reads through `tern ctl` are required; without it, native state degrades rather than failing the backend.
 
@@ -42,7 +42,7 @@ A tmux server or Herdr client started inside a block inherits all of them, so th
 Reading them as a selection would make tern an ambient default, which "Authority is explicit and never inferred" rules out; `fm_backend_detect` therefore ignores them.
 
 The markers are still useful once tern has been selected explicitly.
-A cleared-environment launch keeps the `TERN_*` identity and, like every backend's launch floor, whatever `TERM_PROGRAM` the pane has, which is `tern` inside a Tern block (see [`configuration.md`](configuration.md#variables-retained-and-where-values-come-from)), and `tests/tern-test-safety.sh` refuses to close a session that hosts the caller's own `$TERN_PANE` block.
+A cleared-environment launch keeps the `TERN_*` identity and, like every backend's launch floor, whatever `TERM_PROGRAM` the pane has, which is `tern` inside a Tern block (see [`configuration.md`](configuration/worker-launch.md#variables-retained-and-where-values-come-from)), and `tests/tern-test-safety.sh` refuses to close a session that hosts the caller's own `$TERN_PANE` block.
 
 ## Task shape and metadata
 

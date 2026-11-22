@@ -13,7 +13,7 @@ Prerequisites:
 
 - `/Applications/Orca.app` installed, running, and ready.
 - The `orca` CLI, installed with `brew install orca`.
-- The universal harness and toolchain requirements in [`configuration.md`](configuration.md#toolchain).
+- The universal harness and toolchain requirements in [`configuration.md`](configuration/tools.md#toolchain).
 
 Select Orca with local `config/backend` containing `orca`, `FM_BACKEND=orca` for one launch, or an explicit request to Firstmate.
 It is never auto-detected.
@@ -27,7 +27,7 @@ Routine supervision uses the recorded endpoint through `bin/fm-peek.sh <id>` and
 Enter and Ctrl-C are supported; Escape is not.
 
 `config/launch-env-allowlist` alone cannot scope worker credentials on Orca, because allowlisted values resolve from the Orca terminal's own environment.
-When scoped worker credentials live in a tmux session, configure the [Orca environment source](configuration.md#orca-environment-source-configlaunch-env-tmux-session).
+When scoped worker credentials live in a tmux session, configure the [Orca environment source](configuration/worker-launch.md#orca-environment-source-configlaunch-env-tmux-session).
 
 ## Task shape and metadata
 

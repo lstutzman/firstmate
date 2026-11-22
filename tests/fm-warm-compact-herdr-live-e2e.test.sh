@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Opt-in credentialed live guard for warm-cache compaction
 # (bin/fm-warm-compact-lib.sh, bin/fm-supervision-host.sh,
-# docs/configuration.md "Warm-cache compaction").
+# docs/configuration/supervision.md "Warm-cache compaction").
 #
 # Proves against the real installed Claude Code and Herdr, in an isolated Herdr
 # lab session and a lab copy of this checkout opted in to the supervision host

@@ -8,7 +8,7 @@
 #   {"typesafe": {"source": "macos-keychain", "service": "typesafe-api-key"}}
 # bin/fm-dispatch-resolve.sh reads it only after the environment and .env have
 # supplied no key, and bin/fm-bootstrap.sh only checks whether it declares a
-# typesafe source; docs/configuration.md "Typed dispatch resolution" owns the
+# typesafe source; docs/configuration/dispatch.md "Typed dispatch resolution" owns the
 # file's location and the operator contract.
 #
 # A source is an adapter: FM_CREDSRC_SCHEMA names each adapter and its fields,

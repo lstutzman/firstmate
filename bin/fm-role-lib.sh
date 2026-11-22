@@ -8,7 +8,7 @@
 # requires an explicit, home-local grant: the maintainer opt-in written by the
 # operator into config/firstmate-role, or a bounded per-task consent recorded at
 # dispatch. Role is never inferred from gh identity, permissions, remotes,
-# environment, or CI. docs/configuration.md "Firstmate role" owns the
+# environment, or CI. docs/configuration/home-and-state.md "Firstmate role" owns the
 # operator-facing schema; this library owns parsing, repository-identity
 # normalization, self-repository detection, and the fail-closed gate the dispatch
 # surfaces share. Everything here resolves from files and local git plumbing

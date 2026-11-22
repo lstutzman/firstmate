@@ -7,7 +7,7 @@
 # bin/fm-review-check.sh.
 #
 # The home configuration lives under the gitignored config directory
-# (docs/configuration.md "External review tool" owns the schema):
+# (docs/configuration/projects-and-forges.md "External review tool" owns the schema):
 #   external-review.md      required; the worker instructions for the home's
 #                           review tool, rendered verbatim into the Definition
 #                           of done.
@@ -95,7 +95,7 @@ fm_external_review_adapter_body() {  # [<config-dir>]
   fm_external_review_file_state "$file" || rc=$?
   case "$rc" in
     0)
-      echo "error: forge=external needs $file, the worker instructions for this home's review tool (docs/configuration.md \"External review tool\"); without it a worker has no way to publish except a push" >&2
+      echo "error: forge=external needs $file, the worker instructions for this home's review tool (docs/configuration/projects-and-forges.md \"External review tool\"); without it a worker has no way to publish except a push" >&2
       return 1 ;;
     1) ;;
     *) return 1 ;;

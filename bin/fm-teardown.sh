@@ -1780,7 +1780,7 @@ EOF
 # PR head, no PR is found, or any forge read error occurs - the caller then
 # falls back to the content check.
 # The GitLab merged-MR read is opt-in with the park-on-review flags
-# (bin/fm-park.sh, docs/configuration.md "Park on review"); without either a
+# (bin/fm-park.sh, docs/configuration/prs-and-pipeline.md "Park on review"); without either a
 # GitLab MR goes through the GitHub read like any other target.
 gitlab_mr_landing_opted_in() {
   [ -e "$CONFIG/park-on-review" ] || [ -e "$CONFIG/auto-land" ]

@@ -20,7 +20,7 @@ An arm owner is the component in each primary harness that starts watcher cycles
 
 ## Scope today
 
-The host runs by default on a Claude primary and is opt-in per home on the other six primaries it supports; [configuration.md](configuration.md#supervision-host-configsupervision-host) owns the home gate and inherited opt-out.
+The host runs by default on a Claude primary and is opt-in per home on the other six primaries it supports; [configuration.md](configuration/supervision.md#supervision-host-configsupervision-host) owns the home gate and inherited opt-out.
 A home that does not run the host behaves exactly as it does without it.
 Today it runs beside a Claude, Cursor, OpenCode, omp, Grok, Codex, or Antigravity (`agy`) primary: away on all seven, and attended on Claude and Cursor, the primaries with a verified [dialog mirror](#the-dialog-mirror).
 
@@ -50,7 +50,7 @@ Until they land, their current behavior stays as described in their own owners.
 | The arm owners | Each primary's existing arm owner | Runs the host for a home that runs it and delivers a handed-back wake to main; see [Arm owners](#arm-owners). |
 | The engine | `bin/fm-supervision-engine-lib.sh` | Owns the home gate, including the default on Claude and the opt-out, the verified-engine list, and one bounded engine turn, including the reap of engine tool processes that outlive it. |
 | Row eligibility and the offer rule | `bin/fm-branch-dispatch.mjs` | The command entry to `.pi/extensions/lib/fm-branch-dispatch.ts`, so the host and the Pi extension compute branch-claimable rows, their task scope, and whether the branch may take a close (`branchOfferForWake`) from one owner; it also renders the wake message with the same away-posture tail, or the dialog mirror at its head. |
-| Warm-cache compaction | `bin/fm-warm-compact-lib.sh` | While parked, the host compacts the idle primary and its idle engine conversation once per idle episode when the home opted in; [configuration.md](configuration.md#warm-cache-compaction-configwarm-compact) owns the gate and guards. |
+| Warm-cache compaction | `bin/fm-warm-compact-lib.sh` | While parked, the host compacts the idle primary and its idle engine conversation once per idle episode when the home opted in; [configuration.md](configuration/supervision.md#warm-cache-compaction-configwarm-compact) owns the gate and guards. |
 | The grant and the drain | `bin/fm-wake-grant.sh` | Publishes the branch's rows bound to the host's own process; [watcher-continuity.md](watcher-continuity.md#per-actor-acknowledgement) owns the per-actor drain and acknowledgement the engine runs. |
 | The prompt | `bin/fm-branch-prompt.sh` | Emits the same byte-stable prompt the Pi branch runs; each wake names its host's report surface. |
 | The report surface | `bin/fm-branch-report.sh` | The command twin of the Pi branch's `fm_branch_report` tool, with the same task scoping; see [The report surface](#the-report-surface). |
@@ -72,7 +72,7 @@ The host's header owns the output contract they read.
 | OpenCode | the TUI plugin, `.opencode/plugins/fm-primary-watch-arm.js`, which restarts its own successor after each close | a `watcher` prompt through `ctx.session.prompt` |
 | omp | the watch extension, `.omp/extensions/fm-primary-omp-watch.ts`, which restarts its own successor after each close | the extension's `watcher` follow-up |
 | Grok | the model's tracked background call, rendered as `bin/fm-supervision-host.sh park` at session start | the background task's completion notification |
-| Codex | the foreground checkpoint, `bin/fm-watch-checkpoint.sh`, or the native Stop park on a home that [opts in](configuration.md#codex-native-stop-park-configcodex-stop-park) | checkpoint output, or the native thread queue; see [the Codex protocol](supervision-protocols/codex.md) |
+| Codex | the foreground checkpoint, `bin/fm-watch-checkpoint.sh`, or the native Stop park on a home that [opts in](configuration/supervision.md#codex-native-stop-park-configcodex-stop-park) | checkpoint output, or the native thread queue; see [the Codex protocol](supervision-protocols/codex.md) |
 | Antigravity (`agy`) | the Stop-hook park, `bin/fm-turnend-guard-agy.sh` | the park's `watcher` follow-up |
 
 Hook, plugin, extension, and checkpoint owners pass their harness as the primary pin.
@@ -234,7 +234,7 @@ The captain row is still durable, and the next drain presents it until it is ack
 
 ## Acknowledged hand-back
 
-On Claude, the home-local [configuration flag](configuration.md#acknowledged-hand-back-configsupervision-handoff-ack) replaces the default hand-back with an acknowledged transfer.
+On Claude, the home-local [configuration flag](configuration/supervision.md#acknowledged-hand-back-configsupervision-handoff-ack) replaces the default hand-back with an acknowledged transfer.
 It covers park boundaries, attended pass-throughs, and other host exits that hand work to main, without changing branch eligibility or the park bound.
 Before emitting the close, the host queues a token-bound check and verifies a detached successor against the home's watcher identity and fresh beacon.
 `bin/fm-supervision-handoff.sh` keeps replacing each closed one-shot cycle while that check remains unacknowledged.
@@ -400,7 +400,7 @@ Today the only verified engine is Claude's print mode, measured on Claude Code 2
 
 - `--safe-mode` loads none of the home's hooks, `CLAUDE.md`, skills, plugins, or MCP servers.
   So the engine can never fire the home's own Stop or SessionStart hooks.
-  A home's own rules reach the engine only through the optional `config/branch-prompt-include.md` ([configuration](configuration.md#home-branch-prompt-include-configbranch-prompt-includemd)).
+  A home's own rules reach the engine only through the optional `config/branch-prompt-include.md` ([configuration](configuration/worker-launch.md#home-branch-prompt-include-configbranch-prompt-includemd)).
 - `--bare` is unusable because it never reads claude.ai OAuth.
 - From inside the engine's shell the primary is not in the harness ancestry, so the engine can never act as the session-lock owner.
 

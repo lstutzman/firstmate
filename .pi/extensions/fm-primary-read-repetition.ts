@@ -166,7 +166,7 @@ export function loadReadRepetitionLimits(home: string, config: string, platform 
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return limits;
     throw new Error(`Cannot inspect legacy read guard: ${String(error)}`);
   }
-  throw new Error("Legacy fm-read-repetition-guard.ts detected; preserve its source/configuration and move its entrypoint outside .pi/extensions before enabling the managed guard. See docs/configuration.md#pi-repeated-read-containment.");
+  throw new Error("Legacy fm-read-repetition-guard.ts detected; preserve its source/configuration and move its entrypoint outside .pi/extensions before enabling the managed guard. See docs/configuration/supervision.md#pi-repeated-read-containment.");
 }
 
 export default function (pi: ExtensionAPI): void {

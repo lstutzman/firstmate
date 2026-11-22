@@ -3,7 +3,7 @@
 T3 Code is an experimental backend in which the T3 Code server owns the agent session while Treehouse keeps owning the task worktree.
 Firstmate drives the server only through its Orchestrator V2 `/mcp` endpoint, signed in as an OAuth `mcp-client`, and nothing is typed into a terminal.
 [`bin/fm-t3-mcp.mjs`](../bin/fm-t3-mcp.mjs) owns that transport, the credential, and the capability gate; [`bin/backends/t3code.sh`](../bin/backends/t3code.sh) owns the backend primitives built on it.
-[`configuration.md`](configuration.md#runtime-backend-configbackend--fm_backend) owns shared selection and metadata semantics.
+[`configuration.md`](configuration/runtime-backend.md#runtime-backend-configbackend--fm_backend) owns shared selection and metadata semantics.
 
 ## Setup
 
@@ -19,7 +19,7 @@ Prerequisites:
   Codex applies a project's `.codex/config.toml`, which carries a Codex thread's [per-directory environment](#per-directory-harness-environment), only in a trusted project.
   Trusting a project's main checkout covers its Treehouse worktrees; trusting a parent directory does not.
   A `codex` spawn warns, and still launches, when `${CODEX_HOME:-~/.codex}/config.toml` on the spawning host does not show that trust or cannot be read (reading it needs Python 3.11+ with `tomllib`); it cannot see a Codex configuration T3 keeps elsewhere.
-- The universal harness and toolchain requirements in [`configuration.md`](configuration.md#toolchain).
+- The universal harness and toolchain requirements in [`configuration.md`](configuration/tools.md#toolchain).
 
 Run the server that hosts Firstmate workers with T3's product telemetry off, so worker turns are not counted:
 
@@ -32,7 +32,7 @@ Every spawn and control action checks the server's telemetry state and warns unl
 Select T3 Code with local `config/backend` containing `t3code`, `FM_BACKEND=t3code` for one launch, or `--backend t3code` for one task.
 T3 Code is explicit-only for task dispatch; a configured server does not select this backend automatically.
 An explicitly configured T3 home can identify its active supervisor by its home thread.
-The shared selection rules and precedence are in [`configuration.md`](configuration.md#runtime-backend-configbackend--fm_backend).
+The shared selection rules and precedence are in [`configuration.md`](configuration/runtime-backend.md#runtime-backend-configbackend--fm_backend).
 The [capability gate](#capability-gate) applies before spawn, control, or teardown mutations.
 
 ### Sign-in
@@ -91,7 +91,7 @@ A secondmate's T3 project is its home and its thread is launched with the `root`
 T3 assigns the thread id at launch (`mcp:<uuid>`), and the task records it as `t3_thread_id`.
 The normal isolation and unlanded-work refusal rules still apply.
 
-[`configuration.md`](configuration.md#task-metadata) owns the task metadata fields, and its [task-selector contract](configuration.md#task-selectors) owns routing to the recorded thread.
+[`configuration.md`](configuration/runtime-backend.md#task-metadata) owns the task metadata fields, and its [task-selector contract](configuration/runtime-backend.md#task-selectors) owns routing to the recorded thread.
 
 ## Per-directory harness environment
 
@@ -116,7 +116,7 @@ A secondmate additionally receives the launch prefix every other backend types (
 A `claude` ship or scout worker also receives the task-worker channel statement that a pane launch appends to the system prompt, written as a `CLAUDE.local.md` in its worktree because T3 owns the system prompt; a secondmate does not, as on every backend.
 Without it a Claude worker can refuse the launch brief as prompt injection, which happened live.
 The statement's pull-request-tool workaround follows the [verified version boundary](verification/runtime-backends.md#claude-pull-request-tools); an older or unreadable server keeps the clause, while a server at or past the verified build gets none.
-Firstmate records the PR from a worker's ready `done:` report; [`config/pr-register-scan`](configuration.md#pr-registration-scan-configpr-register-scan) describes the scan's accepted forms.
+Firstmate records the PR from a worker's ready `done:` report; [`config/pr-register-scan`](configuration/prs-and-pipeline.md#pr-registration-scan-configpr-register-scan) describes the scan's accepted forms.
 A `claude` task checks the leased worktree and refuses a tracked, existing, or symlinked `CLAUDE.local.md`, because that file is the backend's channel and teardown removes it.
 
 ## Current lifecycle and safety
@@ -220,7 +220,7 @@ Those tools list and answer questions only; a permission approval is visible thr
 ## Away-mode supervisor support
 
 The away daemon can supervise a captain that runs inside a T3 thread.
-[`configuration.md`](configuration.md#away-mode-supervisor-backend-fm_supervisor_backend--fm_supervisor_target) owns discovery precedence and the explicit-selection and credential prerequisites.
+[`configuration.md`](configuration/away-and-alarms.md#away-mode-supervisor-backend-fm_supervisor_backend--fm_supervisor_target) owns discovery precedence and the explicit-selection and credential prerequisites.
 T3 puts nothing about the thread into the agent's environment, so eligible discovery matches this home's real path to a live project's `workspaceRoot`, lists its threads with an active run through every `t3_thread_list` page, and selects the one unarchived thread with no worktree of its own.
 A forked conversation counts; a delegated subagent does not.
 Multiple matching threads print an ambiguity diagnostic naming their ids and fall through to the legacy tmux fallback, as do no matches or an unreachable server.

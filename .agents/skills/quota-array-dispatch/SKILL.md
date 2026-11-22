@@ -14,7 +14,7 @@ This skill is the single owner of the completion-aware profile-array selection p
 `harness-adapters` owns harness verification, model/provider discovery, and effort fallback.
 `quota-axi` remains data-only: it publishes `spendPriority` as a comparable scalar and never recommends, selects, ranks, or infers a route.
 Do not add a daemon, opaque composite score, routing wrapper, hard-coded model-specific policy, or producer-side route recommendation.
-The [worker helper](../../../bin/fm-quota-choose.sh) and [typed resolver](../../../docs/configuration.md#typed-dispatch-resolution-env-fm_dispatch_provider-fm_dispatch_model) own their deterministic mapping boundaries.
+The [worker helper](../../../bin/fm-quota-choose.sh) and [typed resolver](../../../docs/configuration/dispatch.md#typed-dispatch-resolution-env-fm_dispatch_provider-fm_dispatch_model) own their deterministic mapping boundaries.
 
 ## Shared-quota opt-out
 
@@ -38,7 +38,7 @@ Authoritative multi-provider routing - including provider discovery from the har
 Use it only when the brief already fixed the candidate order and every candidate's provider is the harness's primary family.
 It does not replace the reasoning-class, runway-feasibility, or authentication gates above.
 Firstmate can optionally arm `bin/fm-procevent-quota.sh` for a recurring mid-task check that wakes when the tracked provider drops below its configured threshold or its runway becomes `exhausted_now`.
-The opt-in [typed resolver](../../../docs/configuration.md#typed-dispatch-resolution-env-fm_dispatch_provider-fm_dispatch_model) has its own documented gates.
+The opt-in [typed resolver](../../../docs/configuration/dispatch.md#typed-dispatch-resolution-env-fm_dispatch_provider-fm_dispatch_model) has its own documented gates.
 It never removes this skill's authority, and its `ambiguous`, `escalate`, and `error` outcomes return here.
 
 ## Claude account list
@@ -50,7 +50,7 @@ Apply the three gates below to each account's rows, taking a projected runway's 
 A genuine tie or no rankable account is the same terminal case as below: decide in the open from the rows or ask the captain, never by file order.
 Account for every declared account in the rationale, including unmeasured ones.
 A typed-resolver `clear` profile for Claude still needs this step's `--account`.
-The account is chosen once, at intake: a relaunch keeps the recorded one, and only an explicit `--account` relaunch moves a task ([`docs/configuration.md`](../../../docs/configuration.md#several-claude-accounts-configclaude-accounts) owns the contract).
+The account is chosen once, at intake: a relaunch keeps the recorded one, and only an explicit `--account` relaunch moves a task ([`docs/configuration.md`](../../../docs/configuration/worker-launch.md#several-claude-accounts-configclaude-accounts) owns the contract).
 
 ## Read the default TOON
 
@@ -130,7 +130,7 @@ Do not invent a generic percentage floor, and honor an explicit captain floor fo
 ## Rank by spendPriority
 
 Among candidates that pass all three gates, first apply the optional top-level `preferred_provider` from `config/crew-dispatch.json`.
-Its schema is owned by [Crew dispatch profiles](../../../docs/configuration.md#crew-dispatch-profiles-configcrew-dispatchjson).
+Its schema is owned by [Crew dispatch profiles](../../../docs/configuration/dispatch.md#crew-dispatch-profiles-configcrew-dispatchjson).
 Within the already matched rule or default, restrict ranking to eligible candidates of that family when any remain.
 Do not introduce other profiles, change a Claude-only rule, or override an explicit captain choice or approval requirement.
 Only concrete evidence that every matched preferred candidate is ineligible authorizes fallback to other families.

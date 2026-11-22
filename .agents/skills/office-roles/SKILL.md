@@ -76,7 +76,7 @@ Question 5 is answered by the existing mechanisms, not new ones: keyed lines tha
 
 ## Capturing officer-finding outcomes
 
-When the office decides on an officer finding, or its fix ships or is rejected, capture the outcome to the declared memory tier before reporting, following that tier's declared etiquette (docs/configuration.md "External memory tiers").
+When the office decides on an officer finding, or its fix ships or is rejected, capture the outcome to the declared memory tier before reporting, following that tier's declared etiquette (docs/configuration/home-and-state.md "External memory tiers").
 Store a choice and its rationale as a `decision` memory, and a recurring error pattern with `mistake_note_add`.
 Tag each with this home, `officer:<id>` and the project; a correction supersedes with `memory_update` versioned, never an in-place edit or delete.
 A harness that cannot reach the MCP gets firstmate capture on its behalf from the office's report (`AGENTS.md` section 6).

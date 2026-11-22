@@ -2,7 +2,7 @@
 
 cmux is an experimental macOS GUI terminal backend.
 It provides task workspaces and surfaces while Treehouse continues to provide git worktrees.
-[`configuration.md`](configuration.md#runtime-backend-configbackend--fm_backend) owns shared selection and metadata semantics.
+[`configuration.md`](configuration/runtime-backend.md#runtime-backend-configbackend--fm_backend) owns shared selection and metadata semantics.
 
 ## Setup
 
@@ -13,7 +13,7 @@ Prerequisites:
 
 - cmux 0.64 or newer, installed from [cmux.com](https://cmux.com) or with `brew install --cask cmux`.
 - `jq` for JSON responses.
-- The universal harness and toolchain requirements in [`configuration.md`](configuration.md#toolchain).
+- The universal harness and toolchain requirements in [`configuration.md`](configuration/tools.md#toolchain).
 
 The CLI is not always installed on `PATH` with the app.
 The adapter prefers `command -v cmux` and otherwise uses `/Applications/cmux.app/Contents/Resources/bin/cmux`.
@@ -52,7 +52,7 @@ Verify setup by spawning a small task and confirming metadata contains `backend=
 
 `CMUX_WORKSPACE_ID` is the primary cmux runtime marker.
 `CMUX_SOCKET_PATH` is not sufficient because operators may set it outside cmux.
-[Backend selection order](configuration.md#backend-selection-order) owns marker precedence, so a multiplexer nested inside cmux remains the active backend.
+[Backend selection order](configuration/runtime-backend.md#backend-selection-order) owns marker precedence, so a multiplexer nested inside cmux remains the active backend.
 
 cmux's bundled Claude wrapper can remove every `CMUX_*` variable when its internal socket probe fails, including in Password mode.
 On macOS only, detection therefore falls back first to `__CFBundleIdentifier=com.cmuxterm.app`, then to process ancestry reaching the running cmux app.

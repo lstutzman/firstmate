@@ -2,7 +2,7 @@
 
 Rex is an experimental terminal multiplexer backend from [Superlogical](https://www.superlogical.com/rex).
 It provides task tabs and their terminal blocks while Treehouse continues to provide git worktrees.
-[`configuration.md`](configuration.md#runtime-backend-configbackend--fm_backend) owns shared selection and metadata semantics.
+[`configuration.md`](configuration/runtime-backend.md#runtime-backend-configbackend--fm_backend) owns shared selection and metadata semantics.
 
 ## Setup
 
@@ -16,7 +16,7 @@ Prerequisites:
 
 - Rex with API revision 5 or newer, for both the `rex` CLI and the running server.
 - `jq` for JSON responses.
-- The universal harness and toolchain requirements in [`configuration.md`](configuration.md#toolchain).
+- The universal harness and toolchain requirements in [`configuration.md`](configuration/tools.md#toolchain).
 
 Rex ships its CLI inside the server bundle and exports `REX_BIN_DIR` into every block, but shell startup files commonly reset `PATH`.
 The adapter therefore prefers `$REX_BIN_DIR/rex`, then `rex` on `PATH`, then the server bundle path under `~/Library/Application Support/com.superlogical.rex/`.
@@ -133,7 +133,7 @@ Opt-in: with `config/rex-status-marks` set to `on`, the captain sees which worke
 
 Each record's title is the task's tab label, `fm-<id>`, so Rex labels it with the name Firstmate gave the tab rather than a branch or the agent's terminal title.
 Each new record that needs the captain also carries an OSC 777 desktop notification titled with the tab label, because Rex sounds and notifications follow each pane's root program status, not a child record.
-The attention-mark writer never writes the root record: the harness or the [worker-side status bridge](configuration.md#osc-7501-worker-status-reporting) owns it, and a second root report for the same turn makes Rex notify twice.
+The attention-mark writer never writes the root record: the harness or the [worker-side status bridge](configuration/runtime-backend.md#osc-7501-worker-status-reporting) owns it, and a second root report for the same turn makes Rex notify twice.
 Firstmate's own records - attention marks and the bridge's `app=firstmate-<harness>` root record - never count as the worker's state, for busy detection or for push escalation.
 The notification fires once per change, never on a repeated sync.
 Rex has no API to set a record, so the mark is one small write to the pane's terminal device; a `working` or `blocked` record is dropped when the agent's shell prints its next prompt or exits, and the next sync writes it again.

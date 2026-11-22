@@ -30,7 +30,7 @@ Each family ships as a pair plus its tests.
 
 The watcher's wedge timer is the one caller, and only in a home that lists guards in `config/wedge-evidence-guards`.
 There a live pane about to wedge-escalate asks each listed guard, and a `CRITICAL` answer defers that escalation for a bounded run of windows instead of suppressing it.
-[`configuration.md`](configuration.md#wedge-evidence-guards-configwedge-evidence-guards) owns that opt-in and its example operator family, and `bin/fm-watch.sh`'s `wedge_guard_evidence` owns the exact invocation and fail-open boundaries.
+[`configuration.md`](configuration/away-and-alarms.md#wedge-evidence-guards-configwedge-evidence-guards) owns that opt-in and its example operator family, and `bin/fm-watch.sh`'s `wedge_guard_evidence` owns the exact invocation and fail-open boundaries.
 
 ## Adding a family
 

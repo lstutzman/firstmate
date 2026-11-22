@@ -20,7 +20,8 @@
 # ShellCheck invocation under the same per-root bounds: a stricter check
 # enforced on each root not named in bin/fm-lint-ratchet.exceptions;
 # bin/fm-lint-ratchet.sh owns the daily move.
-# The default (no explicit-path) path also runs bin/fm-lint-workflows.sh so a
+# The default (no explicit-path) path also runs bin/fm-instruction-size-check.sh
+# (size pins failing the run) and bin/fm-lint-workflows.sh so a
 # malformed GitHub workflow, including a self-broken ci.yml, fails locally
 # before merge instead of only failing to run as CI.
 #
@@ -37,7 +38,7 @@
 #     `gh`). That local pass drops --external-sources and excludes SC1091,
 #     SC2034, SC2153, and SC2329. A branch with zero matching changed files
 #     skips ShellCheck and prints a "no changed lint targets" note, then
-#     still runs the backend-purity check and validates workflows.
+#     still runs the backend-purity check, validates workflows and checks the instruction size pins.
 # Explicit paths always bypass this file-set selection and lint exactly the
 # given paths, matching the same config, without the workflow YAML check.
 # Explicit core bin/ and bin/backends/ scripts still receive the
@@ -641,11 +642,15 @@ fm_lint_usage() {
   ' "$SELF"
 }
 
-# Default no-args lint also validates GitHub workflows. Explicit paths stay a
-# ShellCheck-only override so callers can target one shell root.
+# Default no-args lint also validates GitHub workflows and holds the
+# instruction files under their byte pins (bin/fm-instruction-size-check.sh).
+# Explicit paths stay a ShellCheck-only override so callers can target one shell root.
 fm_lint_run_workflows() {
   [ "$EXPLICIT_PATHS" -eq 0 ] || return 0
-  "$SELF_DIR/fm-lint-workflows.sh"
+  local rc=0
+  "$SELF_DIR/fm-lint-workflows.sh" || rc=$?
+  "$SELF_DIR/fm-instruction-size-check.sh" || rc=$?
+  return "$rc"
 }
 
 # Entries naming a file that no longer exists are stale too; one partition

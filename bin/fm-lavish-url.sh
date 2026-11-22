@@ -61,7 +61,7 @@
 # The routed host is always the REQUESTED URL's host, never anything the page
 # reported about itself. The longest matching domain-map entry wins; a
 # port-qualified entry takes precedence over entries without ports and
-# matches only that exact host and explicit URL port. docs/configuration.md
+# matches only that exact host and explicit URL port. docs/configuration/tools.md
 # "Lavish URL domain map" owns the map's schema and validation contract.
 #
 # SNAPSHOT RECORD. The sidecar uses schema fm-lavish-url.v1 and records the

@@ -18,7 +18,7 @@
 # (state/lane-capacity.json, and in auto mode state/lane-footprint.json and the
 # Windows host cache state/.lane-vitals-host).
 # It is network-free unless config/lane-capacity names a quota-provider.
-# docs/configuration.md "Lane capacity" owns the config/lane-capacity format
+# docs/configuration/capacity.md "Lane capacity" owns the config/lane-capacity format
 # (the cap on its first line, then optional keyed lines); with the file absent
 # nothing changes and no target is ever invented.
 #

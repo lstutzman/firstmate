@@ -43,7 +43,7 @@ See the [no-mistakes quick start](https://kunchenguid.github.io/no-mistakes/star
 
 ## Agent-driven contributions
 
-Before dispatching an agent-driven contribution, follow the [Firstmate role and task-consent policy](docs/configuration.md#firstmate-role-configfirstmate-role); clone-and-run use alone grants no publication authority.
+Before dispatching an agent-driven contribution, follow the [Firstmate role and task-consent policy](docs/configuration/home-and-state.md#firstmate-role-configfirstmate-role); clone-and-run use alone grants no publication authority.
 
 ## Maintaining required checks
 
@@ -81,14 +81,14 @@ Coordinate any workflow rollback with its required-check names so a retired chec
   `.claude/mods/` holds Claude Code mods, plugins whose behavior lives in one function-hooks module; each is reached through an `.agents/skills/<mod>` symlink because Claude Code adopts project plugins only from `.claude/skills`, carries no `SKILL.md` so every other harness's skill loader ignores that entry, and imports only files physically inside its own folder because Claude Code refuses anything else.
   A module may load through `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` or Claude Code's `tengu_plugin_hooks_modules` rollout flag, but the Calm mod activates only when `CLAUDE_CODE_ENABLE_FUNCTION_HOOKS` is exactly `1` and is otherwise a complete no-op; Firstmate never sets that variable in any settings file, and [`docs/calm.md`](docs/calm.md) owns the contract.
   Everything personal to one captain's fleet (`.env`, `data/`, `state/`, `config/`, `projects/`, `.no-mistakes/`) is gitignored; never commit it.
-  The root `.tasks.toml` is tracked `tasks-axi` config for `data/backlog.md`; compatible `tasks-axi` is the default backend for routine backlog mutations, with the compatibility definition owned by [`docs/configuration.md`](docs/configuration.md) ("Backlog backend").
+  The root `.tasks.toml` is tracked `tasks-axi` config for `data/backlog.md`; compatible `tasks-axi` is the default backend for routine backlog mutations, with the compatibility definition owned by [`docs/configuration/backlog-and-decisions.md`](docs/configuration/backlog-and-decisions.md) ("Backlog backend").
   A local `config/backlog-backend=manual` opt-out forces firstmate's routine backlog updates to hand-editing and stays gitignored; validated secondmate handoffs still delegate through `tasks-axi mv`.
-  A local `config/backend` file stays gitignored; [runtime backend configuration](docs/configuration.md#runtime-backend-configbackend--fm_backend) owns supported values, selection, and limits.
+  A local `config/backend` file stays gitignored; [runtime backend configuration](docs/configuration/runtime-backend.md#runtime-backend-configbackend--fm_backend) owns supported values, selection, and limits.
   It does not make `data/` tracked.
 - Shell helpers in `bin/` are plain bash.
   Each starts with a usage header comment; keep it accurate when you change behavior.
   Test scripts and helpers in `tests/` are plain bash too.
-  `bin/fm-lint.sh` must pass: it is the single owner of the lint definition (the shellcheck file set, config, pinned shellcheck version, pinned actionlint workflow lint, the backend-purity check rejecting direct Beads CLI calls in core `bin/` scripts, and the stricter ratchet check enforced on every shell file not listed in `bin/fm-lint-ratchet.exceptions`; `bin/fm-lint-ratchet.sh` owns moving files off that list).
+  `bin/fm-lint.sh` must pass: it is the single owner of the lint definition (the shellcheck file set, config, pinned shellcheck version, pinned actionlint workflow lint, the backend-purity check rejecting direct Beads CLI calls in core `bin/` scripts, and the stricter ratchet check enforced on every shell file not listed in `bin/fm-lint-ratchet.exceptions`; `bin/fm-lint-ratchet.sh` owns moving files off that list, and the byte-pin check that keeps `AGENTS.md` and `CLAUDE.md` under `docs/instruction-size-pins.json`; `bin/fm-instruction-size-check.sh` owns that check).
   CI uses its full canonical partitions; the no-mistakes pre-push gate uses its context-selected default.
   `docs/fm-test-portable-shards.md` owns partition verification and performance evidence.
   Its header and `--help` output own the exact local lint modes, file-set selection, and analysis flags.
@@ -113,7 +113,7 @@ A crewmate picking up such a brief should load the skill even if the brief preda
 When supervising live crewmates, keep firstmate's own long validation or build commands in the background so watcher wakes can still be handled.
 Crewmate validation follows the installed no-mistakes version's SKILL.md and live `axi` help instead of duplicating gate mechanics in firstmate docs.
 Firstmate's wrapper still matters: crewmates route every `ask-user` finding to firstmate, which applies `ask-user-authority`, and crewmates never pass `--yes` or `-y` because either flag bypasses that check and any required captain escalation.
-[`docs/configuration.md`](docs/configuration.md#gate-defaults-no-mistakesyaml) owns the tracked `.no-mistakes.yaml` gate defaults.
+[`docs/configuration.md`](docs/configuration/prs-and-pipeline.md#gate-defaults-no-mistakesyaml) owns the tracked `.no-mistakes.yaml` gate defaults.
 The `firstmate-coding-guidelines` skill owns the rule that local no-mistakes Test stays intent-targeted rather than configuring `commands.test`.
 Verify the same way the gate does: reach for `bin/fm-test-run.sh` with the subjects you care about rather than chaining `bash tests/a.test.sh && bash tests/b.test.sh`, because a list of script paths gets the same bounded concurrency as `--changed`.
 The pipeline publishes that evidence itself, so never hand-commit `.no-mistakes/` paths onto a feature branch; CI rejects them as tracked personal fleet paths.
@@ -175,7 +175,7 @@ A fixture may shorten a production timeout to keep a failure path prompt, but ne
 Where a case's assertion is not about the timeout itself, give that window headroom over the measured loaded cost, and bound the test's own waiting with iteration-counted poll loops, which stretch under load where a wall-clock budget does not.
 Supervision host and Stop-hook hand-back waits are the exception: use `wait_until_deadline` (a wall-clock budget well above the loaded hand-back cost, usually 60s and longer where a case's loaded work needs it, but always below any park bound the case relies on) so a timeout dumps `host.out`, `hook.out`/`hook.err`, the supervision-host log, health file, and a process tree.
 Tests that need a real optional backend or an explicit opt-in (real herdr/zellij/cmux/paseo/rex/tern/hc smoke tests, the live Pi regression) skip themselves and print the tool or environment gate needed to enable them, so the portable suite remains safe on machines without those tools.
-The complete [`tests/fm-watch-triage-pause.test.sh`](tests/fm-watch-triage-pause.test.sh) suite requires compatible `tasks-axi` on `PATH`, as specified in [Backlog backend](docs/configuration.md#backlog-backend-taskstoml--configbacklog-backend).
+The complete [`tests/fm-watch-triage-pause.test.sh`](tests/fm-watch-triage-pause.test.sh) suite requires compatible `tasks-axi` on `PATH`, as specified in [Backlog backend](docs/configuration/backlog-and-decisions.md#backlog-backend-taskstoml--configbacklog-backend).
 [`tests/rex-test-safety.sh`](tests/rex-test-safety.sh) owns the real-Rex suites' private-server isolation and capability gates.
 The [Herdr backend guide](docs/herdr-backend.md#destructive-lab-safety) owns the lane's isolation boundary, while [runtime backend verification](docs/verification/runtime-backends.md#herdr) owns active empirical evidence; live harness credential tests remain opt-in.
 

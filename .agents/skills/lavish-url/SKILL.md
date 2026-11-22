@@ -33,7 +33,7 @@ A `--mobile` snapshot is captured under mobile emulation, but width-based styles
 Report the capture's `route:` result in the same message, because it decides where feedback will go:
 
 - `project` - feedback will be filed to that project's backlog.
-- `inferred` - only that project's own docs mention the site; ask the captain one yes-or-no question to confirm it, and on yes add the domain to `config/lavish-url-domains` (`docs/configuration.md` "Lavish URL domain map") before feedback arrives.
+- `inferred` - only that project's own docs mention the site; ask the captain one yes-or-no question to confirm it, and on yes add the domain to `config/lavish-url-domains` (`docs/configuration/tools.md` "Lavish URL domain map") before feedback arrives.
 - `ambiguous` - name the candidates and ask which project owns the site, then record the answer in the domain map.
 - `unrouted` - say feedback will come back to you unfiled unless the captain names a project, and offer to map it.
 

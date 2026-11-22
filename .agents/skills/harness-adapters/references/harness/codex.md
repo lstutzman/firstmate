@@ -16,7 +16,7 @@ These command-line and terminal facts apply to pane-backed sessions; for T3 Code
 | Model flag | `--model <model>`. |
 | Effort flag | `-c 'model_reasoning_effort="<low\|medium\|high\|xhigh\|max>"'`, verified on codex-cli 0.142.1 whose installed schema contains `model_reasoning_effort`, active config uses it, and bundled catalog advertised only the first four values while omitting `max`; current codex-cli 0.153.4 catalog data at `${CODEX_HOME:-~/.codex}/models_cache.json` advertises `max` for `gpt-5.6-luna`, which Firstmate passes for that model. |
 | Model discovery | Open the current interactive session's `/model` picker. |
-| Approval posture | See [`Codex automatic approval review`](../../../../../docs/configuration.md#codex-automatic-approval-review) and [`persistent failover`](../../../../../docs/configuration.md#persistent-managed-policy-failover). |
+| Approval posture | See [`Codex automatic approval review`](../../../../../docs/configuration/harnesses.md#codex-automatic-approval-review) and [`persistent failover`](../../../../../docs/configuration/harnesses.md#persistent-managed-policy-failover). |
 | Marker | None; identity comes from ancestry, and `../../../bin/fm-harness.sh` is what keeps a retained foreign `CLAUDECODE` from renaming it. Verified on 2026-09-01 with codex-cli 0.152.0: the pane process is the `node` npm shim and the native `codex` binary runs as its foreground child, so a tool subprocess reaches the native name directly while the shim itself is identified from its script path. |
 
 A directory trust dialog appears on the first run for a repository root: "Do you trust the contents of this directory?"
@@ -48,7 +48,7 @@ This is why `$no-mistakes` reaches a Codex worker instead of being consumed by t
 
 Verified on 2026-07-08 with codex-cli 0.142.1: Codex runs the Stop command with process PWD set to the hook-loaded project root, while no `CODEX_PROJECT_DIR`, `CODEX_WORKSPACE_ROOT`, or `CODEX_CWD` root variable is set.
 
-Codex CLI 0.163.0 supports the native asynchronous Stop park registered by `bin/fm-codex-stop-park.sh` in a home that opts in with [`config/codex-stop-park`](../../../../../docs/configuration.md#codex-native-stop-park-configcodex-stop-park), verified in an isolated real CLI lab on 2026-10-19.
+Codex CLI 0.163.0 supports the native asynchronous Stop park registered by `bin/fm-codex-stop-park.sh` in a home that opts in with [`config/codex-stop-park`](../../../../../docs/configuration/supervision.md#codex-native-stop-park-configcodex-stop-park), verified in an isolated real CLI lab on 2026-10-19.
 The hook waits outside the model and delivers actionable wakes with `codex queue --thread`, including in embedded mode without a shared app-server daemon.
 The script owns version and native-session selection; [`codex.md`](../../../../../docs/supervision-protocols/codex.md) owns the operating protocol and failure fallback.
 Homes without the opt-in, unverified versions, and sessions without the native registration keep [`codex-checkpoint.md`](../../../../../docs/supervision-protocols/codex-checkpoint.md), the unchanged bounded foreground protocol.

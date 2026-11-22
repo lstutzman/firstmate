@@ -19,7 +19,7 @@ The fallback never reaches `xhigh`; an explicit or configured `xhigh` passes thr
 Never select `max` through this fallback; only an explicit per-task or standing captain preference permits it.
 
 The explicit native `ultra` value follows the model-scoped refusal contract in `../../../bin/fm-harness.sh validate-native-effort`; it is never silently omitted or mapped to a Pi level.
-[`configuration.md`](../../../../../docs/configuration.md#crew-dispatch-profiles-configcrew-dispatchjson) owns backend-specific refusal or omission behavior for other effort values, including harnesses with no verified interactive effort flag.
+[`configuration.md`](../../../../../docs/configuration/dispatch.md#crew-dispatch-profiles-configcrew-dispatchjson) owns backend-specific refusal or omission behavior for other effort values, including harnesses with no verified interactive effort flag.
 Polytoken uses its [model-scoped selectable-reference contract](../harness/polytoken.md) instead of record-and-omit.
 
 ## Harness and provider identity

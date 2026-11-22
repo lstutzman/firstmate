@@ -714,7 +714,7 @@ The guard submits no prompt and spends no tokens, so it runs by default wherever
 ## Claude worker tool exclusions
 
 `config/crew-exclude-tools` reaches a Claude ship or scout launch as `--disallowedTools '<names>'` placed directly before `--append-system-prompt`, because the option is variadic and would otherwise swallow the launch prompt.
-[Worker tool exclusions](../configuration.md#worker-tool-exclusions-configcrew-exclude-tools) owns the contract; this record owns the measurement.
+[Worker tool exclusions](../configuration/harnesses.md#worker-tool-exclusions-configcrew-exclude-tools) owns the contract; this record owns the measurement.
 Verified on 2026-11-06 with Claude Code 2.1.319 on Linux, interactive launches in a tmux pane with tool search on, against a capture-only local server (`ANTHROPIC_BASE_URL`) that records each `/v1/messages` body and answers 529, so no model is called.
 The arms differ only in the `--disallowedTools` value; the figures are the bytes of the JSON `tools` array and of the whole request for the main-agent request. The two repeats of the `Workflow,Artifact,mcp__claude-artifacts` arm matched on tool schema bytes and differed by 12 request bytes.
 
@@ -3662,7 +3662,7 @@ A throwaway scout was spawned through `bin/fm-spawn.sh --scout --harness omp --m
 
 ### Profile flag
 
-Verified on 2026-10-24 against omp 18.4.3 (`~/.bun/bin/omp`, a Bun package install) on macOS 15 arm64, for the [per-secondmate omp profile](../configuration.md#per-secondmate-omp-profile) pin.
+Verified on 2026-10-24 against omp 18.4.3 (`~/.bun/bin/omp`, a Bun package install) on macOS 15 arm64, for the [per-secondmate omp profile](../configuration/worker-launch.md#per-secondmate-omp-profile) pin.
 omp extracts `--profile` from anywhere in its arguments, so the flag Firstmate places right after the executable and before `--config` is honored, and it applies to subcommands such as the catalog check's `models --json`:
 
 ```text
@@ -3756,7 +3756,7 @@ On 2.0.22 the brief is submitted on its own, yet the composer still reads pendin
 ## Pi repeated-read containment
 
 Verified on 2026-10-27 UTC on Linux x86_64 with Node 24.22.1 and npm 11.19.1.
-The operator contract, opt-in default and migration procedure are owned by [configuration](../configuration.md#pi-repeated-read-containment).
+The operator contract, opt-in default and migration procedure are owned by [configuration](../configuration/supervision.md#pi-repeated-read-containment).
 The supported SDK matrix is Pi 1.1.0 and 1.2.0, with each release's sibling packages pinned to the same version rather than resolving newer 1.x packages through public dependency ranges.
 TypeScript 5.9.3 checked all tracked Pi consumers with strict no-emit settings for both versions.
 The real SDK fixture uses synthetic provider responses, intercepted fetches and fake Bash operations; it never sends a request to an inference endpoint.

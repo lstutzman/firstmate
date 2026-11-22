@@ -818,6 +818,7 @@ test_changed_mode_hides_cross_file_codes_that_ci_still_sees() {
   lint="$test_root/bin/fm-lint.sh"
   cp "$LINT" "$lint"
   cp "$ROOT/bin/fm-lint-workflows.sh" "$test_root/bin/"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$test_root/bin/fm-instruction-size-check.sh" && chmod +x "$test_root/bin/fm-instruction-size-check.sh"
   cp "$ROOT"/.github/workflows/* "$test_root/.github/workflows/"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$test_root/bin/backends/noop.sh"
   fixture="$test_root/tests/fm-lint-local-exclude-fixture.test.sh"
@@ -1187,6 +1188,7 @@ SH
 exit 0
 SH
   chmod +x "$lint_copy" "$tmp/repo/bin/fm-lint-workflows.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/repo/bin/fm-instruction-size-check.sh" && chmod +x "$tmp/repo/bin/fm-instruction-size-check.sh"
   fm_lint_stub_shellcheck "$fakebin" "$log"
 
   for invocation in \
@@ -2078,6 +2080,7 @@ exit 0
 SH
   printf '#!/usr/bin/env bash\nbd close fm-example\n' > "$tmp/repo/bin/direct-beads.sh"
   chmod +x "$tmp/repo/bin/fm-lint.sh" "$tmp/repo/bin/fm-lint-workflows.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/repo/bin/fm-instruction-size-check.sh" && chmod +x "$tmp/repo/bin/fm-instruction-size-check.sh"
   fm_lint_stub_shellcheck "$fakebin" "$log"
 
   # Every ShellCheck root passes, then the backend-purity check fails the run:
@@ -2145,6 +2148,7 @@ fm_lint_cache_repo() {
   cp "$ROOT/bin/fm-timeout-lib.sh" "$1/bin/fm-timeout-lib.sh"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$1/bin/fm-lint-workflows.sh"
   chmod +x "$1/bin/fm-lint-workflows.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$1/bin/fm-instruction-size-check.sh" && chmod +x "$1/bin/fm-instruction-size-check.sh"
   printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$1/bin/backends/b.sh"
   printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$1/tests/t.sh"
 }
@@ -2367,16 +2371,16 @@ test_cache_prune_keeps_only_markers_the_run_used() {
   fm_lint_cache_repo "$repo"
   rc=0; out=$(CI=true FM_LINT_CACHE_DIR="$cache" "$repo/bin/fm-lint.sh" 2>&1) || rc=$?
   [ "$rc" -eq 0 ] || fail "the fixture inventory must pass: $out"
-  [ "$(fm_lint_cache_counts "$out")" = "0 5 0" ] || fail "the first full run was not five misses: $out"
-  [ "$(fm_lint_cache_markers "$cache")" = 5 ] || fail "five passing roots did not leave five markers"
+  [ "$(fm_lint_cache_counts "$out")" = "0 6 0" ] || fail "the first full run was not six misses: $out"
+  [ "$(fm_lint_cache_markers "$cache")" = 6 ] || fail "six passing roots did not leave six markers"
   printf '# edited\n' >> "$repo/tests/t.sh"
   rc=0; out=$(CI=true FM_LINT_CACHE_DIR="$cache" "$repo/bin/fm-lint.sh" 2>&1) || rc=$?
-  [ "$rc" -eq 0 ] && [ "$(fm_lint_cache_counts "$out")" = "4 1 0" ] \
-    || fail "an edit to one root was not one miss and four hits: $out"
-  [ "$(fm_lint_cache_markers "$cache")" = 5 ] || fail "the superseded marker was not pruned"
+  [ "$rc" -eq 0 ] && [ "$(fm_lint_cache_counts "$out")" = "5 1 0" ] \
+    || fail "an edit to one root was not one miss and five hits: $out"
+  [ "$(fm_lint_cache_markers "$cache")" = 6 ] || fail "the superseded marker was not pruned"
   # An explicit-path run covers part of a set and never prunes the rest.
   FM_LINT_CACHE_DIR="$cache" "$repo/bin/fm-lint.sh" tests/t.sh >/dev/null 2>&1
-  [ "$(fm_lint_cache_markers "$cache")" = 5 ] || fail "a partial run pruned markers it did not own"
+  [ "$(fm_lint_cache_markers "$cache")" = 6 ] || fail "a partial run pruned markers it did not own"
   pass "a full passing run prunes superseded markers and a partial run leaves them"
 }
 

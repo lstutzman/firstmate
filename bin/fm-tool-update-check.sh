@@ -49,7 +49,7 @@
 # edit, never a code change. docs/configuration.md owns that schema.
 #
 # For tools without CLI update announcements, see `version_url` in
-# docs/configuration.md's "Watched tool updates" section.
+# docs/configuration/tools.md's "Watched tool updates" section.
 #
 # Probing costs real time, so `check` runs its probes at most once per
 # FM_TOOL_UPDATE_INTERVAL (default 900, 0 disables the gate, otherwise 60..86400)

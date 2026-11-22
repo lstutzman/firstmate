@@ -75,7 +75,7 @@
 #     next Stop's foreground arm attaches to that live cycle. The supervision
 #     host owns its own successors, so its path is unchanged.
 #   - Supervision host: a home that runs it (by default on this Claude
-#     primary; docs/configuration.md "Supervision host" owns the gate and its
+#     primary; docs/configuration/supervision.md "Supervision host" owns the gate and its
 #     opt-out) runs bin/fm-supervision-host.sh in the arm's place, bound
 #     to this generation.
 #     To this hook it is an arm that also takes away-posture wakes itself and
@@ -674,7 +674,7 @@ case "$QUIET_ACK_MAX" in ''|*[!0-9]*) QUIET_ACK_MAX=500 ;; esac
 HOST_MODE=0
 HOST_RC=0
 ACTIONABLE_RE='^(signal:|stale:|check:|heartbeat($|:))'
-# The home gate's owner decides (docs/configuration.md "Supervision host").
+# The home gate's owner decides (docs/configuration/supervision.md "Supervision host").
 if fm_supervision_host_enabled "$CONFIG" claude; then
   HOST_MODE=1
   ACTIONABLE_RE='^(signal:|stale:|check:|heartbeat($|:)|supervision-host:)'

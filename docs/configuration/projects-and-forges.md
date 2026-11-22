@@ -12,6 +12,20 @@ An absent file, or a project not listed in it, changes nothing.
 For the Navigator and Deep Thought homes, add the line `PropertyCompass2` to the file.
 `bin/fm-brief.sh`'s header owns the matching rule.
 
+## Forge selection (data/projects.md forge= token)
+
+A project with no `forge=` token is served by the GitHub tooling, `gh` and `gh-axi`, exactly as before the token existed, and the token changes nothing for existing entries.
+A remote-backed project on a Forgejo or Gitea server is registered with `forge=forgejo`, one value of the same closed `forge=` binding that Gerrit uses; `bin/fm-project-mode.sh`'s header owns its grammar, values, and refusals, and `bin/fm-project-mode.sh --forge <name>` reads it back.
+Firstmate passes the binding to `bin/fm-brief.sh --forge` at intake the same way it passes `--mode`, and `bin/fm-spawn.sh` refuses a brief whose forge disagrees with the registry; on `forgejo` the generated ship brief names `tea` instead of `gh-axi`.
+The URL-driven provider dispatch in [`bin/fm-pr-lib.sh`](../../bin/fm-pr-lib.sh) recognizes a GitHub, GitLab, Gerrit, or Forgejo PR/MR/change URL once one exists, regardless of this token.
+
+A Forgejo (or Gitea) project needs `tea` on `PATH` plus a `tea login` registered for that project's host (`tea login add`); the login is matched to a PR's host automatically, never configured per project.
+A GitLab project needs no forge token, only `glab` on `PATH`, authenticated via `glab auth login`.
+[`docs/gitlab-merge-watch.md`](../gitlab-merge-watch.md) and [`docs/forgejo-tea-integration.md`](../forgejo-tea-integration.md) hold the empirically verified CLI behavior each provider's watch and merge path depends on.
+
+A project whose reviews are created by a review tool that uploads its own snapshot of the worker's commits is registered `[direct-PR forge=external]`; it is never detected, ships `direct-PR` only, carries no yolo, and needs the [external review tool](#external-review-tool-configexternal-reviewmd-configexternal-review-url-configexternal-review-backup) configuration below.
+[`docs/external-review-forge.md`](../external-review-forge.md) is the design.
+
 ## Merger home (data/projects.md merger= token)
 
 A project entry may name the one home that merges its PRs with `merger=<home>`, the merging home's secondmate id or `main` for the primary home, for example `- PropertyCompass2 [no-mistakes +yolo merger=slarti] - ...`.
@@ -47,7 +61,7 @@ Like `merger=`, the token is read from the merging home's own `data/projects.md`
 ## Landing lag (data/projects.md landing-lag= token)
 
 A project entry may limit how long its oldest ready PR may wait to land with `landing-lag=<hours>`, a positive whole number of hours, for example `- PropertyCompass2 [no-mistakes +yolo merger=slarti landing-lag=48] - ...`.
-While any ready PR for the project on this machine has waited longer than that, `bin/fm-spawn.sh` launches no new ship for it: it creates nothing, leaves the backlog item queued, prints one `deferred:` line naming the oldest ready PR and its age, and exits 75, exactly like a [project capacity](../configuration.md#project-capacity-configproject-capacity) deferral.
+While any ready PR for the project on this machine has waited longer than that, `bin/fm-spawn.sh` launches no new ship for it: it creates nothing, leaves the backlog item queued, prints one `deferred:` line naming the oldest ready PR and its age, and exits 75, exactly like a [project capacity](capacity.md#project-capacity-configproject-capacity) deferral.
 A PR's wait starts when `bin/fm-pr-check.sh` first records it as ready, and ready PRs in every local home on this machine count, as do those a remote home reports in its cached home summary (less than two hours old, otherwise skipped with one `warning:` line).
 Only a ready PR that can land counts: one whose task records `yolo=off` waits for the captain's merge word, so it does not count, and neither does one whose task's row in its home's backlog is held for the captain (`bin/fm-captain-hold.sh`) or has an unresolved `blocked-by` dependency.
 A ship spawned with `--landing-exempt` is never held, and that flag is how a fix or landing work is marked; a relaunch, a scout, and a secondmate are never held either.
@@ -63,7 +77,7 @@ A project whose clone's origin is on github.com is in PR drain from the moment i
 An eligible PR is a ready (non-draft) open PR that is not a promotion PR (head branch `staging`) and is not waiting for the captain's merge word on positive local evidence ([CI slots](#ci-slots-configci-slots) owns that signal); a PR held for a release day (Wednesday) has no signal yet, so it counts.
 The state is derived from GitHub on every read, so every home on every machine sees the same answer with no shared marker: between S and 24, the PRs closed in the last 14 days (closed drafts and promotion PRs left out) are walked back from now to whichever of 24 or S came last, and no write ever reaches the repository.
 While a repository is in drain, `bin/fm-spawn.sh` launches no fresh ship for it unless the brief declares a class with `bin/fm-brief.sh --pr-drain <class>`: an exemption class (`production-outage`, `cve`, `security`, `wolverine`, `lee-research`, `lee-explicit`, `officer`, `scheduled`) or a landing job (`restack`, `red-gate-fix`, `returned-pr-fix`, `review`).
-An undeclared ship is deferred exactly like a [project capacity](../configuration.md#project-capacity-configproject-capacity) deferral: one `deferred:` line naming the repository, its open count and the flag, exit 75, nothing created and the item still queued.
+An undeclared ship is deferred exactly like a [project capacity](capacity.md#project-capacity-configproject-capacity) deferral: one `deferred:` line naming the repository, its open count and the flag, exit 75, nothing created and the item still queued.
 When GitHub cannot be read, or 14 days of history hold neither 24 nor S (or hold 1000 or more closed PRs, the GitHub search cap), the state is unknown and the spawn launches with one `warning:` line; scouts, relaunches and secondmates are never held.
 Every ship brief that opens a pull request (no-mistakes or direct-PR on a forge with pull requests) and declares no `--pr-drain` class carries a PR drain check in its Definition of done: just before opening a new pull request the worker runs `bin/fm-pr-drain.py state` in its worktree, and while that prints `on` it pushes its branch only, opens no pull request and reports the branch; at `off`, `unknown` or `none` it opens the pull request as usual. A worker whose branch already has an open pull request, such as an unclassed fix to a returned or red PR, skips the check and finishes through its Definition of done, /no-mistakes included.
 A ship brief scaffolded with `--project` while its repository is in drain also gets a `# PR drain` section saying so, unless its class is `production-outage`, `cve`, `security` or a landing job; for the other exemption classes that section carries the same check.
@@ -74,14 +88,14 @@ A brief declaring `security` (a high or critical security fix, which starts at o
 ## CI slots (config/ci-slots)
 
 The optional local, gitignored `config/ci-slots` declares, per project, the total concurrent gate and admission slots across every host (S), so the ready open-PR queue (P) never outgrows them, because a longer queue drains slower as its branches fall behind staging.
-It holds one `<project> <slots>` line per project, in the same format as [project capacity](../configuration.md#project-capacity-configproject-capacity): the project's registered name, then a positive whole number, with `#` comments and blank lines ignored.
+It holds one `<project> <slots>` line per project, in the same format as [project capacity](capacity.md#project-capacity-configproject-capacity): the project's registered name, then a positive whole number, with `#` comments and blank lines ignored.
 The main home writes it (for PropertyCompass2 today, `PropertyCompass2 4`, Slarti's 2 slots plus Deep Thought's 2; to be confirmed with Slarti), and the inherited-local-material push copies it to every second-mate home, local and remote, so each dispatching home reads its own copy.
 A project with no line is never held.
 The slots hold PR openings, never ship starts (captain, 2026-11-21): `bin/fm-spawn.sh` reads neither S nor the cap, so a ship always starts and builds to a finished, verified branch.
 A brief for a ship of a project that declares S carries a CI slots check that the worker runs just before it opens a pull request, as it does the [PR drain](#pr-drain-open-pr-drain-rule) check: `python3 bin/fm-pr-drain.py gate . <project>`.
 While it prints `hold`, the worker opens no pull request and does not run `/no-mistakes`, pushes the branch, reports `done: branch <branch> pushed, no PR (CI slots)` and stops, and firstmate opens the pull request when a place frees.
 The worker's own tests and gate ran before it parked the branch, and the no-mistakes review runs when the branch is released, so nothing reaches a pull request unvalidated.
-Firstmate records that parked branch with `bin/fm-ready-branch.sh <task> <branch>`, which appends `ready_branch=<branch>` to the task record, and a recorded ready branch frees the ship's [project capacity](../configuration.md#project-capacity-configproject-capacity) place exactly as a recorded ready PR does, so parked branches never fill the places.
+Firstmate records that parked branch with `bin/fm-ready-branch.sh <task> <branch>`, which appends `ready_branch=<branch>` to the task record, and a recorded ready branch frees the ship's [project capacity](capacity.md#project-capacity-configproject-capacity) place exactly as a recorded ready PR does, so parked branches never fill the places.
 After recording, `bin/fm-ready-branch.sh` returns the ship's pool copy through `bin/fm-tree-park.sh park` when the copy is clean, on the recorded branch, and equal to the pushed branch, so a parked branch holds no pool slot either; otherwise it prints `copy kept: <why>` and the watcher's sweep retries later.
 `bin/fm-ready-branch.sh list` prints `<task> <branch> <project>` for each recorded ready branch with no PR, parked or not; on every heartbeat and after any PR of the project lands, firstmate re-runs the gate and, while it prints `open`, releases parked branches by steering each ship's worker, which leases a fresh copy at the pushed branch and relaunches the worker to run `/no-mistakes` on the branch, which validates it and opens the PR ([ship landing](../../.agents/skills/ship-landing/SKILL.md)).
 Each released worker re-runs its own pre-PR gate check, which is the race guard, and on `hold` simply parks again; a brief overshoot of S by a PR opened at the same time from another home is accepted.
@@ -194,3 +208,43 @@ for heading in Testing Risk 'How to revert'; do
   grep -Eq "^#+ $heading\$" <<<"$body" || { echo "PR body has no $heading heading"; exit 1; }
 done
 ```
+
+## PR text selection (data/projects.md pr= token)
+
+A project with no `pr=` token keeps today's behavior: the no-mistakes pipeline's `pr` step writes the pull request title and body and refreshes them on every validated push.
+A project whose outside maintainer reviews and merges, and whose hand-written PR text the pipeline would overwrite, is registered `[no-mistakes pr=manual]`.
+`pr=manual` is the one accepted value, off by default, read like `forge=`: `bin/fm-project-mode.sh --pr <name>` reads it back, and its header owns the grammar and refusals.
+It applies to a `no-mistakes` ship on a project with no `forge=` binding only, so the registry refuses it on `direct-PR`, which already leaves the PR text to the worker, on `local-only`, which opens no PR, and beside a forge.
+Firstmate passes it to `bin/fm-brief.sh --pr manual` at intake the same way it passes `--forge`, `bin/fm-spawn.sh` refuses a brief whose `pr=` disagrees with the registry, and `bin/fm-promote.sh` reads it from the registry.
+The generated brief then has the worker pass `--skip pr,ci` on every `no-mistakes axi run`, write the PR title and body itself, open or update the PR with `gh-axi`, and wait for the PR's checks; `bin/fm-dod-lib.sh` owns that text.
+The token is the thin registry form of no-mistakes' own keep-text option, [kunchenguid/no-mistakes#1648](https://github.com/kunchenguid/no-mistakes/issues/1648), and is meant to map onto it once that exists.
+
+## GitHub Enterprise hosts (config/github-hosts)
+
+`config/github-hosts` is an optional local, gitignored file naming the GitHub Enterprise hosts whose pull request URLs this home accepts, one lowercase hostname per line, such as `leadsonline.ghe.com`.
+The PR library reads `github-hosts` from `FM_CONFIG_OVERRIDE` when nonempty, otherwise from `$FM_HOME/config`, falling back when `FM_HOME` is unset or empty to `config/` under the library's own code root, captured when the library is sourced.
+`github.com` needs no line and is always accepted.
+Blank lines, `#` comments, and any other line authorize nothing: only a line equal to the host is a match, so the file cannot be made to allow more than it spells out.
+An absent, unreadable, or symlinked file authorizes no Enterprise hosts.
+
+GitHub pull request URLs are otherwise identical on every GitHub host, so a hostname's shape cannot show whether it is a GitHub host or a look-alike such as `github.com.evil`, and [`bin/fm-pr-lib.sh`](../../bin/fm-pr-lib.sh)'s `fm_github_host_allowed` accepts an Enterprise host only when this file names it.
+That covers registration through `bin/fm-pr-check.sh`, the merge poll, `bin/fm-pr-merge.sh`, and the merge-outcome and teardown reads, which all carry the parsed host through `gh` and `gh-axi` via `GH_HOST`.
+A host named here still needs its own `gh` authentication (`gh auth login --hostname <host>`), exactly as `gh` itself requires.
+
+The file is local to each home and not part of secondmate inherited configuration, so a secondmate home that serves such a project names the host in its own copy.
+The host is part of each recorded PR identity, so removing a host while a task's pull request is still open stops that task's merge monitoring rather than pointing it at another host.
+
+## External review tool (config/external-review.md, config/external-review-url, config/external-review-backup)
+
+These optional local, gitignored files configure a home's `forge=external` projects; a home with no such project needs none of them.
+
+| File | Required | Meaning |
+| --- | --- | --- |
+| `config/external-review.md` | yes, for any `forge=external` scaffold or spawn | Worker instructions for the home's review tool: how to validate, upload, and read review state, and which state is the stopping point. `bin/fm-dod-lib.sh` appends it verbatim to the Definition of done under `## Review tool instructions (home configuration)`. |
+| `config/external-review-url` | no | One extended regular expression a ready review URL must match in full. Without it, any `https://` URL with no whitespace, control characters, query, or fragment that is not a forge pull request URL is accepted. |
+| `config/external-review-backup` | no | Line 1 names a git remote in the project clone that is the captain's personal backup remote; an optional line 2, `prefix=<ref-prefix>`, sets the backup ref prefix, default `backup/`. |
+
+A missing, unreadable, or empty adapter stops the scaffold or spawn, as does an adapter carrying its own `Delivery contract: mode=` line, because a worker with no upload instructions would otherwise improvise a push.
+A backup remote named `origin`, absent from the project clone, or pointing at one of origin's URLs stops the spawn, as does a backup prefix that is empty, invalid, or equal to or starting with the task branch prefix.
+The files are static, never executed, and local to each home rather than part of secondmate inherited configuration.
+`bin/fm-external-review-lib.sh`'s header owns the readers, and [`docs/external-review-forge.md`](../external-review-forge.md) owns the backup rule and its teardown consequence.

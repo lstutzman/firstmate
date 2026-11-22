@@ -2,6 +2,38 @@
 
 Part of the [configuration reference](../configuration.md).
 
+## Away-mode supervisor backend (FM_SUPERVISOR_BACKEND / FM_SUPERVISOR_TARGET)
+
+The `/afk` sub-supervisor injects escalation digests into firstmate's own endpoint independently of where new task endpoints are spawned.
+It supports `tmux`, `herdr`, and `rex` supervisor panes and `t3code` supervisor threads.
+
+Set `FM_SUPERVISOR_BACKEND=tmux|herdr|rex|t3code` and `FM_SUPERVISOR_TARGET=<target>` to override both axes explicitly.
+For tmux, accepted targets are `%pane-id`, `@window-id`, `session:@window-id`, a bare session, `session:window-name`, `session:index`, `session:index.pane-index`, and the supported `=session:=window` exact-marker forms; the `fm_backend_target_exists` header in `bin/fm-backend.sh` owns this grammar.
+For herdr, the target is `"<session>:<pane-id>"`; for Rex it is `<session-uuid>:<block-uuid>`, with both kind prefixes removed; and for t3code it is the thread id.
+Without overrides, backend detection uses `$TMUX_PANE` first, then `HERDR_ENV=1` with `HERDR_PANE_ID`, then `TERM_PROGRAM=rex` with both `REX_SESSION` and `REX_BLOCK`, then `HC_TERMINAL_ID` with `HC_TERMINAL_SOCKET` (resolving `hc`), then a cwd match over T3's live threads only when T3 Code is explicitly selected, then falls back to `tmux`.
+T3 discovery requires explicit `FM_BACKEND=t3code` or `config/backend=t3code` and the `config/t3code-token` credential from the [T3 sign-in](../t3code-backend.md#sign-in) under the effective config directory before making a T3 call.
+
+That keeps a nested tmux or Herdr pane on its own transport, matching the runtime backend's innermost-first rule.
+Target detection uses `FM_SUPERVISOR_TARGET`, then `$TMUX_PANE`, then `"${HERDR_SESSION:-default}:${HERDR_PANE_ID}"` under herdr, then the prefix-stripped `REX_SESSION` and `REX_BLOCK` under Rex, then `"${HC_SESSION:-default}:${HC_TERMINAL_ID}"` when both hc terminal markers are present, then the thread id from that T3 cwd match, then the legacy `firstmate:0` tmux fallback with a warning.
+
+Selecting or discovering any other supervisor backend, including `hc`, `zellij`, `orca`, `cmux`, or `tern`, refuses at daemon startup instead of trying tmux injection primitives against a non-tmux pane.
+
+## Away-mode wedge alarm channels (config/wedge-alarm)
+
+When away-mode injection wedges past `FM_MAX_DEFER_SECS`, the sub-supervisor raises a loud, rate-limited alarm.
+Beyond the durable `state/.subsuper-inject-wedged` marker and the tmux status-line flash, it attempts a configured backend-independent active alert that can reach the captain even when every pane and its backend status-line is unreadable.
+
+### Channels and overrides
+
+`config/wedge-alarm` (local, gitignored) lists channel directives, one per non-empty, non-comment line; every listed non-`off` channel fires, best-effort.
+`FM_WEDGE_ALARM_CHANNEL` overrides the file with a single directive.
+
+Directives are `off` (a position-independent kill switch that disables every active alert), `auto`/`default`, `osascript` (macOS Notification Center banner), `herdr` (herdr UI notification), and `command:<cmd>` (run `<cmd>` via `sh -c`, summary on `$1` and stdin).
+An absent file means `auto`, i.e. default-on on macOS: the alarm exists precisely so a wedged away-mode primary is never silent, and it fires at most once per max-defer window after a genuine wedge.
+
+A missing or failing channel logs and falls through to the next, never crashing the daemon.
+See [`wedge-alarm.md`](../wedge-alarm.md) for the current channel reference, [`verification/supervision.md`](../verification/supervision.md#wedge-alarm-channels) for active evidence, and [`examples/wedge-alarm`](../examples/wedge-alarm) for a copyable config.
+
 ## Lee-step host (config/lee-step-host)
 
 The optional local, gitignored `config/lee-step-host` names, on its first non-blank line not beginning with `#`, the machine the captain reads Lee steps on (main's session), not the machine the worker or script runs on.
@@ -118,3 +150,128 @@ systemctl --user enable --now firstmate-fleet-alarm.timer
 To turn off independent alerts, run `launchctl bootout "gui/$(id -u)" "$HOME/Library/LaunchAgents/com.firstmate.fleet-alarm.plist"` on macOS or `systemctl --user disable --now firstmate-fleet-alarm.timer` on Linux.
 To turn off the registered check too, run `bash bin/fm-check-unregister.sh fleet-alarm` with the same `FM_HOME`.
 Neither action removes the alarm's history or turns off the ledger for other producers.
+
+## Turn-end pane-churn absorb (config/turnend-churn-absorb)
+
+The optional local, gitignored `config/turnend-churn-absorb` presence flag opts this home into a default-off third form of positive work evidence in watcher triage.
+With it present, every referenced task must independently show positive work evidence, and an eligible bare turn-ended task that lacks authoritative proof may satisfy that requirement when its pane content changed since the previous poll.
+
+### Evidence and time limit
+
+It stays opt-in because the other two proofs read a verdict the harness itself vouches for while this one infers execution from rendered bytes; with the flag absent triage behaves exactly as it did before.
+`FM_TURNEND_CHURN_ABSORB_SECS` is a positive integer number of seconds, defaults to `900`, and bounds how long one endpoint's turn-ends may ride that evidence before surfacing anyway.
+
+An invalid value fails closed and surfaces the wake.
+The bound is required rather than cosmetic because churn and pane staleness read the same pane.
+
+The flag is a home-local supervision-noise preference and is not inherited by secondmate homes, which run their own crew mix.
+[`architecture.md`](../architecture.md) owns the triage contract and `bin/fm-watch.sh`'s `signal_turnend_panes_churned` owns the exact evidence and fail-closed boundaries.
+
+## Parked-gate wait deferral (config/wedge-defer-parked-gate)
+
+The optional local, gitignored `config/wedge-defer-parked-gate` presence flag opts this home into a default-off further form of wait evidence in the watcher's wedge timer.
+
+### When a waiting gate defers an alarm
+
+With it present, a provably-working pane about to escalate is also deferred to the `FM_PAUSE_RESURFACE_SECS` recheck cadence when its crew's own current state is a validation gate whose answer is owed to the supervisor and whose decision for that run is still open, and the recheck names the supervisor and the action that clears the lane instead of reporting a suspected wedge.
+It stays opt-in because the other evidence is a written record of the lane's silence - the worker's own declaration or firstmate's backlog captain hold - while this is derived from a pipeline's gate state, so which lanes give up the escalation ladder for it is a home's choice.
+
+With the flag absent the wedge timer spends no fold or current-state read for it, writes no record, and keeps the unchanged escalation schedule, reasons, and `demand-deep-inspection` wording.
+The flag is a home-local supervision-noise preference and is not inherited by secondmate homes, which supervise their own crew and own that trade separately.
+
+[`architecture.md`](../architecture.md) owns the wait-evidence contract and which records may take the ladder away; `bin/fm-watch.sh`'s `wedge_wait_evidence` owns the exact derivation and its fail-closed boundaries.
+
+## Wedge evidence guards (config/wedge-evidence-guards)
+
+The optional local, gitignored `config/wedge-evidence-guards` file opts this home into consulting operator-owned [Jev guards](../jev-guards.md) before the watcher wedge-escalates a quiet live pane.
+It lists one absolute guard executable path per line, and blank lines and `#` comments are skipped.
+The file and every listed executable must be regular files owned by the watcher's user and not group or world writable, or they are never run.
+
+### When a guard defers an alarm
+
+Only at the wedge threshold, after the declared-wait, worktree-write, dead-endpoint, and opt-in validating-run checks have all let the escalation through, the watcher runs each guard as `<guard> --json` with `FM_GUARD_TASK` and `FM_GUARD_ENDPOINT` set, bounded by `FM_WEDGE_GUARD_TIMEOUT_SECS`.
+The first guard that prints one JSON object with `status` `CRITICAL` and a non-empty `recommendation` defers that escalation by one window, without advancing the escalation count.
+After `FM_WEDGE_GUARD_DEFER_MAX` consecutive deferrals the escalation fires anyway, and its reason names the guard and the first line of its recommendation.
+A timeout, non-zero exit, malformed output, `OK`, `WARNING`, or `UNKNOWN` changes nothing, and a dead or missing endpoint is reported before any guard is asked.
+A guard's answer is evidence only and never authorizes a decision, merge, cleanup, or any other action.
+
+With the file absent the watcher runs no guard, writes no record, and keeps the unchanged escalation schedule, reasons, and `demand-deep-inspection` wording.
+The file is home-local and not inherited by secondmate homes.
+
+### Example operator family
+
+Firstmate ships no default guard for this; host-specific families belong to the operator's own layer.
+For example, an operator whose workers hold numbered tickets in a local queue directory could list a guard like this:
+
+```sh
+#!/bin/sh
+# CRITICAL while this task holds a queue ticket whose recorded job is alive.
+ticket="$HOME/queue/$FM_GUARD_TASK.ticket"
+if [ -f "$ticket" ] && kill -0 "$(head -n 1 "$ticket")" 2>/dev/null; then
+  echo '{"name":"ticket-dir","status":"CRITICAL","recommendation":"queue ticket held by a live job"}'
+else
+  echo '{"name":"ticket-dir","status":"OK","recommendation":"no live queue ticket"}'
+fi
+```
+
+`bin/fm-watch.sh`'s `wedge_guard_evidence` and `wedge_defer_guard` own the exact invocation, deferral record, and fail-open boundaries.
+
+## Worker-declared wait deferral (config/wedge-defer-worker-wait)
+
+The optional local, gitignored `config/wedge-defer-worker-wait` presence flag opts this home into a default-off form of wait evidence in the watcher's wedge timer.
+With it present, a provably-working pane about to escalate is deferred to the `FM_PAUSE_RESURFACE_SECS` recheck cadence when its newest status line is the worker's own still-open `blocked:` or `needs-decision:` line, and the recheck names firstmate and that verb's clearing action instead of reporting a suspected wedge.
+Lines under supervisor-reserved keys do not count, the escalation count does not rise, and any newer status line or a newer acknowledged steering-inbox record ends the deferral, so an answered lane that never resumes returns to the ladder.
+The away-mode daemon honors the same evidence before it escalates a possible-wedge wake.
+
+With the flag absent the wedge timer spends no read for it and keeps the unchanged escalation schedule, reasons, and `demand-deep-inspection` wording.
+The flag is a home-local supervision-noise preference and is not inherited by secondmate homes.
+[`architecture.md`](../architecture.md) owns the wait-evidence contract and `bin/fm-classify-lib.sh`'s `status_worker_wait_verb` owns which lines count.
+
+## Superseded declared-wait wake (config/paused-wait-supersession)
+
+The optional local, gitignored `config/paused-wait-supersession` presence flag opts this home into a default-off check in the watcher's declared-wait handling.
+With it present, a pane whose worker's newest wait line is a `paused:` declaration is surfaced ahead of the `FM_PAUSE_RESURFACE_SECS` recheck cadence when its crew's own current state shows the wait no longer explains the quiet: the run is parked at a human-owed gate with no open `needs-decision` for that run, or the run is terminal.
+Each superseding state surfaces once per declaration and run on both the idle and busy paths, and repeats use the same bounded recheck cadence.
+It stays opt-in because it adds a wake reason that fires ahead of that cadence and spends a current-state read on each paused poll, so which lanes pay that read for earlier notice is a home's choice.
+
+With the flag absent the watcher spends no current-state read for it and keeps the unchanged declared-wait cadence and wording. The flag affects the foreground watcher only; away mode keeps today's declared-wait pause cadence.
+The flag is a home-local supervision-noise preference and is not inherited by secondmate homes.
+[`architecture.md`](../architecture.md) owns the declared-wait contract and `bin/fm-watch.sh`'s `paused_wait_superseded` owns the exact derivation, reasons, and throttle.
+
+## Silent paused rechecks (config/paused-recheck-silent)
+
+The optional local, gitignored `config/paused-recheck-silent` presence flag opts this home into a default-off quiet form of the declared-wait recheck.
+With it present, the watcher's `FM_PAUSE_RESURFACE_SECS` recheck of a worker's `paused:` declaration queues no wake when the declaration is unchanged since its first recheck wake, the agent is confirmed alive (a secondmate's liveness is never read), its declared `until` time is not yet due, and the task has no open decision.
+The watcher records the recheck in the declaration's existing throttle marker, so the recheck cadence is unchanged.
+A first sight, a changed status line, a due declared time, and an open decision still wake.
+Captain-held transfers are not affected.
+
+With the flag absent, every recheck wakes as before.
+The flag is a home-local supervision-noise preference and is not inherited by secondmate homes.
+`bin/fm-watch.sh`'s `handle_paused_stale` owns the exact condition.
+
+## Validating-run deferral (config/wedge-defer-validating)
+
+The optional local, gitignored `config/wedge-defer-validating` presence flag opts this home into a default-off deferral in the watcher's wedge timer.
+With it present, a provably-working pane about to escalate is deferred to the `FM_PAUSE_RESURFACE_SECS` recheck cadence when its crew's attributed no-mistakes run step is `validating (running)` or `validating (fixing)`, because the worker is correctly idle behind its own drive call while the pipeline executes the round.
+The recheck names that run instead of reporting a suspected wedge, the escalation count does not rise, and a run that is parked, terminal, ci-monitoring, absent or unreadable keeps the ladder.
+The away-mode daemon has no such deferral of its own.
+
+With the flag absent the wedge timer spends no current-state read for it and keeps the unchanged escalation schedule, reasons, and `demand-deep-inspection` wording.
+The flag is a home-local supervision-noise preference and is not inherited by secondmate homes.
+[`architecture.md`](../architecture.md) owns the deferral contract and `bin/fm-classify-lib.sh`'s `crew_run_is_validating` owns which verdicts count.
+
+## Pause ceiling (config/pause-ceiling)
+
+The optional local, gitignored `config/pause-ceiling` presence flag opts this home into a default-off ceiling on declared `paused:` waits.
+With it present, a dated pause becomes overdue once more than `FM_PAUSE_RESURFACE_SECS` has passed since its `until` time.
+An undated pause becomes overdue once it is older than `FM_PAUSE_UNDATED_MAX_SECS` (default 86400 seconds), aged from its own `[at=]` stamp or, when the line has none, from the status file's last change.
+An overdue pause appends one stable `blocked [key=paused-overdue-<task>]` decision to the task's status log, asking the captain to decide or release the wait, and raises one stale wake in place of the pause recheck.
+It never enters the wedge escalation ladder and never interrupts, kills, or tears anything down.
+The decision then stays quiet through pane churn and through resolutions of other keys, and closes when the worker appends a status event other than another `blocked:` line or a repeat of the same pause, or when a `resolved` line closes that key.
+The watcher raises it, and under an away or quiet posture record the away-mode daemon raises it and reports it once.
+Teardown removes the task's `state/.paused-overdue-<task>` record.
+
+With the flag absent no pause is ever overdue, no such decision opens, and declared waits keep the unchanged `FM_PAUSE_RESURFACE_SECS` recheck cadence.
+The flag is a home-local supervision preference and is not inherited by secondmate homes.
+`bin/fm-classify-lib.sh`'s `status_pause_is_overdue` owns the thresholds, and `bin/fm-watch.sh`'s `pause_overdue_reconcile` and `bin/fm-supervise-daemon.sh`'s `reconcile_overdue_pause` own when the decision closes.

@@ -2,7 +2,7 @@
 # fm-exclude-tools-lib.sh - shared parsing and runtime-support checks for
 # config/crew-exclude-tools, sourced by bin/fm-spawn.sh and bin/fm-control.sh.
 #
-# docs/configuration.md "Worker tool exclusions" owns the file format and
+# docs/configuration/harnesses.md "Worker tool exclusions" owns the file format and
 # operator contract; bin/fm-spawn.sh's header owns launch-flag mechanics.
 # Name verification belongs inside the worker's loaded-tool registry, never
 # in an out-of-band server connection from these launch-time checks.

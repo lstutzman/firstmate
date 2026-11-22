@@ -20,7 +20,7 @@
 #
 # Why it exists: a bare `tasks-axi` resolves the tracked `.tasks.toml` paths
 # against its working directory, so from the code root it forks the queue
-# whenever the home lives elsewhere; docs/configuration.md ("Backlog backend")
+# whenever the home lives elsewhere; docs/configuration/backlog-and-decisions.md ("Backlog backend")
 # owns that rationale.
 #
 # Addressing is bin/fm-backlog-transition-lib.sh's fm_backlog_tasks_axi_addressing,

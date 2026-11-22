@@ -93,7 +93,7 @@ If a session exits mid-cycle and leaves an orphaned auto-arm hook, the replaceme
 [`turnend-guard.md`](turnend-guard.md#auto-arm-generation-claim) owns the open-claim definition.
 While supervision is still needed and away mode remains inactive, an actionable close wakes the idle session through exit 2, unless the home's `config/wake-auto-ack` no-wake path acknowledges a batch of only no-action wakes first ([configuration](configuration/supervision.md#wake-auto-acknowledge-configwake-auto-ack)).
 StopFailure-driven continuations are paced rather than dropped during persistent API errors; after waiting, the hook stands down silently if away mode appeared or supervision is no longer needed.
-The script header owns the storm-bound mechanics, [configuration](configuration.md#environment-variables) lists the cooldown override, and [StopFailure verification](verification/supervision.md#stopfailure-auto-arm) records the Herdr-hosted evidence and deterministic regression entry point.
+The script header owns the storm-bound mechanics, [configuration](configuration/environment-variables.md#environment-variables) lists the cooldown override, and [StopFailure verification](verification/supervision.md#stopfailure-auto-arm) records the Herdr-hosted evidence and deterministic regression entry point.
 
 ### Claude session-lock ownership
 
@@ -469,7 +469,7 @@ The foreign marker-lock contention exception described above still retains singl
 A live foreign holder that outlasts the bound during singleton-steal publication or a recovery transition ends the child with `watcher: FAILED - startup lock <path> held by live pid <n>`; the arm relays the child's final output even when startup exits during the safe-point wait.
 A handling successor's resurface decision reads the queue inside the same arm-check lock hold that announces the marker, so no separate queue wait can skip a wake the transition already announced.
 `FM_ARM_CONFIRM_TIMEOUT` is a liveness backstop rather than a fork budget, while successor hand-off confirmation uses the separate `FM_ARM_SUCCESSOR_CONFIRM_TIMEOUT`.
-Defaults and overrides, including Claude Stop's outer successor-status wait, are owned by [configuration](configuration.md#environment-variables).
+Defaults and overrides, including Claude Stop's outer successor-status wait, are owned by [configuration](configuration/environment-variables.md#environment-variables).
 
 ## Regression coverage
 

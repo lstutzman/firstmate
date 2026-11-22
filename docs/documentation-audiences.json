@@ -370,6 +370,46 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/configuration/capacity.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "docs/configuration/dispatch.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "docs/configuration/environment-variables.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "docs/configuration/harnesses.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "docs/configuration/home-and-state.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "docs/configuration/lavish-review-boards.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "docs/configuration/process-events.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "docs/configuration/prs-and-pipeline.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "docs/configuration/runtime-backend.md",
+      "audience": "operator-current"
+    },
+    {
+      "path": "docs/configuration/tools.md",
+      "audience": "operator-current"
+    },
+    {
       "path": "docs/configuration/away-and-alarms.md",
       "audience": "operator-current"
     },
