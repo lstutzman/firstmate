@@ -513,8 +513,80 @@ test_snapshot_fold_stops_at_its_endpoint_under_a_small_budget() {
   pass "a snapshot fold past one budget reaches exactly its captured endpoint"
 }
 
+# A scan killed partway through its rebuilds keeps what it finished, so repeated
+# runs converge. The kill lands inside the third file's awk pass: the first two
+# files keep their cursors, the third keeps none (the cursor write is atomic, so
+# it is never torn), and the next run re-reads only the files left unfinished.
+test_killed_rebuild_scan_keeps_progress_and_converges() {
+  local dir state probe n f want got off size scan_pid leftover
+  dir=$(make_case cursor-killed-scan); state="$dir/state"; probe="$dir/probe.tsv"
+  for n in 1 2 3 4; do make_big_log "$state/t$n.status" 800; done
+  want=$(for n in 1 2 3 4; do
+    bash -c '. "$1"; status_open_decisions "$2"; echo' _ "$ROOT/bin/fm-classify-lib.sh" "$state/t$n.status" | sed "s/^/t$n\t/"
+  done)
+  : > "$probe"
+  : > "$dir/awk-calls"
+  # Hold the third file's awk pass open, then kill the whole scan (its process
+  # group, subshells included) while that pass is in flight.
+  # shellcheck disable=SC2016
+  FM_OPEN_DECISIONS_READ_PROBE="$probe" setsid bash -c '
+    . "$1"
+    eval "_fm_orig_$(declare -f status_open_decisions)"
+    calls_file=$3
+    # The fold runs in a command substitution, so count calls in a file.
+    status_open_decisions() {
+      echo call >> "$calls_file"
+      [ "$(wc -l < "$calls_file")" -lt 3 ] || sleep 600
+      _fm_orig_status_open_decisions "$@"
+    }
+    scan_open_decisions_incremental "$2" > /dev/null' _ "$ROOT/bin/fm-classify-lib.sh" "$state" "$dir/awk-calls" &
+  scan_pid=$!
+  # shellcheck disable=SC2016
+  timeout 60 bash -c 'until [ "$(wc -l < "$1")" -ge 3 ]; do sleep 0.1; done' _ "$dir/awk-calls" \
+    || { kill -KILL -- "-$scan_pid" 2>/dev/null; fail "the scan never reached its third rebuild"; }
+  kill -KILL -- "-$scan_pid"
+  wait "$scan_pid" 2>/dev/null
+  for n in 1 2; do
+    f="$state/t$n.status"
+    size=$(LC_ALL=C wc -c < "$f" | tr -d '[:space:]')
+    off=$(sed -n 's/^offset=//p' "$state/.t$n.open-decisions-cursor")
+    [ "$off" = "$size" ] || fail "t$n: the killed scan did not keep its finished rebuild (offset '$off', size $size)"
+  done
+  [ ! -e "$state/.t3.open-decisions-cursor" ] || fail "t3: the file killed mid-rebuild left a cursor: $(find "$state" -maxdepth 1 | tr "\n" " ") calls=$(wc -l < "$dir/awk-calls")"
+  leftover=$(find "$state" -maxdepth 1 -name '.t3.open-decisions-cursor.read.*' | wc -l | tr -d ' ')
+  [ "$leftover" = 1 ] || fail "t3: the kill should leave the rebuild's chunk copy behind, found $leftover"
+  : > "$probe"
+  got=$(FM_OPEN_DECISIONS_READ_PROBE="$probe" bash -c '. "$1"; scan_open_decisions_incremental "$2"' _ "$ROOT/bin/fm-classify-lib.sh" "$state") \
+    || fail "the rerun after the kill failed"
+  leftover=$(find "$state" -maxdepth 1 -name '.*.open-decisions-cursor*.read.*')
+  [ -z "$leftover" ] || fail "the rerun left a killed scan's chunk copy behind: $leftover"
+  [ "$got" = "$want" ] || fail "the rerun after the kill differs from the whole-file folds: $(diff <(printf %s "$want") <(printf %s "$got") | head -6)"
+  [ "$(cut -f1 "$probe" | sort | tr '\n' ' ')" = "$state/t3.status $state/t4.status " ] \
+    || fail "the rerun re-read finished files or skipped unfinished ones: $(cut -f1 "$probe" | tr '\n' ' ')"
+  : > "$probe"
+  FM_OPEN_DECISIONS_READ_PROBE="$probe" bash -c '. "$1"; scan_open_decisions_incremental "$2" > /dev/null' _ "$ROOT/bin/fm-classify-lib.sh" "$state"
+  [ ! -s "$probe" ] || fail "a third run still read status bytes: $(cat "$probe")"
+  pass "a scan killed mid-rebuild keeps finished files and converges on the next run"
+}
+
+# A rebuild slice stopped by a kill after its cursor landed resumes from that
+# cursor on the per-line path, and still reaches the whole-file fold's set.
+test_killed_rebuild_slice_resumes_to_the_whole_file_fold() {
+  local dir state status want got
+  dir=$(make_case cursor-killed-slice); state="$dir/state"; status="$state/task.status"
+  make_big_log "$status" 3000
+  want=$(bash -c '. "$1"; status_open_decisions "$2"' _ "$ROOT/bin/fm-classify-lib.sh" "$status")
+  FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES=4000 \
+    bash -c '. "$1"; status_open_decisions_incremental "$2" >/dev/null; exit 0' _ "$ROOT/bin/fm-classify-lib.sh" "$status"
+  got=$(bash -c '. "$1"; status_open_decisions_incremental_complete "$2"' _ "$ROOT/bin/fm-classify-lib.sh" "$status")
+  [ "$got" = "$want" ] || fail "resuming a stopped rebuild slice differs from the whole-file fold: $got"
+  pass "a rebuild stopped after its first slice resumes to the whole-file fold's set"
+}
+
 test_bounded_fold_matches_unbounded_and_marks_partial
 test_killed_fold_resumes_from_saved_cursor
 test_callers_never_report_a_partial_fold_as_complete
 test_fold_version_bump_still_discards_the_cursor
 test_snapshot_fold_stops_at_its_endpoint_under_a_small_budget
+test_killed_rebuild_scan_keeps_progress_and_converges
+test_killed_rebuild_slice_resumes_to_the_whole_file_fold
