@@ -59,6 +59,40 @@ needs-decision [at=1791843599]: before cutover
 needs-decision [at=1791843600]: at cutover
 === cutover
 failed [at=10:30]: terminal
+needs-decision [at=1792000100] corr=aaaaaaaaaaaaaaaa: copy one
+needs-decision [at=1792000101] corr=aaaaaaaaaaaaaaaa: copy two
+needs-decision [at=1792000102] corr=bbbbbbbbbbbbbbbb: other request
+=== several synthetic copies per correlation
+needs-decision [key=real] corr=aaaaaaaaaaaaaaaa: keyed ask supersedes its copies
+=== keyed ask drops one correlation only
+needs-decision [key=u-1792000200-cccccccccccccccc]: stated key shaped like a synthetic one
+needs-decision [key=u-1792000201]: shaped without correlation
+=== stated keys shaped like synthetic keys
+needs-decision [key=real2] corr=cccccccccccccccc: keyed ask drops the shaped key
+=== keyed ask drops a stated synthetic-shaped key
+needs-decision [at=1792000300] corr=dddddddddddddddd: reopen me
+resolved [at=1792000301] corr=dddddddddddddddd: closes only it
+needs-decision [at=1792000300] corr=dddddddddddddddd: reopen me
+=== reopened after a correlated close
+ done [at=1792000302] corr=dddddddddddddddd: done drops its correlation
+needs-decision [at=1792000400] corr=AbCdEfAbCdEfAbCd: mixed case
+needs-decision [at=1792000401] corr=abcdefabcdefabcd: lower case
+resolved [at=1792000402] corr=AbCdEfAbCdEfAbCd: exact case only
+=== correlation ids compare case-exact
+needs-decision [at=1792000500] corr=1111111111111111: first of two
+needs-decision [at=1792000501] corr=1111111111111111: second of two
+captain-held [at=1792000502] corr=1111111111111111: ambiguous correlated hold
+resolved [at=1792000503]: ambiguous keyless close
+=== ambiguous unkeyed closes leave both open
+blocked: default entry beside synthetic ones
+resolved [at=1792000504]: still ambiguous with a default entry
+=== default entry counts toward ambiguity
+resolved [key=default]: closes the default entry
+captain-held [at=1792000505] corr=1111111111111111: still two
+=== explicit default close
+resolved [at=1792000506] corr=1111111111111111: correlated resolve drops both
+captain-held: unkeyed hold with nothing to close
+=== correlated resolve drops every copy
 === failed terminals
 needs-decision [key=a]: café broken bytes
 blocked [at=1792000000] corr=0123456789abcdef: ÿþ x

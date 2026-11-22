@@ -1014,7 +1014,50 @@ SH
   pass "10,000-line whole-file fold completed within five seconds (${elapsed}s)"
 }
 
+# The fold's cost must track the log, not the log times the open set: a task
+# with thousands of decisions open at once, each ask or close carrying a
+# correlation id, once rescanned every open record for every such line.
+test_whole_fold_cost_does_not_grow_with_open_decisions() {
+  local dir
+  dir=$(case_dir open-set-scale)
+  cat > "$dir/fold.sh" <<'SH'
+. "$1"
+status_open_decisions "$2" secondmate
+SH
+  # 20,000 keyed asks, each stamped with its own correlation id, then the
+  # odd-numbered ones answered by key under that id: 10,000 stay open.
+  awk 'BEGIN {
+    for (i = 1; i <= 20000; i++)
+      printf "needs-decision [at=1792000000] [key=k%d] corr=%016x: ask %d\n", i, i, i
+    for (i = 1; i <= 20000; i += 2)
+      printf "resolved [key=k%d] corr=%016x: answered\n", i, i
+  }' > "$dir/keyed.status"
+  fm_run_timed 5 bash "$dir/fold.sh" "$ROOT/bin/fm-classify-lib.sh" "$dir/keyed.status" > "$dir/keyed.actual" \
+    || fail "20,000-ask keyed fold exceeded its five-second budget or failed"
+  [ "$(wc -l < "$dir/keyed.actual")" -eq 9999 ] \
+    || fail "keyed fold did not leave 10,000 decisions open"
+  [ "$(head -n 1 "$dir/keyed.actual")" = "$(printf 'k2\tneeds-decision\task 2')" ] \
+    || fail "keyed fold lost the first surviving ask"
+  [ "$(tail -n 1 "$dir/keyed.actual")" = "$(printf 'k20000\tneeds-decision\task 20000')" ] \
+    || fail "keyed fold lost the last ask"
+
+  # 10,000 unkeyed asks that each open a synthetic key, then every one but the
+  # last closed by an unkeyed answer carrying its correlation id.
+  awk 'BEGIN {
+    for (i = 1; i <= 10000; i++)
+      printf "needs-decision [at=%d] corr=%016x: ask %d\n", 1792000000 + i, i, i
+    for (i = 1; i < 10000; i++)
+      printf "resolved [at=%d] corr=%016x: answered\n", 1793000000 + i, i
+  }' > "$dir/synthetic.status"
+  fm_run_timed 5 bash "$dir/fold.sh" "$ROOT/bin/fm-classify-lib.sh" "$dir/synthetic.status" > "$dir/synthetic.actual" \
+    || fail "10,000-ask synthetic fold exceeded its five-second budget or failed"
+  [ "$(cat "$dir/synthetic.actual")" = "$(printf 'u-1792010000-0000000000002710\tneeds-decision\task 10000')" ] \
+    || fail "synthetic fold did not leave exactly the last ask open"
+  pass "folding 20,000 keyed and 10,000 synthetic correlated asks stays within the time budget"
+}
+
 test_whole_fold_ten_thousand_lines
+test_whole_fold_cost_does_not_grow_with_open_decisions
 test_whole_fold_matches_captured_stream
 test_status_line_cause
 test_status_line_dep
