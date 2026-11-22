@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Behavior tests for warm-cache compaction (bin/fm-warm-compact-lib.sh,
-# docs/configuration.md "Warm-cache compaction"). The backend primitives are
+# docs/configuration/supervision.md "Warm-cache compaction"). The backend primitives are
 # stubs that record every call, so each guard is proven by the absence of a
 # /compact submit; the engine case runs the real engine-turn argument
 # construction against a stub claude.

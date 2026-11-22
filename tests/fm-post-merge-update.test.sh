@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests for bin/fm-post-merge-update.sh. Spec: docs/configuration.md
+# Tests for bin/fm-post-merge-update.sh. Spec: docs/configuration/secondmates-and-offices.md
 # "Post-merge update".
 #   - a firstmate merge recorded in the primary home starts exactly one detached
 #     fm-update.sh, and a merge recorded a second time starts none;
@@ -245,7 +245,7 @@ test_watcher_cycle_starts_child_update() {
 }
 
 # A child PR's gh read can hang; a merge the primary records meanwhile must
-# neither wait on that read nor lose its own update (docs/configuration.md
+# neither wait on that read nor lose its own update (docs/configuration/secondmates-and-offices.md
 # "Post-merge update": the merge command returns at once).
 test_hung_child_read_does_not_hold_up_launch() {
   local w start elapsed; w=$(new_world j)

@@ -5,7 +5,7 @@ import { encodeFirstmateOperationalInput } from "./lib/fm-operational-input.js";
 import { contextDirectory, createTurnEndLatch, promptSession, setupEventSubscription } from "./lib/fm-opencode2.js";
 
 // Supervision host: a home opted in with config/supervision-host
-// (docs/configuration.md "Supervision host" owns the gate, which
+// (docs/configuration/supervision.md "Supervision host" owns the gate, which
 // bin/fm-supervision-engine-lib.sh enabled answers; config/supervision-host-off opts out) spawns
 // bin/fm-supervision-host.sh park --restart in the arm's place, which takes
 // away-posture wakes itself and closes only when main is needed; its header

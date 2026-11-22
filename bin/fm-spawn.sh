@@ -134,7 +134,7 @@
 #   re-verified on opencode 2.0.21); without a model the effort axis is recorded
 #   but omitted.
 #   --backend <name> is the explicit runtime session-provider backend for this
-#   exact task only (docs/configuration.md "Runtime backend" owns when that flag
+#   exact task only (docs/configuration/runtime-backend.md "Runtime backend" owns when that flag
 #   is authorized). Without it, the script resolves FM_BACKEND, then
 #   config/backend, then runtime auto-detection from the runtime firstmate's
 #   environment: $TMUX, HERDR_ENV=1, TERM_PROGRAM=rex with REX_BLOCK, cmux
@@ -552,12 +552,12 @@
 #   T3 Code always uses full-access, so it refuses Claude `auto` and Codex
 #   `approve-for-me` or `restricted` before mutation.
 # Worker tool exclusions:
-#   docs/configuration.md "Worker tool exclusions" owns config/crew-exclude-tools
+#   docs/configuration/harnesses.md "Worker tool exclusions" owns config/crew-exclude-tools
 #   and its operator contract. Resolve it with bin/fm-exclude-tools-lib.sh
 #   before provisioning; __PIEXCLUDE__ and __CLAUDEEXCLUDE__ below own the Pi and
 #   Claude launch substitutions.
 # Worker account pin (config/claude-account, config/pi-account):
-#   Opt-in. docs/configuration.md's "Worker account pin" section owns unpinned
+#   Opt-in. docs/configuration/worker-launch.md's "Worker account pin" section owns unpinned
 #   account selection. A present file pins every supported launch of
 #   that runner from this home - ship, scout, local secondmate, raw Claude
 #   command, and relaunch - to the declared account root, and the spawn
@@ -578,7 +578,7 @@
 #   spawn must name one declared entry with --account, chosen at intake, and
 #   that entry is checked, launched, and recorded exactly like a pin; a
 #   relaunch reuses the recorded entry unless --account moves it. Without the
-#   list, --account refuses and nothing else changes. docs/configuration.md
+#   list, --account refuses and nothing else changes. docs/configuration/worker-launch.md
 #   "Several Claude accounts" owns the contract.
 # Per-secondmate omp profile (config/secondmate-accounts/<id>/omp-profile):
 #   Opt-in, and read only for a local secondmate's own omp agent;
@@ -4552,7 +4552,7 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
     exit 1
   }
   if ! fm_project_capacity_lookup "$SPAWN_CAPACITY_CONFIG" "$(basename "$PROJ_ABS")"; then
-    echo "error: spawn refused: the project capacity declaration is unreadable ($FM_PROJECT_CAPACITY_ERROR); fix it so the captain's worker limits are known (docs/configuration.md \"Project capacity\")" >&2
+    echo "error: spawn refused: the project capacity declaration is unreadable ($FM_PROJECT_CAPACITY_ERROR); fix it so the captain's worker limits are known (docs/configuration/capacity.md \"Project capacity\")" >&2
     exit 1
   fi
   SPAWN_PROJECT_CAPACITY=$FM_PROJECT_CAPACITY
@@ -4638,7 +4638,7 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ] && [ -e "$CONFIG/lane-capa
       exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
       ;;
     *)
-      echo "error: spawn refused: this home's lane capacity cannot be read (bin/fm-capacity.sh --spawn-gate exited $SPAWN_LANE_RC); fix config/lane-capacity so the captain's limits are known (docs/configuration.md \"Lane capacity\")" >&2
+      echo "error: spawn refused: this home's lane capacity cannot be read (bin/fm-capacity.sh --spawn-gate exited $SPAWN_LANE_RC); fix config/lane-capacity so the captain's limits are known (docs/configuration/capacity.md \"Lane capacity\")" >&2
       exit 1
       ;;
   esac
@@ -4875,7 +4875,7 @@ if [ "$KIND" = ship ]; then
     0 | 2) ;;
     *)
       echo "error: spawn refused for $ID: $FM_ROLE_PUB_DENIAL" >&2
-      echo "error: to let this home publish to ${FM_ROLE_PUB_TARGET:-that repository}, write 'maintainer ${FM_ROLE_PUB_TARGET:-<host>/<owner>/<repo>}' into $CONFIG/firstmate-role (docs/configuration.md \"Firstmate role\"), or pass --upstream-consent ${FM_ROLE_PUB_TARGET:-<host>/<owner>/<repo>} for this one task with the captain's explicit approval" >&2
+      echo "error: to let this home publish to ${FM_ROLE_PUB_TARGET:-that repository}, write 'maintainer ${FM_ROLE_PUB_TARGET:-<host>/<owner>/<repo>}' into $CONFIG/firstmate-role (docs/configuration/home-and-state.md \"Firstmate role\"), or pass --upstream-consent ${FM_ROLE_PUB_TARGET:-<host>/<owner>/<repo>} for this one task with the captain's explicit approval" >&2
       exit 1
       ;;
     esac

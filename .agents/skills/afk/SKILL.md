@@ -32,7 +32,7 @@ Hold-for-return is the default and the only reach profile this release records: 
      The away daemon is no longer launched on Pi; the ordinary supervision session (`docs/pi-supervision-branch.md`) keeps running with the record present, and `bin/fm-afk-launch.sh start` refuses on these harnesses.
      With the record present main is parked: the supervision branch takes every safe actionable wake, captain outcomes accumulate for the return brief, and main's standing authority relocates to the branch through the guarded scripts (`docs/pi-supervision-branch.md` "Postures"); only a wake the branch declines (including a broken branch or unsafe scan) or a watcher failure wakes main.
      `/quiet` needs nothing extra on Pi: the attended branch already keeps routine wakes out of this conversation, so quiet-while-present is the attended posture's own shape there.
-   - **A home that runs the supervision host** (a Claude home unless `config/supervision-host-off` opts it out, or a Cursor, OpenCode, omp, Grok, or Codex home with `config/supervision-host` and no opt-out; `docs/configuration.md` "Supervision host"): nothing to launch for `/afk`; go on to the announcement.
+   - **A home that runs the supervision host** (a Claude home unless `config/supervision-host-off` opts it out, or a Cursor, OpenCode, omp, Grok, or Codex home with `config/supervision-host` and no opt-out; `docs/configuration/supervision.md` "Supervision host"): nothing to launch for `/afk`; go on to the announcement.
      The supervision host (`docs/supervision-host.md`) is the away session there: it runs the branch's contract on a headless engine under the record while main is parked, and `bin/fm-afk-launch.sh start` and `start-native` refuse the away daemon on that home.
      If `enter` printed a `Supervision host: no engine ...` line, every away wake reaches this conversation instead; say so in the announcement.
      `/quiet` enters nothing there where the attended host runs, and otherwise still launches the daemon below (the quiet skill's `quiet-check` decides).
@@ -123,7 +123,7 @@ The daemon never injects into an in-use pane. T3 Code has no composer and uses
 the native status and turn transport owned by
 [`docs/t3code-backend.md`](../../../docs/t3code-backend.md#away-mode). Two
 checks run before every pane injection, dispatched through `bin/fm-backend.sh`
-for the supervisor's own backend (see [supervisor backend configuration](../../../docs/configuration.md#away-mode-supervisor-backend-fm_supervisor_backend--fm_supervisor_target)):
+for the supervisor's own backend (see [supervisor backend configuration](../../../docs/configuration/away-and-alarms.md#away-mode-supervisor-backend-fm_supervisor_backend--fm_supervisor_target)):
 
 - **Primary-pane busy guard** - `pane_is_busy` trusts the backend's native `busy` when available, otherwise matches rendered output against only the detected primary harness's signature.
   This narrow delivery guard never classifies a recorded worker task and never uses a global union of vendor patterns.
@@ -180,7 +180,7 @@ Classify each wake this way, applying the steering-inbox exception before status
 - `signal` or `stale` whose latest status declares a wait, either a `paused:` external wait or a verified `captain-held` transfer, tracks the pause rather than a wedge whether its pane reads idle or busy.
   An unreported captain-relevant event in the newly classified span still escalates immediately while the current declaration independently keeps the pause cadence.
   With no unreported actionable event, the wake self-handles, and the current declaration outranks an enriched possible-wedge reason so it never escalates on the `FM_STALE_ESCALATE_SECS` cadence.
-  If a declared external wait is still declared past `FM_PAUSE_RESURFACE_SECS` (default four hours), housekeeping sends one recheck and resets the pause window, unless the home's `config/pause-ceiling` flag turns an overdue pause into one keyed decision ([configuration](../../../docs/configuration.md#pause-ceiling-configpause-ceiling)); a captain-held transfer is never rechecked while the posture record exists.
+  If a declared external wait is still declared past `FM_PAUSE_RESURFACE_SECS` (default four hours), housekeeping sends one recheck and resets the pause window, unless the home's `config/pause-ceiling` flag turns an overdue pause into one keyed decision ([configuration](../../../docs/configuration/away-and-alarms.md#pause-ceiling-configpause-ceiling)); a captain-held transfer is never rechecked while the posture record exists.
   The window ages against the crew's own latest status line, so only a status append that stops declaring the wait ends this routing and restores wedge detection.
 - `check` -> always escalate. Check scripts print only when firstmate should wake.
 - `stale` with a terminal status, a bare legacy captain-relevant line, or an unrecognized status prefix such as `parked:` -> escalate.
@@ -229,7 +229,7 @@ The single-line format makes submission unambiguous across harnesses; the carrie
   (`fm-wake-lib.sh`) instead of `flock`, which is absent on macOS.
 - **Dedupe across signal/stale/scan** - all three paths use the shared status presentation markers defined by `bin/fm-classify-lib.sh`, so a successfully classified span is not re-escalated by another path in the same digest.
   Never treat a reported unreadable state as classified; the shared library header owns that marker contract, and the marker does not clear or suppress possible-wedge aging for a nonterminal progress line.
-- **Auto-discovered supervisor pane** - [supervisor backend configuration](../../../docs/configuration.md#away-mode-supervisor-backend-fm_supervisor_backend--fm_supervisor_target) owns backend and target resolution and unsupported-transport refusals.
+- **Auto-discovered supervisor pane** - [supervisor backend configuration](../../../docs/configuration/away-and-alarms.md#away-mode-supervisor-backend-fm_supervisor_backend--fm_supervisor_target) owns backend and target resolution and unsupported-transport refusals.
   Both resolution sources are logged at startup so a wrong-but-resolving fallback is detectable.
 
 ### Stale-artifact lifecycle

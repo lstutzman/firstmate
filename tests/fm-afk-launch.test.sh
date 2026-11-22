@@ -32,7 +32,7 @@ CONTRACT="$ROOT/bin/fm-afk-contract.sh"
 unset PI_CODING_AGENT FM_PI_HARNESS CURSOR_AGENT CURSOR_INVOKED_AS GEMINI_CLI ATLASSIAN_AGENT_TYPE ROVODEV_CLI
 export CLAUDECODE=1 FM_TEST_HARNESS=claude FM_TEST_SEAM=1
 # A Claude home runs the supervision host unless config/supervision-host-off
-# opts it out (docs/configuration.md "Supervision host"), and the host is that home's
+# opts it out (docs/configuration/supervision.md "Supervision host"), and the host is that home's
 # away session, so the daemon units run on a Claude home that opted out; the
 # supervision-host units point FM_CONFIG_OVERRIDE at their own home's config.
 OFF_CONFIG=$(mktemp -d "${TMPDIR:-/tmp}/fm-afk-off-config.XXXXXX")

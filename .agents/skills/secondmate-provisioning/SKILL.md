@@ -85,7 +85,7 @@ Release happens only on explicit retirement or seed rollback, never on routine r
 
 `bin/fm-home-seed.sh` copies the charter into the secondmate home as `data/charter.md`.
 It also writes the gitignored `.fm-secondmate-parent` durable binding before the required `.fm-secondmate-home` identity marker; the parser header in [`bin/fm-secondmate-parent-lib.sh`](../../../bin/fm-secondmate-parent-lib.sh) owns the record contract, and both files must remain in place.
-[`docs/configuration.md`](../../../docs/configuration.md#choose-the-secondmate-harness) owns the primary's secondmate runtime pins, per-mate overrides, launch precedence, compatibility, and malformed-file refusal.
+[`docs/configuration.md`](../../../docs/configuration/harnesses.md#choose-the-secondmate-harness) owns the primary's secondmate runtime pins, per-mate overrides, launch precedence, compatibility, and malformed-file refusal.
 Select the registered mate's id when resolving its pin; [`bin/fm-harness.sh`](../../../bin/fm-harness.sh)'s header owns the resolver commands.
 
 This section is the single owner of the secondmate sync and inherited-local-material propagation contract; `AGENTS.md` sections 3 and 4 point here.
@@ -110,11 +110,11 @@ Explicit per-spawn `--backend` and `FM_BACKEND` remain stronger than every home'
 The declared `config/supervision-host-off` opt-out follows the same primary-authoritative propagation: its presence opts secondmate homes out even if they have their own engine setting, and its absence removes their copy at convergence.
 `config/supervision-host` itself is not inherited; each home selects its own engine.
 `config/secondmate-harness` is not inherited because it is only the primary's knob for launching secondmate agents.
-`config/firstmate-role` is inherited under the additional [resolved-role and receipt policy](../../../docs/configuration.md#firstmate-role-configfirstmate-role), not as a raw copy of the primary file.
+`config/firstmate-role` is inherited under the additional [resolved-role and receipt policy](../../../docs/configuration/home-and-state.md#firstmate-role-configfirstmate-role), not as a raw copy of the primary file.
 `config/office-authority` is published per destination with the same receipt, so only the office a `data/offices.md` line names receives a record ([`docs/configuration/secondmates-and-offices.md`](../../../docs/configuration/secondmates-and-offices.md) "Offices (data/offices.md)").
 Account pins are not inherited.
-[`Worker account pin`](../../../docs/configuration.md#worker-account-pin-configclaude-account-configpi-account) owns `config/claude-account`, `config/claude-accounts`, and `config/pi-account` inheritance and backend limits; [`T3 provider instances`](../../../docs/t3code-backend.md#provider-instances-and-models) owns T3 account selection.
-[`docs/configuration.md` "Per-secondmate account pins"](../../../docs/configuration.md#per-secondmate-account-pins) owns the explicit `config/secondmate-accounts/<id>/` override and the independent worker pins inside each mate's home.
+[`Worker account pin`](../../../docs/configuration/worker-launch.md#worker-account-pin-configclaude-account-configpi-account) owns `config/claude-account`, `config/claude-accounts`, and `config/pi-account` inheritance and backend limits; [`T3 provider instances`](../../../docs/t3code-backend.md#provider-instances-and-models) owns T3 account selection.
+[`docs/configuration/worker-launch.md` "Per-secondmate account pins"](../../../docs/configuration/worker-launch.md#per-secondmate-account-pins) owns the explicit `config/secondmate-accounts/<id>/` override and the independent worker pins inside each mate's home.
 `data/captain-shared.md` is main-authoritative in the primary home and read-only in secondmate homes.
 Its primary file header must state that the file is main-authoritative, read-only in secondmate homes, must not be edited there, and that new captain-preference discoveries are routed to the main firstmate through marked status or a document pointer.
 Every propagation point converges the secondmate copy to the primary bytes; when the primary file is absent, any existing secondmate copy is quarantined and removed so absence converges too.
@@ -146,7 +146,7 @@ The parent records that nudge before delivery, retains it after a failed send, a
 [`fm-secondmate-nudge-lib.sh`](../../../bin/fm-secondmate-nudge-lib.sh) owns the durable obligation record and compatibility behavior.
 It does not receive a pointer to a primary-local generation path that cannot exist on that host.
 Inherited harness and runtime-backend defaults must not harden `fm-spawn` to reject a deliberate runtime choice that differs from those defaults.
-The [worker launch environment contract](../../../docs/configuration.md#worker-launch-environment-configlaunch-env-allowlist) separately governs explicit environment grants.
+The [worker launch environment contract](../../../docs/configuration/worker-launch.md#worker-launch-environment-configlaunch-env-allowlist) separately governs explicit environment grants.
 For already-live secondmates, use `bin/fm-config-push.sh` to push a mid-session inherited local-material change without running the tracked-file fast-forward.
 It uses the same live-home discovery and propagation helper as bootstrap, reports each item as `pushed`, `unchanged`, `skipped`, or `error`, and follows the config-reread contract above for changed or pending generations.
 `bin/fm-home-seed.sh` refuses to copy a missing or placeholder charter.
@@ -228,7 +228,7 @@ Respawn re-resolves the secondmate harness from current config, uses the same gu
 If the secondmate is already running and only inherited local material changed, prefer `bin/fm-config-push.sh` over respawning.
 Before moving a live LOCAL secondmate onto a newly pinned harness, model, or effort, check replacement support in [`docs/agent-control.md`](../../../docs/agent-control.md#fail-closed-boundaries).
 On a supported backend, set `config/secondmate-harness` and relaunch it with `bin/fm-control.sh <id> relaunch`, which re-resolves that pin, stops the agent, and launches the replacement in the same home.
-The same relaunch and recovery paths honor the durable [per-secondmate account pin](../../../docs/configuration.md#per-secondmate-account-pins).
+The same relaunch and recovery paths honor the durable [per-secondmate account pin](../../../docs/configuration/worker-launch.md#per-secondmate-account-pins).
 That plane refuses a remotely placed secondmate by name, because its agent runs on another host where none of the plane's postconditions can be read.
 Move a REMOTE one with `bin/fm-remote-secondmate-relaunch.sh <id> <harness> <model|default|-> <effort|default|->`, which runs that same control-plane relaunch on its host and then republishes this primary's own route metadata from the identity the host confirmed; pass the profile explicitly and use `default` for an absent pin, because `config/secondmate-harness` is not inherited and the copy on that host belongs to a different home ([`docs/remote-secondmates.md`](../../../docs/remote-secondmates.md)).
 Never call `fm-remote-secondmate-control.sh relaunch` through `fm-on.sh` directly for this: it leaves this primary's own record naming the runtime the mate used to run.

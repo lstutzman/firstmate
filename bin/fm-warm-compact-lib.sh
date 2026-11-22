@@ -4,7 +4,7 @@
 #
 # Sourced, never executed. The supervision host (bin/fm-supervision-host.sh)
 # calls it while it is parked, so the trigger lives on the Claude adapter path.
-# docs/configuration.md "Warm-cache compaction" owns the home gate and its
+# docs/configuration/supervision.md "Warm-cache compaction" owns the home gate and its
 # tunables.
 #
 # WHY. A session that sits idle past its prompt-cache lifetime re-writes its

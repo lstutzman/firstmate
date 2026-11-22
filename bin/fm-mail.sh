@@ -27,7 +27,7 @@
 #                        polls are serialized on the mail-seen lock. poll
 #                        itself has no scheduler: run it manually, from
 #                        `at`/cron, or via the standing check armed by
-#                        bin/fm-mail-check.sh (docs/configuration.md
+#                        bin/fm-mail-check.sh (docs/configuration/relay-and-intake.md
 #                        "Mail plane").
 #   status               Print configuration and the last poll cursor. No
 #                        network, no wake.

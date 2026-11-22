@@ -1,7 +1,7 @@
 # Trusted external process-event adapter bindings
 
 This document is the maintainer-architecture owner for the package manifest, enabled binding, handshake, invocation envelope, trust boundary, and `process-event-adapter/1` capability.
-[`configuration.md`](configuration.md#trusted-external-process-event-adapters-configextensionsd) owns operator setup and the home-local layout.
+[`configuration.md`](configuration/process-events.md#trusted-external-process-event-adapters-configextensionsd) owns operator setup and the home-local layout.
 `bin/fm-extension.sh --help` and `bin/fm-procevent.sh --help` own command mechanics.
 
 ## Scope and design
@@ -229,7 +229,7 @@ A changed error or extension identity remains distinct, and a failure after its 
 Successful adapter results always retain separate sequences, even when their bytes are identical to host-error evidence.
 A classification, terminal, or silence failure returns no positive verdict.
 Replay uses the exact request id as the package's idempotence key, including a stable pre-capture retry from the generic runner, but Firstmate makes no generic exactly-once or source-side losslessness claim.
-The process-event durability boundary remains owned by [`configuration.md`](configuration.md#process-to-event-sources-stateprocevent).
+The process-event durability boundary remains owned by [`configuration.md`](configuration/process-events.md#process-to-event-sources-stateprocevent).
 
 ## Runtime independence
 
@@ -252,4 +252,4 @@ Bindings and credentials are deliberately absent from the inherited secondmate c
 [`examples/process-event-extension`](examples/process-event-extension) is a complete external `file-signal` adapter package.
 It waits for one configured absolute file, returns that file's bounded UTF-8 contents as evidence, classifies the result as `file-signal`, and reports it terminal.
 The package is intentionally copied outside this Git project before binding, proving that project-local package discovery is not a registration path.
-The operator commands live in [`configuration.md`](configuration.md#trusted-external-process-event-adapters-configextensionsd), and `tests/fm-extension-binding.test.sh` runs the complete example path.
+The operator commands live in [`configuration.md`](configuration/process-events.md#trusted-external-process-event-adapters-configextensionsd), and `tests/fm-extension-binding.test.sh` runs the complete example path.

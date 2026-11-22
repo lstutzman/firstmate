@@ -229,7 +229,7 @@ test_attended_main_only_close_passes_straight_to_main() {
 }
 
 
-# The file is read at every wake (docs/configuration.md "Supervision host"), so
+# The file is read at every wake (docs/configuration/supervision.md "Supervision host"), so
 # an off written while the host is parked sends the next attended close to main
 # exactly as the arm printed it, with the ledger naming the opt-out.
 

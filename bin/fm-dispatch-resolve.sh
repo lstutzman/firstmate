@@ -93,7 +93,7 @@
 #   prints, stating quota ranking is off by home declaration. Without the
 #   setting, behavior is unchanged. The declared value must be a boolean;
 #   anything else is an actionable configuration error.
-#   docs/configuration.md "Crew dispatch profiles" owns the declared fields and
+#   docs/configuration/dispatch.md "Crew dispatch profiles" owns the declared fields and
 #   "Typed dispatch resolution" owns this tool's operator contract.
 #
 # Pooled Claude quota: an optional config/cpa-usage-host makes one
@@ -101,7 +101,7 @@
 #   or run here for `local` or this machine's own short host name, bounded by
 #   fm_run_timed to FM_CPA_USAGE_TIMEOUT seconds, default 10) replace the
 #   snapshot's claude entry through fm_quota_replace_provider in
-#   bin/fm-quota-axi-lib.sh. docs/configuration.md "Typed dispatch
+#   bin/fm-quota-axi-lib.sh. docs/configuration/dispatch.md "Typed dispatch
 #   resolution" owns the pooling rules and the fallbacks.
 #
 # Never-send check: when the optional $FM_HOME/config/dispatch-never-send list

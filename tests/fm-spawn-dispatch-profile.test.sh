@@ -2005,7 +2005,7 @@ JS
 }
 
 # Claude Code removes a --disallowedTools entry's schema from every request
-# (docs/configuration.md "Worker tool exclusions"). The option is variadic, so
+# (docs/configuration/harnesses.md "Worker tool exclusions"). The option is variadic, so
 # the launch must keep a later flag between it and the launch prompt.
 test_claude_exclude_tools_reach_ship_and_scout_launches() {
   local rec id out status launch kindflag doorbell

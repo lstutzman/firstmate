@@ -2,7 +2,7 @@
 
 Paseo is an experimental macOS GUI terminal backend.
 It provides task workspaces and terminals while Treehouse continues to provide git worktrees.
-[`configuration.md`](configuration.md#runtime-backend-configbackend--fm_backend) owns shared selection and metadata semantics.
+[`configuration.md`](configuration/runtime-backend.md#runtime-backend-configbackend--fm_backend) owns shared selection and metadata semantics.
 
 ## Setup
 
@@ -13,7 +13,7 @@ Prerequisites:
 
 - Paseo 0.8 or newer, installed from [paseo.sh](https://paseo.sh) (`/Applications/Paseo.app`).
 - `jq` for JSON responses.
-- The universal harness and toolchain requirements in [`configuration.md`](configuration.md#toolchain).
+- The universal harness and toolchain requirements in [`configuration.md`](configuration/tools.md#toolchain).
 
 The bundled CLI is not always installed on `PATH` with the app.
 The adapter prefers `command -v paseo` and otherwise uses `/Applications/Paseo.app/Contents/Resources/bin/paseo`.

@@ -33,7 +33,7 @@ Do not close a captain-held task merely because the originating investigation co
 Holding the work item the question gates is safe for exactly that reason: cleanup keeps such a row open with the finished work's deliverable recorded and returns it to the queue, so it still reads as the captain's own call.
 Only `answer` with the captain's words, an evidence-backed `reconcile close`, or the declared PR settlement policy below may resolve it.
 
-When [PR hold settlement](../../../docs/configuration.md#pr-hold-settlement-confighold-pr-settle) is enabled, declare a `pr-policy` only when its specified forge event answers the whole held question.
+When [PR hold settlement](../../../docs/configuration/prs-and-pipeline.md#pr-hold-settlement-confighold-pr-settle) is enabled, declare a `pr-policy` only when its specified forge event answers the whole held question.
 Use `close` only for a decision-only task, and `release` when the task still contains unfinished work.
 A structured PR link alone never authorizes settlement.
 The contribution observer records the event as evidence, not as a captain answer, and settles matching holds without a model turn.

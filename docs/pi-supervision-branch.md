@@ -162,7 +162,7 @@ Only such a rebuild continues that session's own conversation, and `state/.branc
 
 Earlier conversations stay on disk under `state/branch-session/`, exactly as Pi keeps its own session files.
 They are never reopened as live branch context.
-The effort picker may only inspect the model named by the current pointer, as the last-resort lookup documented in [configuration.md](configuration.md#pi-supervision-branch-model-and-effort-configsupervision-branch-model-configsupervision-branch-effort).
+The effort picker may only inspect the model named by the current pointer, as the last-resort lookup documented in [configuration.md](configuration/supervision.md#pi-supervision-branch-model-and-effort-configsupervision-branch-model-configsupervision-branch-effort).
 
 Nothing captain-facing rides on that conversation.
 The durable outcome store and its processed marker are what carry unacknowledged outcomes across the boundary.
@@ -215,7 +215,7 @@ A session replacement or branch model or effort change resets the recovery state
 
 The same extension registers `/supervision-model`, which picks the branch's model and then its reasoning effort.
 It applies both at the branch-session creation boundary.
-[configuration.md](configuration.md#pi-supervision-branch-model-and-effort-configsupervision-branch-model-configsupervision-branch-effort) owns the operator-facing schema and behavior.
+[configuration.md](configuration/supervision.md#pi-supervision-branch-model-and-effort-configsupervision-branch-model-configsupervision-branch-effort) owns the operator-facing schema and behavior.
 
 ### Branch system prompt
 
@@ -262,7 +262,7 @@ Local-only landing and second-mate retirement never do ("Postures" below).
 
 ### Autonomy
 
-Supervision is default-on for every task once a Pi primary session owns the fleet lock (docs/configuration.md "Pi supervision branch").
+Supervision is default-on for every task once a Pi primary session owns the fleet lock (docs/configuration/supervision.md "Pi supervision branch").
 No captain grant file is required.
 
 A fleet-wide heartbeat is separately eligible only when every row other than a check or decision-owned signal/stale row is a heartbeat row or a resolvable task-local row (see "Heartbeat routing" below).
@@ -525,7 +525,7 @@ Reuse is best-effort, never guaranteed.
 ### Branch model and providers
 
 The branch can also run on a cheaper model and a shallower reasoning effort than main, both pinned with the Pi `/supervision-model` command.
-[configuration.md](configuration.md#pi-supervision-branch-model-and-effort-configsupervision-branch-model-configsupervision-branch-effort) owns those pins' operator-facing schema and unpinned behavior.
+[configuration.md](configuration/supervision.md#pi-supervision-branch-model-and-effort-configsupervision-branch-model-configsupervision-branch-effort) owns those pins' operator-facing schema and unpinned behavior.
 
 Some providers are registered by an extension only into main's runtime, such as pi-devin-auth's `devin`.
 Such a provider reaches the isolated branch runtime by copying its provider config from main's captured `ModelRegistry` into the branch `ModelRuntime`.

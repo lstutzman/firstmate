@@ -353,7 +353,7 @@ Board-requested reconciliation remains separate from the opt-in forge path below
 
 ## PR settlement
 
-[PR hold settlement](configuration.md#pr-hold-settlement-confighold-pr-settle) connects the contribution observer to the hold lifecycle without changing cleanup or the merge poll.
+[PR hold settlement](configuration/prs-and-pipeline.md#pr-hold-settlement-confighold-pr-settle) connects the contribution observer to the hold lifecycle without changing cleanup or the merge poll.
 `bin/fm-captain-hold.sh --help` owns the declaration schema, supported events, and settlement commands.
 The observer invokes settlement for both fresh and retained terminal observations.
 It records evidence before applying the declared task transition, under the task's control lock.

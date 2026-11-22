@@ -422,7 +422,7 @@ test_claude_stop_hook_rewakes_a_present_captain_beside_a_quiet_record() {
 }
 
 
-# Default-on for Claude (docs/configuration.md "Supervision host"): through the
+# Default-on for Claude (docs/configuration/supervision.md "Supervision host"): through the
 # real Stop hook and mirror writer, a Claude primary home with no
 # config/supervision-host runs the host at the default engine, mirrors the
 # captain's dialog, and keeps a routine attended wake off main; a home with

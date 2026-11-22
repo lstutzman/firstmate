@@ -3,7 +3,7 @@
 hc is an experimental session-provider backend for herdr-core, the terminal core under Herdr.app.
 It provides task terminals while Treehouse continues to provide git worktrees, the same split tmux uses.
 herdr-core is not Herdr 1: the `herdr` backend ([`herdr-backend.md`](herdr-backend.md)) talks to the `herdr` multiplexer, and the two share no socket, id space, or CLI.
-[`configuration.md`](configuration.md#runtime-backend-configbackend--fm_backend) owns shared selection and metadata semantics.
+[`configuration.md`](configuration/runtime-backend.md#runtime-backend-configbackend--fm_backend) owns shared selection and metadata semantics.
 This page owns operator setup and supported limits; the adapter header in `bin/backends/hc.sh` explains implementation decisions.
 [`verification/runtime-backends.md`](verification/runtime-backends.md#hc) records what was exercised against a real core.
 
@@ -16,7 +16,7 @@ Prerequisites:
   `hc` starts its own core on first use.
   [`bin/fm-install-hc.sh`](../bin/fm-install-hc.sh) owns installation usage and the checksum-verified release pin; updates remain operator-run.
 - `jq` for JSON responses.
-- The universal harness and toolchain requirements in [`configuration.md`](configuration.md#toolchain).
+- The universal harness and toolchain requirements in [`configuration.md`](configuration/tools.md#toolchain).
 
 Select hc explicitly with local `config/backend` containing `hc`, `FM_BACKEND=hc` for one launch, or an explicit request to Firstmate.
 An explicit setting always wins; see "Runtime auto-detection" below for when hc is also selected automatically.
@@ -28,7 +28,7 @@ The Herdr app shows the terminals of the session it bound at launch, `default` u
 
 hc is auto-detected only on the Herdr app's terminal-level signal, never on bare `HC_TERMINAL_*` markers: hc stamps them into every process an hc terminal starts, and an app-created terminal's env is deliberately identical to any other hc terminal's - the app sends `TERM_PROGRAM=herdr` in its `terminal.run` call, but the core's `child_env` normalizes that to `ghostty` for every child, app-created or not.
 What marks a terminal as the app's is its core-side record: the app stamps `herdr.space`/`herdr.tab` labels on every terminal it creates, and a non-empty `herdr.space` is the exact condition under which the app projects a terminal into its window.
-[Backend selection order](configuration.md#backend-selection-order) owns precedence; this section owns the app-terminal signal.
+[Backend selection order](configuration/runtime-backend.md#backend-selection-order) owns precedence; this section owns the app-terminal signal.
 
 Exactly one signal selects hc, after every other surface marker has had its say:
 
@@ -58,7 +58,7 @@ Nothing here changes the remote `herdr` path.
 Two limits apply to auto-detection specifically:
 
 - A `--secondmate` spawn under an auto-detected hc fails the existing refusal rather than silently choosing another backend; set `config/backend` explicitly for a home that spawns secondmates.
-- Away-mode supervisor discovery and hc refusal are owned by [Away-mode supervisor backend](configuration.md#away-mode-supervisor-backend-fm_supervisor_backend--fm_supervisor_target).
+- Away-mode supervisor discovery and hc refusal are owned by [Away-mode supervisor backend](configuration/away-and-alarms.md#away-mode-supervisor-backend-fm_supervisor_backend--fm_supervisor_target).
 
 ## Task shape and metadata
 
@@ -126,5 +126,5 @@ An input, capture, or close that carries the task label refuses a terminal whose
 `tests/fm-backend-hc-smoke.test.sh` drives the real binary in an isolated lab; [`bin/fm-hc-lab.sh`](../bin/fm-hc-lab.sh) owns the isolation and metadata-tripwire contract, and [`tests/hc-test-safety.sh`](../tests/hc-test-safety.sh) owns guarded test teardown.
 `tests/fm-backend-hc-appdetect-smoke.test.sh` runs a real `bin/fm-spawn.sh` spawn in the same kind of lab for the app-terminal and explicit cases, and checks that a live app window never selects hc for a marker-less process and starts nothing for a session with no running core.
 The smokes skip when no resolved Core binary or `jq` is available; provisioning and teardown failures fail the test.
-For CI coverage, see [`configuration.md`](configuration.md#runtime-backend-configbackend--fm_backend); the workflow requires `jq` and rejects the `hc not found` skip.
+For CI coverage, see [`configuration.md`](configuration/runtime-backend.md#runtime-backend-configbackend--fm_backend); the workflow requires `jq` and rejects the `hc not found` skip.
 [`bin/fm-hc-ci-cleanup.sh`](../bin/fm-hc-ci-cleanup.sh) owns job-end cleanup mechanics.

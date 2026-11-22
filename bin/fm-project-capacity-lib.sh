@@ -14,7 +14,7 @@
 # (AGENTS.md section 7).
 #
 # This file is the single owner of the declaration format, of what holds a
-# place, and of the admission verdict. docs/configuration.md "Project capacity"
+# place, and of the admission verdict. docs/configuration/capacity.md "Project capacity"
 # is the operator reference, and bin/fm-spawn.sh owns where the check runs.
 #
 # Declaration: config/project-capacity in the local root Firstmate home (the home

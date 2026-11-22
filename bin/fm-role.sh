@@ -21,7 +21,7 @@
 #            recorded per-task consent a dispatcher captured.
 #
 # bin/fm-role-lib.sh owns the schema summary and mechanics;
-# docs/configuration.md "Firstmate role" owns the operator-facing schema.
+# docs/configuration/home-and-state.md "Firstmate role" owns the operator-facing schema.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

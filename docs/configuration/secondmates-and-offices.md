@@ -2,6 +2,67 @@
 
 Part of the [configuration reference](../configuration.md).
 
+## Post-merge update (config/no-post-merge-update)
+
+When a firstmate pull request merges, the primary home starts `bin/fm-update.sh` detached through `bin/fm-post-merge-update.sh`, so every local and remote secondmate home and code root fast-forwards without waiting for `/updatefirstmate`.
+Two paths start it:
+
+- the primary home records the merge itself, and the task's project shares firstmate's repository lineage;
+- a secondmate or office home records the merge and reports `done [key=merged-<id>]: merged <id> <pr-url>` on its parent channel. The primary's watcher reads the newly appended status lines and checks the pull request itself: the URL must name the repository `fm-update.sh` fetches from (the code root's origin or its `config/self-update-source` remote), and a read-only `gh` or `gh-axi` read must show it merged. The first scan in a home only records where each status log ends, so merges reported earlier start nothing.
+
+A durable per-PR marker under `state/.post-merge-update/` means a pull request seen by both paths, or reported twice, starts one update; merges in other projects start nothing, and a secondmate or office home never starts one itself.
+`fm-update.sh` holds a per-home lock, so this run and a manual `/updatefirstmate` wait for each other (up to `FM_UPDATE_LOCK_WAIT` seconds, default 900) instead of racing.
+It carries every guard `fm-update.sh` has (clean tree, ancestry, branch, self-update source) and never forces, stashes, restarts, or relaunches a session; restarts stay with `/updatefirstmate`.
+Success is silent; a skipped home, a failed update, or a child-reported merge that `gh` could not read raises one `check:` wake in the primary home.
+Create the empty, home-local `config/no-post-merge-update` file to opt that home out.
+
+## Secondmate routes (data/secondmates.md)
+
+Persistent secondmate routes live locally in `data/secondmates.md`.
+The concise single-line route contract is owned by the [`secondmate-provisioning` skill](../../.agents/skills/secondmate-provisioning/SKILL.md#routing-table), including the parser-compatible fields, one-sentence summary requirement, `home:` pointer to the seeded charter, and limit on extra registry prose.
+
+### Remote routes and validation
+
+A remote route adds `host:` and `root:` before the existing fields and places the whole secondmate home on that SSH host; it does not make ordinary workers remotely placeable.
+[`remote-secondmates.md`](../remote-secondmates.md) owns current remote setup, operation, and safety behavior.
+
+Use `fm-home-seed.sh validate` to check the complete operational registry contract documented by the command itself.
+The main first mate routes by reading those scopes with judgment; the project list is provisioning data, not exclusive ownership.
+
+### Provision a local home
+
+Use `fm-home-seed.sh <id> - {<project>...|--no-projects}` to lease a fresh local firstmate worktree for the secondmate home.
+For remote provisioning, including supplied project origins, follow [Remote second mates](../remote-secondmates.md#provision-a-route).
+
+Use the deliberate `--no-projects` signal only for a firstmate-repo domain that needs no separate project clones.
+It cannot be combined with a project list, and omitting both still fails loudly.
+
+A project-less seed requires no existing project clones or `data/projects.md` entries in the home, so it refuses a populated-home conversion without changing that home.
+A preexisting project-bearing charter is also refused until it is re-scaffolded with `--no-projects` or removed.
+
+The lease is held under the secondmate id until explicit retirement or seed rollback returns it, so normal restarts do not free or recycle the home.
+Teardown of a leased home fails closed if `treehouse return` cannot release the lease; plain-clone homes with no treehouse pool slot are removed directly.
+
+### Project modes and backlog handoff
+
+Secondmate routes cover `no-mistakes` and `direct-PR` projects; `local-only` projects remain main-firstmate work.
+For `no-mistakes` projects, seeding initializes only projects newly cloned into a secondmate home and refuses to mutate a preexisting clone that is not already initialized.
+
+After creating a secondmate, move existing main-backlog queued items that you have judged in-scope with `fm-backlog-handoff.sh <secondmate-id> <item-key>...`; it refuses In flight, Done, or non-secondmate homes, and its [script header](../../bin/fm-backlog-handoff.sh) owns route-specific wake outcomes and retries.
+Set `FM_SECONDMATE_CHARTER` to seed from inline charter text when no filled charter brief exists; set `FM_SECONDMATE_SCOPE` when the routing scope should differ from the charter text.
+
+The seeded home's `data/charter.md` owns the standard secondmate lifecycle and escalation contract; the route file points to it through the existing `home:` field instead of adding another pointer.
+
+### Identity markers and upgrades
+
+Each seed writes an `.fm-secondmate-home` identity marker at the home root, alongside a durable `.fm-secondmate-parent` record of the home's route to its parent (see "Provision a route" in [`docs/remote-secondmates.md`](../remote-secondmates.md)).
+The tracked root `.gitignore` ignores both markers, so validation can read them without making a freshly seeded home appear dirty to porcelain-based safety checks.
+
+This does not relax protection for any other untracked file.
+An existing linked-worktree home that predates this rule advances through its marker-only state during its next bootstrap or spawn local sync, after which Git ignores the marker normally.
+
+A local standalone-clone home cannot receive a primary-local commit through that no-fetch sync, so it receives the rule through `/updatefirstmate` instead.
+
 ## Offices (data/offices.md)
 
 An office is a second mate that runs a standing role mandate instead of idling.
@@ -21,7 +82,7 @@ Offices live in the primary home's `data/offices.md`, one line per office, in th
 | `merge` | `none`, or the projects the office merges: a subset of `dispatch`, each carrying `admission=<name>` in the office home's `data/projects.md` |
 | `merge-via` | `<project>=<home>` pairs for projects another home merges: a subset of `dispatch`, disjoint from `merge`, each carrying `merger=<home>` in the office home's `data/projects.md` |
 | `auto-merge-classes` | Must be `none`; no class auto-merges yet |
-| `wip` | The most live tasks the office may run at once, 1 to 99; a landing task, a ship whose ready PR is handed to another home's merger with nothing left open, holds no place, while [project capacity](../configuration.md#project-capacity-configproject-capacity) and [landing lag](projects-and-forges.md#landing-lag-dataprojectsmd-landing-lag-token) still bound every spawn (`bin/fm-office-authority-lib.sh` owns the definition) |
+| `wip` | The most live tasks the office may run at once, 1 to 99; a landing task, a ship whose ready PR is handed to another home's merger with nothing left open, holds no place, while [project capacity](capacity.md#project-capacity-configproject-capacity) and [landing lag](projects-and-forges.md#landing-lag-dataprojectsmd-landing-lag-token) still bound every spawn (`bin/fm-office-authority-lib.sh` owns the definition) |
 | `tick` | `every Nh` (N from 1 to 24) |
 | `sources` | Comma-separated `tick`, `upstream`, `ratchet`, `research`, `lane:<officer-id>` or `lane:<officer-id>:high`; each officer id must be listed in `data/officers.md` |
 

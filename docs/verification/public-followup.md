@@ -12,7 +12,7 @@ This record supports seven active guarantees for promised public replies made th
 6. Work bound to a REMOTE secondmate home can report its typed terminal result: the instructions name paths that exist on the worker's own machine, the owning home collects results for open registrations over that route, an unreachable route fails loudly, an empty reachable route is a healthy no-op, and a non-open registration is skipped without contact.
 7. Work that ends failed or parked remains deliverable when its promised final expected a merged pull request, so the original thread receives the honest failed outcome exactly once instead of retaining an undeliverable promise.
 
-[`docs/configuration.md`](../configuration.md#promised-public-replies-statepublic-followup) owns the operator-facing contract, [`docs/architecture.md`](../architecture.md#optional-relay) owns the mechanism boundary, and `tasks-axi public-followup --help` owns the typed obligation schema.
+[`docs/configuration.md`](../configuration/relay-and-intake.md#promised-public-replies-statepublic-followup) owns the operator-facing contract, [`docs/architecture.md`](../architecture.md#optional-relay) owns the mechanism boundary, and `tasks-axi public-followup --help` owns the typed obligation schema.
 Task chronology and delivery evidence stay outside this record.
 
 ## Environment

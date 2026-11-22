@@ -37,7 +37,7 @@ This posture covers firstmate self-repair exactly the same way it covers a dispa
 
 ### Maintainer opt-in (standing)
 
-Only the operator may opt the primary home in; follow the [Firstmate role schema and resolution policy](../../../docs/configuration.md#firstmate-role-configfirstmate-role), rather than creating a grant on the operator's behalf.
+Only the operator may opt the primary home in; follow the [Firstmate role schema and resolution policy](../../../docs/configuration/home-and-state.md#firstmate-role-configfirstmate-role), rather than creating a grant on the operator's behalf.
 
 ### One-task contribution consent (bounded)
 
@@ -48,7 +48,7 @@ The captain's approval must be a current explicit instruction naming the contrib
 
 ## Where the boundary is enforced
 
-The gate is code, not memory: `bin/fm-role-lib.sh`'s `fm_role_gate_self_publish` applies the [lineage and publication-target policy](../../../docs/configuration.md#firstmate-role-configfirstmate-role) to publishing contracts.
+The gate is code, not memory: `bin/fm-role-lib.sh`'s `fm_role_gate_self_publish` applies the [lineage and publication-target policy](../../../docs/configuration/home-and-state.md#firstmate-role-configfirstmate-role) to publishing contracts.
 
 - `bin/fm-brief.sh --project <dir>` refuses to scaffold a publishing ship brief the home cannot authorize.
 - `bin/fm-spawn.sh` refuses to launch a ship task on this repository without a maintainer scope or matching task consent, and refuses a brief whose `upstream-consent=` disagrees with the flag.
@@ -67,5 +67,5 @@ The boundary covers only traffic that writes to the upstream repository.
 
 ## Secondmates
 
-Follow the [role inheritance and receipt limits](../../../docs/configuration.md#firstmate-role-configfirstmate-role); supported propagation must never grant a child a role the primary does not resolve.
+Follow the [role inheritance and receipt limits](../../../docs/configuration/home-and-state.md#firstmate-role-configfirstmate-role); supported propagation must never grant a child a role the primary does not resolve.
 Deliberately forged local records are outside this accidental-publication safeguard, not a provenance guarantee.

@@ -12,7 +12,7 @@
 # re-implements that read, and never renders a live percentage report. All it
 # adds is: run that existing read, and speak once when a configured window
 # reaches a configured percentage of itself consumed. docs/usage-warner.md
-# owns the behaviour reference and its rationale; docs/configuration.md
+# owns the behaviour reference and its rationale; docs/configuration/tools.md
 # ("Local Claude usage warner") owns the config/usage-warner threshold
 # schema. This header owns the mechanics below.
 #
@@ -105,7 +105,7 @@ Usage:
   fm-usage-warner.sh --help    print this help
 
 Thresholds are read from config/usage-warner (local, gitignored), whose schema
-is owned by docs/configuration.md ("Local Claude usage warner").
+is owned by docs/configuration/tools.md ("Local Claude usage warner").
 See docs/usage-warner.md for the behaviour reference and
 docs/examples/usage-warner for a starting point.
 EOF

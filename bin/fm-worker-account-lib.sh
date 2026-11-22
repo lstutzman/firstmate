@@ -4,7 +4,7 @@
 # is parsed and resolved, the launch-time sign-in check under it, and the
 # environment credentials a pinned Claude launch sheds.
 #
-# docs/configuration.md "Worker account pin" owns the operator-facing contract.
+# docs/configuration/worker-launch.md "Worker account pin" owns the operator-facing contract.
 # Sourced by bin/fm-spawn.sh and bin/fm-control.sh.
 #
 # Pinnable runners, each a credential store inside a root its vendor lets a

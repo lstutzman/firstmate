@@ -30,7 +30,7 @@
 #
 # Every subcommand is a silent no-op in a home with a .fm-secondmate-home or
 # .fm-office marker, or one that has opted out with an empty
-# config/no-post-merge-update file (docs/configuration.md "Post-merge update").
+# config/no-post-merge-update file (docs/configuration/secondmates-and-offices.md "Post-merge update").
 # run executes bin/fm-update.sh, the one fast-forward-only implementation, whose
 # own per-home lock serializes it with a manual /updatefirstmate. fm-update.sh
 # moves homes and code roots together under its own guards (clean tree,

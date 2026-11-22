@@ -692,7 +692,7 @@ test_self_update_source_rewrite_is_skipped() {
 }
 
 # --- T16: a pass already running holds the per-home lock --------------------
-# Spec: docs/configuration.md "Post-merge update": a manual pass and the
+# Spec: docs/configuration/secondmates-and-offices.md "Post-merge update": a manual pass and the
 # post-merge run wait for each other, and a pass that times out moves nothing.
 test_concurrent_pass_waits_and_moves_nothing() {
   local w before holder rc=0 err

@@ -14,7 +14,7 @@ Nothing here makes `quota-axi` a dependency of anything beyond this one feature.
 
 ## Configuring thresholds (config/usage-warner)
 
-Thresholds live in `config/usage-warner`, local and gitignored; its `<window-id>:<percent>` schema is owned by [`configuration.md`](configuration.md#local-claude-usage-warner-configusage-warner).
+Thresholds live in `config/usage-warner`, local and gitignored; its `<window-id>:<percent>` schema is owned by [`configuration.md`](configuration/tools.md#local-claude-usage-warner-configusage-warner).
 `<window-id>` reuses `quota-axi`'s own `--json` `id` vocabulary - `five_hour`, `seven_day`, `model:<name>`, and so on - rather than inventing a second one.
 A configured window id the account does not return is silently never compared: this is a local convenience feature, not a critical monitor, so a stale or unavailable id is not treated as a misconfiguration to flag.
 
@@ -52,7 +52,7 @@ Neither replaces the other, and arming both is reasonable: this one warns per wi
 
 ## Arming
 
-Arm once per home with `bin/fm-usage-warner.sh arm` and remove it with `bin/fm-usage-warner.sh disarm`; what each writes or removes, and when `arm` refuses, is owned by [`configuration.md`](configuration.md#local-claude-usage-warner-configusage-warner).
+Arm once per home with `bin/fm-usage-warner.sh arm` and remove it with `bin/fm-usage-warner.sh disarm`; what each writes or removes, and when `arm` refuses, is owned by [`configuration.md`](configuration/tools.md#local-claude-usage-warner-configusage-warner).
 
 ## What this never does
 

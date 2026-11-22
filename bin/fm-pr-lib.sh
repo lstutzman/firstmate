@@ -217,7 +217,7 @@ fm_pr_forgejo_segment_valid() {
 # github.com.evil or evilgithub.com is refused rather than armed as a watch that
 # can never succeed. That list is the captain's own statement that a host is a
 # GitHub host this home uses, which no URL shape can prove on its own.
-# docs/configuration.md "GitHub Enterprise hosts" owns the file format.
+# docs/configuration/projects-and-forges.md "GitHub Enterprise hosts" owns the file format.
 # An unreadable list, an absent one, and a host it does not name all refuse.
 # Only an exact line match authorizes, so a malformed or comment line can never
 # authorize anything and needs no separate validation.

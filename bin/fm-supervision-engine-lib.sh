@@ -9,7 +9,7 @@
 # check (fm_supervision_host_attended_ready) the host's parts share.
 #
 # THE HOME GATE (config/supervision-host-off, config/supervision-host).
-# docs/configuration.md "Supervision host" owns both files: the inherited
+# docs/configuration/supervision.md "Supervision host" owns both files: the inherited
 # opt-out flag, the home-local engine line's schema, the default on a Claude
 # primary, and the no-engine outcome; this file implements them
 # (fm_supervision_host_enabled, fm_supervision_host_config) and holds the

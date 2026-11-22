@@ -3,7 +3,7 @@
 # before context compaction.
 #
 # Opt in by creating the home-local config/stow-guard file. Absent means off.
-# docs/configuration.md "Stow guard" owns that gate and its tunables. This
+# docs/configuration/home-and-state.md "Stow guard" owns that gate and its tunables. This
 # header owns the transcript read, the state file, and the block message.
 #
 # With the file present, defaults are 300000 context tokens and 24 hours since

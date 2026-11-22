@@ -19,7 +19,7 @@ The router owns the crewmate/scout-only boundary; primary and secondmate integra
 | Model discovery | `commandcode --list-models`; authentication preflight is `commandcode status`. |
 | Marker | None; the process title is the anchored name `command-code`, which identifies the adapter and outranks foreign inherited markers. |
 | Trust dialogs | `--trust` skips the fresh-worktree folder-trust prompt and `--yolo` bypasses permission prompts. |
-| Commit attribution | Command Code adds `Co-authored-by: CommandCodeBot <noreply@commandcode.ai>` by default and only its settings files can turn that off, so the fleet commit-msg strip removes it unless the home sets `config/keep-ai-trailers` (`../../../docs/configuration.md` "Commit attribution"). |
+| Commit attribution | Command Code adds `Co-authored-by: CommandCodeBot <noreply@commandcode.ai>` by default and only its settings files can turn that off, so the fleet commit-msg strip removes it unless the home sets `config/keep-ai-trailers` (`../../../docs/configuration/worker-launch.md` "Commit attribution"). |
 
 ## Per-process wiring limits
 

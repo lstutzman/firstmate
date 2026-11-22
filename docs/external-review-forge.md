@@ -2,7 +2,7 @@
 
 Some projects review code through a tool that uploads its own snapshot of the author's local commits, with no git push and no pull request.
 On such a project a worker never needs to push a branch, and must never push a task branch to the project's shared origin, where colleagues would see firstmate's delivery branches.
-This document is the design for that rail; `bin/fm-project-mode.sh`'s header owns the registry binding, `bin/fm-dod-lib.sh` owns what it changes for a worker, and [configuration.md](configuration.md#external-review-tool-configexternal-reviewmd-configexternal-review-url-configexternal-review-backup) owns the home configuration schema.
+This document is the design for that rail; `bin/fm-project-mode.sh`'s header owns the registry binding, `bin/fm-dod-lib.sh` owns what it changes for a worker, and [configuration.md](configuration/projects-and-forges.md#external-review-tool-configexternal-reviewmd-configexternal-review-url-configexternal-review-backup) owns the home configuration schema.
 
 ## Why it is a forge value
 

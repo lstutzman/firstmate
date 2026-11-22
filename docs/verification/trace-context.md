@@ -1,7 +1,7 @@
 # Trace-context propagation verification
 
 Repeatable evidence for the default-off native W3C trace-context capability.
-Current behavior and rationale are owned by [`../trace-context.md`](../trace-context.md) and the configuration schema by [`../configuration.md`](../configuration.md) ("Trace context propagation"); this page records evidence only.
+Current behavior and rationale are owned by [`../trace-context.md`](../trace-context.md) and the configuration schema by [`../configuration/home-and-state.md`](../configuration/home-and-state.md) ("Trace context propagation"); this page records evidence only.
 
 Date: 2026-08-03.
 Shell: GNU bash 3.2.57 (macOS).

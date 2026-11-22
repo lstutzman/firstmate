@@ -45,7 +45,7 @@
 #                                        so a caller that knows the terminal's foreground
 #                                        process group can keep a backgrounded process out
 #                                        of the selection.
-# docs/configuration.md "Choose the secondmate harness" owns the pin-file schema
+# docs/configuration/harnesses.md "Choose the secondmate harness" owns the pin-file schema
 # and resolution contract; the usage above owns the resolver command arguments.
 # Detection evidence and precedence:
 #   Markers  - verified environment variables a harness publishes about itself.

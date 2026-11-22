@@ -3,7 +3,7 @@
 # profile pin: which launch reads it, how the pin file is parsed, and the
 # refusals.
 #
-# docs/configuration.md "Per-secondmate omp profile" owns the operator-facing
+# docs/configuration/worker-launch.md "Per-secondmate omp profile" owns the operator-facing
 # contract. Sourced by bin/fm-spawn.sh and bin/fm-control.sh.
 #
 # The pin is config/secondmate-accounts/<id>/omp-profile in the launching

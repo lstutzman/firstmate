@@ -14,7 +14,7 @@ A stale or dead-endpoint report for a worker whose pull request has already land
 
 A lane parked on review (`bin/fm-crew-state.sh` reads `source: review-park`) stopped its agent on purpose and is not a recovery case; relaunch it only through `bin/fm-park.sh resume`.
 
-Follow the crew-hosted Lavish board contract in [`docs/configuration.md`](../../../docs/configuration.md#crew-hosted-lavish-review-boards) when recovering a worker that hosts a board.
+Follow the crew-hosted Lavish board contract in [`docs/configuration.md`](../../../docs/configuration/lavish-review-boards.md#crew-hosted-lavish-review-boards) when recovering a worker that hosts a board.
 
 Interrupt, stop, and relaunch a worker through `bin/fm-control.sh <task-id> interrupt|exit|relaunch`, which resolves the recorded runtime itself, verifies each action, and never tears down or discards anything ([`docs/agent-control.md`](../../../docs/agent-control.md)). When closing a finished worker stalls on Claude's "Background work is running" picker, rerun `exit --stop-background`, which confirms "Exit and stop tasks"; never use it on live work.
 That plane covers workers running in this home; a remotely placed secondmate is refused by name and reconciled through `secondmate-provisioning` instead.
