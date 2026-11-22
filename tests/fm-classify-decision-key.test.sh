@@ -85,8 +85,12 @@ test_key_after_a_note_head_cause_tag_is_honored() {
     printf 'resolved [key=captain-hold-pc-2499-sev1-test-1] [at=1794922861]: answered\n'
   } > "$dir/a.status"
   assert_fold "$dir/a.status" "$row" "a key behind a cause tag opens the corr-carrying unkeyed entry"
+  [ -n "$(status_open_decisions_incremental "$dir/a.status" '' timed)" ] \
+    || fail "the timed view should hold the entry open before its resolution"
   printf 'resolved [key=pc-2499-sev1-test] [at=1795308143]: answered by Lee\n' >> "$dir/a.status"
   assert_fold "$dir/a.status" "" "an exact-key resolved line closes it"
+  assert_equals "" "$(status_open_decisions_incremental "$dir/a.status" '' timed)" \
+    "the timed view that fm-watch wakes on closes it too"
   assert_equals "resolved" "$(status_key_closing_verb "$dir/a.status" u-1794922660-b43c750e736da8fc)" \
     "the closing verb names the exact-key resolution"
 
@@ -111,6 +115,8 @@ test_key_behind_a_cause_tag_still_closes_by_corr() {
     printf 'working [at=1794922690]: still going\n' >> "$f"
     printf '%s\n' "$closer" >> "$f"
     assert_fold "$f" "" "${closer%% *} with the opener's corr closes it"
+    assert_equals "" "$(status_open_decisions_incremental "$f" '' timed)" \
+      "${closer%% *} with the opener's corr closes it in the timed view"
     # Cut the incremental fold between the opener and the closer, so the
     # closure has to come through the saved cursor.
     cp "$f" "$f.cut"
