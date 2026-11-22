@@ -1424,9 +1424,9 @@ EOF
   pass "home-summary treats a parked handed-off item as consistent"
 }
 
-# FLEET-153: a done ship parked as a ready branch (ready_branch= and no pr=) is not terminal_in_flight: its
-# endpoints row carries ready_branch_waiting and the child counts as waiting; a done child with a PR or neither still flags.
-test_home_summary_ready_branch_waiting_is_marked() {
+# FLEET-153: a done ship parked as a ready branch (ready_branch= and no pr=) is not terminal_in_flight
+# and counts as waiting; a done child with a PR or neither still flags.
+test_home_summary_ready_branch_waiting_is_declared_wait() {
   local home fakebin out
   home=$(make_home summary-ready-branch)
   mkdir -p "$home/projects/ready"
@@ -1451,14 +1451,14 @@ EOF
   record_claude_idle "$home/state" ready-ship
   printf 'done [at=1000]: branch fm/ready-ship pushed, no PR\n' > "$home/state/ready-ship.status"
   write_ready_meta "ready_branch=fm/ready-ship"
-  assert_ready '.endpoints[0].ready_branch_waiting == true and .valid == true and .invalidity.kind == null
+  assert_ready '.valid == true and .invalidity.kind == null
     and .waiting_on_merge == [{id:"ready-ship",pr:null,ready_branch:true}]' \
     "a ready branch with no PR must be waiting, not terminal_in_flight"
   write_ready_meta "ready_branch=fm/ready-ship" "pr=https://github.com/example/alpha/pull/4621"
-  assert_ready '.endpoints[0].ready_branch_waiting == false and .invalidity.kind == "terminal_in_flight"' \
+  assert_ready '.invalidity.kind == "terminal_in_flight"' \
     "a ready branch with a PR must still flag"
   write_ready_meta
-  assert_ready '.endpoints[0].ready_branch_waiting == false and .invalidity.kind == "terminal_in_flight"' \
+  assert_ready '.invalidity.kind == "terminal_in_flight"' \
     "a done child with neither must still flag"
   unset -f write_ready_meta assert_ready
   pass "home-summary marks a parked ready branch as waiting"
@@ -1803,7 +1803,7 @@ fm_test_run \
   test_home_summary_excludes_secondmate_from_child_inventory \
   test_home_summary_done_child_with_pr_is_waiting_on_merge \
   test_home_summary_parked_handoff_is_consistent \
-  test_home_summary_ready_branch_waiting_is_marked \
+  test_home_summary_ready_branch_waiting_is_declared_wait \
   test_home_summary_external_hold_done_is_declared_wait \
   test_home_summary_external_wait_in_flight_is_counted \
   test_home_summary_child_holds_count_survives_truncation \

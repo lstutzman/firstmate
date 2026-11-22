@@ -290,7 +290,7 @@ is not handed to its merger early. An expired hold_until or a failed child does
 not exempt; captain holds are unchanged.
 A done ship that finished as a parked ready branch (ready_branch= and no pr=, fm_office_task_ready_branch_waiting,
 shown as pr.ready_branch_waiting) is waiting for a PR place by design: it is not terminal_in_flight, is listed in
-waiting_on_merge with pr null and ready_branch true; its endpoints row shows ready_branch_waiting for display.
+waiting_on_merge with pr null and ready_branch true.
 A held in-flight item with the same external hold and no child at all is counted in
 counts.external_wait_in_flight, which the silent-mate alarm treats as waiting rather than silent work.
 A failed child, or any other done child without both a
@@ -1285,7 +1285,6 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
              blocked:($row != null and (($row.unresolved_blocker_ids // []) | length) > 0)}][:$ships_n]),
         endpoints:([$tasks[] | {id,kind,state:.current_state.state,source:.current_state.source,
           age_seconds:(if .current_state.state == "done" and .current_state.source == "status-log" and .paths.status_log.last_event.state == "done" then (.paths.status_log.last_event.age_seconds // null) else null end),
-          ready_branch_waiting:(.pr.ready_branch_waiting == true),
           endpoint:(.endpoint + {target:((.endpoint.target // null) | if . == null then null else trunc(240) end)})}][:$child_n]),
         counts:{
           in_flight:($owned_in_flight | length),
