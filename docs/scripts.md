@@ -97,6 +97,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `backends/tern.sh`       | Experimental tern session-provider adapter                                           |
 | `fm-config-push.sh`      | Push declared inherited local material to live local or remote secondmates and send the placement-specific config reread when changed |
 | `fm-config-split.py`     | Split `docs/configuration.md` into `docs/configuration/` files by a section map (`--check`, `--forkonly`, `--full`, `--conserve`); re-running on a split tree changes nothing |
+| `fm-instruction-size-check.sh` | Fail when `AGENTS.md` or `CLAUDE.md` is over its byte pin in `docs/instruction-size-pins.json`, or 512 or more bytes under it |
 | `fm-project-mode.sh`     | Resolve a project's registered delivery posture, forge binding, PR-text binding, ship-branch prefix, merger home, landing-lag limit, CI slots and open-PR cap (from `config/ci-slots` and `config/open-pr-cap`), ready-evidence name, or hooks installer from `data/projects.md` for fleet sync, home seeding, the forge and PR-text agreements a ship spawn or scout promotion applies, the merger-home refusal, landing-lag admission, the CI slots gate, and the ready-evidence gate |
 | `fm-project-hooks.sh`    | Check and repair a registered project's declared git hooks (`hooks=` token): used by project init, fleet sync, and the session-start `HOOKS_INERT` diagnostic |
 | `fm-forge-detect.sh`     | Propose a clone's forge binding from its origin remote for project-add intake, never recording it |
