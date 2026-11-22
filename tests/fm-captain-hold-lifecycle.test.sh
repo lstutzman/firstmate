@@ -1861,8 +1861,19 @@ test_external_rehold_closes_the_earlier_decision() {
   run_captain "$mate" hold moved-call --reason "now waiting on Slarti" \
     --repo sample --cause external >/dev/null || fail "external re-hold failed"
   norm=$(sed -E 's/ \[at=[0-9]+\]//' "$channel")
-  assert_grep 'resolved [key=captain-hold-moved-call-1]: captain hold moved-call: moved to a wait on another home' \
+  assert_grep 'resolved [key=captain-hold-moved-call-1]: hold moved-call moved to a wait on another home' \
     <(printf '%s\n' "$norm") "the external re-hold did not close the earlier needs-decision"
+  python3 -I - "$ROOT/bin/fm-officer-friction.py" \
+    "$(grep -F 'resolved [key=captain-hold-moved-call-1]' "$channel")" <<'PY' \
+    || fail "the friction officer reads the automatic close as the captain's answer"
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("fm_officer_friction", sys.argv[1])
+friction = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(friction)
+parsed = friction.parse_status_line(sys.argv[2])
+assert parsed and parsed[0] == "resolved", parsed
+assert not friction.LEE_RE.search(parsed[3]), parsed[3]
+PY
   assert_grep 'paused [key=captain-hold-moved-call-1] [cause=external]: captain hold moved-call: now waiting on Slarti' \
     <(printf '%s\n' "$norm") "the external re-hold did not publish the paused wait"
   open=$(bash -c '. "$1"; status_open_decisions "$2"' _ "$ROOT/bin/fm-classify-lib.sh" "$channel")

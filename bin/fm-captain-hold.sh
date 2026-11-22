@@ -430,7 +430,7 @@ close_open_hold_decision() {  # <task-id> <occurrence>
   channel=$(fm_parent_channel_destination "$FM_HOME" "$STATE") && [ -f "$channel" ] || return 0
   [ "$(_fm_open_set_verb "$(status_open_decisions "$channel")" "$key")" = needs-decision ] || return 0
   fm_parent_channel_report "$FM_HOME" "$STATE" \
-    "resolved [key=$key]: captain hold $id: moved to a wait on another home" "$key" || rc=$?
+    "resolved [key=$key]: hold $id moved to a wait on another home" "$key" || rc=$?
   case "$rc" in
     0|1) : ;;
     *) printf 'actionable: task %s moved to an external wait but its needs-decision %s did not close on the parent channel (rc=%s)\n' "$id" "$key" "$rc" >&2 ;;
