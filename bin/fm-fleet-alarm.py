@@ -75,6 +75,10 @@ queue-depth:<mate>, and whose counts.queued_oldest_since is more than queue_age_
 queue-age:<mate>, each named after the home and pointing at bin/fm-backlog-reconcile.py. Held queued
 rows are not counted, a summary without those counts raises nothing, and a home with nothing but a
 queue is still checked (the check runs before the idle-home exit).
+A queue finding is a report for its home, never a question for the captain: it is not part of the
+alarm set. The timer writes one `working [key=queue-depth-<mate>]` (or queue-age) line and sends the
+same text to that home through fm-send.sh, again only when its band is higher (each 10 unheld items,
+each 7 days of oldest age). An improved finding sends nothing, and a cleared one writes one resolved line.
 Parent-channel age uses the shared classifier, excluding parent appends.
 One alert per condition/reset window, rearmed on clear. check and timer share a
 locked record, but independent delivery receipts, so a check cannot consume the
@@ -129,8 +133,12 @@ STATE = Path(os.environ.get('FM_STATE_OVERRIDE', HOME / 'state'))
 CONFIG = Path(os.environ.get('FM_CONFIG_OVERRIDE', HOME / 'config'))
 ID = 'fleet-alarm'
 # First matching prefix of a current alarm names the cause on the timer's needs-decision line.
-CAUSES = (('quota:', 'decision'), ('pool', 'decision'), ('queue-', 'decision'), ('silent:', 'external'), ('stale:', 'tool'),
+CAUSES = (('quota:', 'decision'), ('pool', 'decision'), ('silent:', 'external'), ('stale:', 'tool'),
           ('quota-read', 'tool'), ('mate-read', 'tool'), ('config', 'tool'))
+
+
+# A queue finding is worse when its band is higher: each 10 unheld items, or each 7 days of oldest age.
+QUEUE_DEPTH_BAND, QUEUE_AGE_BAND = 10, 7
 
 
 def cause_of(alarms):
@@ -401,13 +409,14 @@ def working_on_task(summary, counts, open_decisions, last_verb, paused_until, ag
 
 
 def queue_findings(name, counts, cfg):
+    # Each value is (band, text): a report is worse only when its band is higher (see queue_reports).
     # Queue depth and age come from the summary's untruncated counts, never its bounded queued rows, and
     # count only unheld rows (a held row is waiting on something, not stale). An older producer that
     # sends neither field raises nothing; a malformed value is ignored rather than failing the poll.
     findings = {}
     unheld = counts.get('queued_unheld')
     if type(unheld) is int and unheld > cfg['queue_depth']:
-        findings['queue-depth:' + name] = (f"Queue depth {unheld} unheld queued items in {name} "
+        findings['queue-depth:' + name] = (unheld // QUEUE_DEPTH_BAND, f"Queue depth {unheld} unheld queued items in {name} "
                                            f"(limit {cfg['queue_depth']:g}); run bin/fm-backlog-reconcile.py there")
     oldest = counts.get('queued_oldest_since')
     if isinstance(oldest, str):
@@ -416,7 +425,7 @@ def queue_findings(name, counts, cfg):
         except ValueError:
             return findings
         if days > cfg['queue_age_days']:
-            findings['queue-age:' + name] = (f"Oldest unheld queued item {days} days old in {name} "
+            findings['queue-age:' + name] = (days // QUEUE_AGE_BAND, f"Oldest unheld queued item {days} days old in {name} "
                                              f"(limit {cfg['queue_age_days']:g} days); run bin/fm-backlog-reconcile.py there")
     return findings
 
@@ -793,6 +802,23 @@ def collect(cfg):
     return findings, quota_info, not_collected, eased, (drain, unread, slots), orphan_scan(cfg['orphan_proc_hours'])
 
 
+def queue_reports(queue, reported, unread):
+    # One report per new queue finding or new peak band; an improved one keeps its peak until it clears,
+    # and a cleared one resolves its key unless its home could not be read this poll. Updates `reported`
+    # and returns (key, opens, text, home) changes.
+    changes = []
+    for key, (band, text) in sorted(queue.items()):
+        last = reported.get(key)
+        worse = last is None or band > last
+        reported[key] = band if worse else last
+        if worse:
+            changes.append((key, True, text, key.split(':', 1)[1]))
+    for key in [k for k in reported if k not in queue and k.split(':', 1)[1] not in unread]:
+        del reported[key]
+        changes.append((key, False, f'Queue finding cleared: {key.replace(":", " in ")}', None))
+    return changes
+
+
 def check(channel):
     STATE.mkdir(parents=True, exist_ok=True)
     with (STATE / '.fleet-alarm.lock').open('a') as lock:
@@ -817,6 +843,8 @@ def check(channel):
             quota_info = ''
             not_collected = {}
             eased = set()
+        # Queue findings are reports for the owning home, never a question: they leave the alarm set.
+        queue = {key: raw.pop(key) for key in [k for k in raw if k.startswith('queue-')]}
         # An inventory finding must persist across consecutive polls of this channel before it
         # alarms; the count resets as soon as the finding is absent from a poll.
         suspect = {key: n + 1 for key, n in stored.get('suspect', {}).get(channel, {}).items()
@@ -923,6 +951,9 @@ def check(channel):
                             f'CI slots over: {repo} has {open_prs} open PRs against {declared} CI slots; only exempt work and PR landing '
                             f'should start there until its open PRs are back to {declared} or fewer' if side == 'over' else
                             f'CI slots back within: {repo} has {open_prs} open PRs against {declared} CI slots; ordinary ship work may resume there'))
+        queue_reported = dict(stored.get('queue', {}).get(channel, {}))
+        unread = set(not_collected) | {key.split(':', 1)[1] for key in raw if key.startswith('mate-read:')}
+        queue_changes = [] if 'mate-read' in raw or 'config' in raw else queue_reports(queue, queue_reported, unread)
         announced_orphans = stored.get('orphans', {}).get(channel, 0)
         if orphans is not None:
             host = os.uname().nodename.split('.')[0]
@@ -943,6 +974,24 @@ def check(channel):
             run([BIN / 'fm-fleet-ledger.sh', 'appended', CONFIG, status_path], 3)
         elif changes:
             print('\n'.join(text for _, _, text in changes))
+        if queue_changes and channel == 'timer':
+            status_path = STATE / 'fleet-alarm.status'
+            with status_path.open('a') as status:
+                for key, opens, text, home in queue_changes:
+                    slug = re.sub(r'[^a-z0-9]+', '-', key.lower())
+                    status.write(f"{'working' if opens else 'resolved'} [at={int(now)}] [key={slug}]: {text}\n")
+            run([BIN / 'fm-fleet-ledger.sh', 'appended', CONFIG, status_path], 3)
+            # Best-effort delivery to the named home's own inbox; the status line above is the record.
+            for key, opens, text, home in queue_changes:
+                if opens:
+                    try:
+                        run([BIN / 'fm-send.sh', f'fm-{home}', '--fire-and-forget',
+                             hashlib.sha256(f'{key}-{queue[key][0]}-{now}'.encode()).hexdigest()[:16], text], 20)
+                    except ReaderUnavailable as error:
+                        print(f'fleet-alarm: queue report for fm-{home} not delivered (fm-send exit {error})',
+                              file=sys.stderr)
+        elif queue_changes:
+            print('\n'.join(text for _, opens, text, _ in queue_changes if opens))
         new = {key: sorted(set(old.get(key, [])) | ({channel} if key in fresh else set()))
                for key in current}
         new.update(preserved)
@@ -952,6 +1001,7 @@ def check(channel):
                        'suspect': {**stored.get('suspect', {}), channel: suspect},
                        'drain': {**stored.get('drain', {}), channel: announced},
                        'ci_slots': {**stored.get('ci_slots', {}), channel: slots_announced},
+                       'queue': {**stored.get('queue', {}), channel: queue_reported},
                        'orphans': {**stored.get('orphans', {}), channel: announced_orphans}}, file)
             temporary = file.name
         os.replace(temporary, record)
