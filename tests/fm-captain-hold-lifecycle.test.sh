@@ -1796,6 +1796,55 @@ EOF
   pass "a secondmate home publishes each hold occurrence and its answer on the parent channel"
 }
 
+# A hold whose cause is external waits on another home, not the captain, so it
+# reaches the parent channel as a declared wait and never as a needs-decision.
+# Answering or releasing it still closes its key; every other cause is unchanged.
+test_external_hold_publishes_a_declared_wait_not_a_decision() {
+  local parent mate channel decision open line
+  parent=$(make_home external-hold-parent)
+  mate=$(make_home external-hold-mate)
+  printf 'external-hold-mate\n' > "$mate/.fm-secondmate-home"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$parent" \
+    > "$mate/.fm-secondmate-parent"
+  channel="$parent/state/external-hold-mate.status"
+  decision="$mate/decision.txt"
+  printf 'done waiting\n' > "$decision"
+
+  run_captain "$mate" hold ext-call --title "Wait on Slarti" --reason "waiting on another home" \
+    --repo sample --cause external >/dev/null || fail "external hold failed"
+  run_captain "$mate" hold dec-call --title "Pick a release" --reason "a real captain call" \
+    --repo sample --cause decision >/dev/null || fail "decision hold failed"
+  line=$(grep -F 'captain-hold-ext-call-1' "$channel" | sed -E 's/ \[at=[0-9]+\]//') \
+    || fail "external hold did not reach the parent channel"
+  assert_equals 'paused [key=captain-hold-ext-call-1] [cause=external]: captain hold ext-call: waiting on another home' \
+    "$line" "an external hold did not publish a paused line"
+  grep -F 'needs-decision' "$channel" | grep -F 'captain-hold-ext-call' >/dev/null \
+    && fail "an external hold published a needs-decision: $(cat "$channel")"
+  assert_grep 'needs-decision [key=captain-hold-dec-call-1] [cause=decision]: captain hold dec-call: a real captain call' \
+    <(sed -E 's/ \[at=[0-9]+\]//' "$channel") "a decision hold stopped publishing needs-decision"
+
+  open=$(bash -c '. "$1"; status_open_decisions "$2"' _ "$ROOT/bin/fm-classify-lib.sh" "$channel")
+  printf '%s\n' "$open" | grep -Fq 'captain-hold-ext-call' \
+    && fail "an external hold opened a decision key: $open"
+  printf '%s\n' "$open" | grep -Fq 'captain-hold-dec-call-1' \
+    || fail "a decision hold did not open its key: $open"
+
+  run_captain "$mate" answer ext-call --decision-file "$decision" >/dev/null \
+    || fail "external answer failed"
+  assert_grep 'resolved [key=captain-hold-ext-call-1]: captain hold ext-call: answered' \
+    <(sed -E 's/ \[at=[0-9]+\]//' "$channel") "answering an external hold did not close its key"
+
+  run_captain "$mate" hold ext-rel --title "Wait on Gilligan" --reason "waiting on Gilligan" \
+    --repo sample --cause external >/dev/null || fail "second external hold failed"
+  run_captain "$mate" answer ext-rel --decision-file "$decision" --release --no-phases >/dev/null \
+    || fail "external release failed"
+  assert_grep 'paused [key=captain-hold-ext-rel-1] [cause=external]: captain hold ext-rel: waiting on Gilligan' \
+    <(sed -E 's/ \[at=[0-9]+\]//' "$channel") "the second external hold did not publish paused"
+  assert_grep 'resolved [key=captain-hold-ext-rel-1]: captain hold ext-rel: released' \
+    <(sed -E 's/ \[at=[0-9]+\]//' "$channel") "releasing an external hold did not close its key"
+  pass "an external hold publishes a declared wait, not a needs-decision, and answer and release close it"
+}
+
 # A call first raised as `needs-decision [key=<task-id>]` and then held under that
 # task id must close that original key when the hold is answered or released, so
 # the parent's open-decision fold stops re-asking an answered call.
@@ -5806,6 +5855,7 @@ test_completion_replaces_a_pair_recorded_after_pr
 test_terminal_single_owner_status_decision_does_not_block_empty_inventory
 test_secondmate_hold_stays_in_authoritative_home
 test_secondmate_home_publishes_holds_and_answers
+test_external_hold_publishes_a_declared_wait_not_a_decision
 test_hold_answer_closes_originating_decision_key
 test_secondmate_reconcile_publishes_before_request_retirement
 test_bound_channel_answers_close_at_answer_time

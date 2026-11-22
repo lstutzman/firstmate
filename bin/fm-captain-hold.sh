@@ -330,7 +330,10 @@
 #
 # Parent channel: inside a secondmate home a task held for the captain, and its
 # answer, are captain-facing facts the moment they are recorded, so `hold`
-# publishes `needs-decision [key=captain-hold-<task>-<n>]` and `answer` (and
+# publishes `needs-decision [key=captain-hold-<task>-<n>]` (a hold with
+# `--cause external` waits on another home, not the captain, so it publishes
+# `paused [cause=external] [key=captain-hold-<task>-<n>]` instead, a declared
+# wait that opens no decision) and `answer` (and
 # `answers`) the matching `resolved` line on the parent channel through
 # bin/fm-parent-channel-lib.sh, whether or not the mate model appends anything.
 # <n> is the count of resolution records the body already carries plus one, so
@@ -1420,7 +1423,7 @@ default_logged() {  # <task-id> <hold-set> <by>
 
 command_hold() {
   local id=${1:-} title='' reason='' repo='' origin='' until='' show state existing_title body='' hold_kind hold_set occurrence
-  local cause=decision origin_key='' existing_hold_kind='' existing_held='' preserve_hold_set=0 stored_reason original_body='' hold_status=0
+  local cause=decision parent_verb origin_key='' existing_hold_kind='' existing_held='' preserve_hold_set=0 stored_reason original_body='' hold_status=0
   local clear_default=0
   [ "$#" -ge 1 ] || { usage >&2; exit 2; }
   shift
@@ -1569,7 +1572,11 @@ command_hold() {
     fi
     reason="$reason (default cleared: captain deferred to $until)"
   fi
-  publish_parent_hold "$id" "$occurrence" needs-decision "$reason" "$cause" "$until" "$origin_key"
+  # An external-cause hold waits on another home, not on the captain, so it goes
+  # out as a declared wait and never becomes a captain-facing needs-decision.
+  parent_verb=needs-decision
+  [ "$cause" != external ] || parent_verb=paused
+  publish_parent_hold "$id" "$occurrence" "$parent_verb" "$reason" "$cause" "$until" "$origin_key"
   if [ -n "$origin" ]; then
     write_hold_origin "$id" "$(show_field "$show" body)" "$origin" || exit $?
   fi

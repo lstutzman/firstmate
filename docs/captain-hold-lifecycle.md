@@ -58,7 +58,7 @@ It works in this order:
 2. It records the task's UTC hold-set timestamp as the leading line of the task body.
 3. It invokes the underlying tasks-axi hold operation.
 4. It verifies the captain-hold annotations and timestamp.
-5. In a secondmate home, it publishes the verified hold to the parent channel.
+5. In a secondmate home, it publishes the verified hold to the parent channel: a `needs-decision`, or for `--cause external` (a wait on another home, not the captain) a `paused` line that opens no decision. The script header owns the line shapes.
 6. When `--origin` is supplied, it records the origin on the task, replacing any previous association only after the backend hold succeeds.
 
 Publishing the stamp first ensures a snapshot cannot observe a newly captain-held task without the timestamp that defines its age.
