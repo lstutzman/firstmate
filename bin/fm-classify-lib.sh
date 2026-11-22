@@ -784,7 +784,10 @@ status_event_recorded() {  # <status-file> <new-status-line>
 # carries that corr and is a keyed needs-decision or blocked (the keyed copy
 # supersedes it), a done, or a resolved; a working or paused line, another corr,
 # and a "u-<at-epoch>" key with no corr never do, and a done never closes an entry
-# under a stated key. Every
+# under a stated key. A note whose key sits behind leading "[cause=...]" or
+# "[dep=...]" tags states no key, so its line opens unkeyed exactly as above
+# (and keeps closing by corr); a later line stating that key also closes it,
+# so an exact-key resolution never leaves it open. Every
 # other unkeyed ask - unstamped, or stamped before the cutover - keeps the
 # historical "default" key and one-open-decision-per-task behavior, so older logs
 # fold exactly as before.
@@ -886,13 +889,10 @@ _fm_key_before_colon() {  # <status-line>
   esac
 }
 # Raw slug of a complete "[key=<slug>]" token at the head of the note (the
-# first thing after the line's first colon, ignoring whitespace, and ignoring
-# any run of "[cause=...]" / "[dep=...]" tags that precede it: a worker who
-# writes the colon first often puts the cause tag ahead of the key, and a key
-# missed there opens a synthetic key that an exact-key resolution never
-# closes). Fails when the line has no colon or no complete token there; slug
-# charset validity is the caller's check via _fm_decision_slug_ok, exactly as
-# for the before-colon position.
+# first thing after the line's first colon, ignoring whitespace). Fails when
+# the line has no colon or no complete token there; slug charset validity is
+# the caller's check via _fm_decision_slug_ok, exactly as for the before-colon
+# position.
 _fm_key_at_note_head() {  # <status-line> [<out-var>] -> raw slug
   local __fm_head_rest
   case "$1" in
@@ -900,15 +900,6 @@ _fm_key_at_note_head() {  # <status-line> [<out-var>] -> raw slug
     *) return 1 ;;
   esac
   __fm_head_rest=${__fm_head_rest#"${__fm_head_rest%%[![:space:]]*}"}
-  while :; do
-    case "$__fm_head_rest" in
-      \[cause=*\]*|\[dep=*\]*)
-        __fm_head_rest=${__fm_head_rest#*\]}
-        __fm_head_rest=${__fm_head_rest#"${__fm_head_rest%%[![:space:]]*}"}
-        ;;
-      *) break ;;
-    esac
-  done
   case "$__fm_head_rest" in
     \[key=*\]*) __fm_head_rest=${__fm_head_rest#\[key=}; __fm_head_rest=${__fm_head_rest%%\]*} ;;
     *) return 1 ;;
@@ -941,10 +932,7 @@ status_line_note() {  # <status-line> [<out-var>] -> text after the first colon,
       if ! _fm_key_before_colon "$__fm_note_unstamped" \
         && _fm_key_at_note_head "$__fm_note_unstamped" __fm_note_key \
         && _fm_decision_slug_ok "$__fm_note_key"; then
-        # The token is the first "[key=" in the note: only cause and dep tags
-        # may precede it, and neither can contain one.
-        __fm_note_text=${__fm_note_text/"[key=$__fm_note_key] "/}
-        __fm_note_text=${__fm_note_text/"[key=$__fm_note_key]"/}
+        __fm_note_text=${__fm_note_text#"[key=$__fm_note_key]"}
         __fm_note_text=${__fm_note_text#"${__fm_note_text%%[![:space:]]*}"}
       fi
       ;;
@@ -1133,6 +1121,34 @@ EOF
   printf '%s' "$out"
 }
 
+# Drop every open unkeyed entry ("default" or synthetic) whose note names <key>
+# at its head, behind any run of "[cause=...]" / "[dep=...]" tags: a worker who
+# puts a cause tag ahead of the note-head key leaves the key unread, so the ask
+# opens unkeyed, and a later line stating that key must still close it. Keeps
+# the set's trailing newline. [timed] skips the timed view's two extra columns.
+_fm_noted_key_drop() {  # <open-set> <key> [timed]
+  local line key rest out=''
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    key=${line%%$'\t'*}
+    if [ "$key" = default ] || _fm_is_synthetic_key "$key"; then
+      rest=${line#*$'\t'}; rest=${rest#*$'\t'}
+      [ "${3:-}" = timed ] && { rest=${rest#*$'\t'}; rest=${rest#*$'\t'}; }
+      while :; do
+        case "$rest" in
+          \[cause=*\]*|\[dep=*\]*) rest=${rest#*\]}; rest=${rest#"${rest%%[![:space:]]*}"} ;;
+          *) break ;;
+        esac
+      done
+      case "$rest" in "[key=$2]"*) continue ;; esac
+    fi
+    out="${out}${line}"$'\n'
+  done <<EOF
+$1
+EOF
+  printf '%s' "$out"
+}
+
 # Drop the record for <key> from a newline-terminated "<key>\t<verb>\t<note>" set.
 # Portable (no associative arrays) so the fold runs on bash 3.2 as well as 4+.
 # An <out-var> receives the set without its trailing newline, exactly as a
@@ -1276,6 +1292,9 @@ _fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb
   status_line_note "$line" note
   _fm_decision_key_transition_allowed "$key" "$note" \
     || { _fm_decision_fold_emit "$open" "$out"; return 0; }
+  if [ "$unkeyed" = 0 ]; then
+    open=$(_fm_noted_key_drop "$open" "$key" "$timed")
+  fi
   case "$verb" in
     needs-decision|blocked)
       if [ "$timed" = timed ]; then
@@ -1397,12 +1416,6 @@ status_open_decisions() {  # <status-file> [<kind>]
       return substr(s, 1, index(s, "]") - 1)
     }
     function slug(s) { return s ~ /^[A-Za-z0-9._-]+$/ }
-    function note_tags_skipped(s,    stop) {
-      while ((index(s, "[cause=") == 1 || index(s, "[dep=") == 1) && (stop = index(s, "]"))) {
-        s = trim_left(substr(s, stop + 1))
-      }
-      return s
-    }
     function epoch(s,    rest, value, finish) {
       if (!index(s, ":")) return ""
       s = head(s)
@@ -1436,6 +1449,17 @@ status_open_decisions() {  # <status-file> [<kind>]
         rest = substr(rest, 1, dash - 1)
       }
       return rest ~ /^[0-9]+$/
+    }
+    function noted_key(s,    stop) {
+      while ((index(s, "[cause=") == 1 || index(s, "[dep=") == 1) && (stop = index(s, "]")))
+        s = trim_left(substr(s, stop + 1))
+      return index(s, "[key=") == 1 && has_token(s, "[key=") ? raw_key(s) : ""
+    }
+    function noted_drop(key,    c, n, i, doomed) {
+      n = 0
+      for (c in records)
+        if ((c == "default" || synthetic(c)) && noted_key(notes[c]) == key) doomed[++n] = c
+      for (i = 1; i <= n; i++) delete records[doomed[i]]
     }
     function corr_drop(corr,    c, n, i, doomed) {
       n = 0
@@ -1486,18 +1510,10 @@ status_open_decisions() {  # <status-file> [<kind>]
       if (has_token(h, "[key=")) {
         key = raw_key(h)
         if (!slug(key)) next
-      } else if (has_colon && has_token(note_tags_skipped(note), "[key=") &&
-                 index(note_tags_skipped(note), "[key=") == 1) {
-        # Mirrors _fm_key_at_note_head: leading [cause=..]/[dep=..] tags may
-        # precede the note-head key, and the key token is dropped from the note.
-        rest = note_tags_skipped(note)
-        key = raw_key(rest)
+      } else if (has_colon && index(note, "[key=") == 1 && has_token(note, "[key=")) {
+        key = raw_key(note)
         if (!slug(key)) next
-        token = "[key=" key "]"
-        i = index(note, token)
-        note = substr(note, 1, i - 1) substr(note, i + length(token))
-        if (substr(note, i, 1) == " ") note = substr(note, 1, i - 1) substr(note, i + 1)
-        note = trim_left(note)
+        note = trim_left(substr(note, length(key) + 7))
       }
       unkeyed = key == ""
       if (unkeyed) {
@@ -1509,9 +1525,11 @@ status_open_decisions() {  # <status-file> [<kind>]
         }
       }
       if (!allowed(key, note)) next
+      if (!unkeyed) noted_drop(key)
       if (v == "needs-decision" || v == "blocked") {
         order[++serial] = key
         records[key] = serial
+        notes[key] = note
         values[key] = key "\t" v "\t" note
       } else {
         if (unkeyed && !(key in records) && ((corr = correlation(s)) == "" || v != resolve)) {
@@ -1900,10 +1918,13 @@ _fm_open_decisions_cursor_path() {  # <status-file>
 # 11: a later keyed ask, done or resolved line with the same corr closes an
 # open synthetic "u-<epoch>-<corr>" entry, so cursors still holding one are
 # discarded.
+# 12: a line stating a key also closes an open unkeyed entry whose note names
+# that key behind leading cause or dep tags, so cursors still holding one that
+# an exact-key resolution should have closed are discarded.
 # Version 4 was already spent on the bracketed-tag parser change above, and a
 # cursor persisted under that reading predates this one, so it must still be
 # discarded and rebuilt from byte 0 under the new reading.
-FM_OPEN_DECISIONS_FOLD_VERSION=11
+FM_OPEN_DECISIONS_FOLD_VERSION=12
 
 # Most new status-log bytes one status_open_decisions_incremental call folds
 # (env FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES overrides). The fold forks per line,
