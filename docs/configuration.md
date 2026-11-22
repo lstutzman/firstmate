@@ -667,7 +667,7 @@ Task meta records `backend=` only for a non-default backend; an absent `backend=
   It has no window, endpoint, branch, incarnation, or `office=`, so `bin/fm-pr-merge.sh` decides its merge under every unchanged guard, an office home refuses it, and `bin/fm-teardown.sh` cleans it as a windowless record; the script's header owns the field inventory and its refusals.
   Until that cleanup, `bin/fm-crew-state.sh` reads it as state unknown with its worktree gone, which is expected rather than a stopped worker.
 
-- A parked ship, whose copy `bin/fm-tree-park.sh` returned to the pool while its PR waits on another home's merger, has no `worktree=` line and records `parked=1`, `parked_branch=`, `parked_head=`, `parked_worktree=`, and `parked_at=` instead; a text steer through `bin/fm-send.sh` restores `worktree=` and drops those fields, and the script's header owns the rules.
+- A parked ship, whose copy `bin/fm-tree-park.sh` returned to the pool while its PR waits on another home's merger or its pushed branch with no PR waits for a CI slot, has no `worktree=` line and records `parked=1`, `parked_branch=`, `parked_head=`, `parked_worktree=`, and `parked_at=` instead; a text steer through `bin/fm-send.sh` restores `worktree=` and drops those fields, and the script's header owns the rules.
 
 ### Task selectors
 

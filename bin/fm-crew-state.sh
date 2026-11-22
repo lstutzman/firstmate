@@ -309,10 +309,15 @@ REMOTE_HOST=$(meta_value remote_host)
 [ -n "$KIND" ] || KIND=ship
 
 # A parked ship (bin/fm-tree-park.sh) returned its copy to the pool once its
-# pushed PR head was handed to another home's merger; its work is done and the
+# pushed PR head was handed to another home's merger, or once its pushed ready
+# branch with no PR began waiting for a CI slot; its work is done and the
 # record has no copy or agent to read.
 if [ "$(meta_value parked)" = 1 ]; then
-  emit "done" status-log "PR $(meta_value pr) waits on its merger; copy returned to the pool at $(meta_value parked_head) (parked)"
+  if [ -n "$(meta_value pr)" ]; then
+    emit "done" status-log "PR $(meta_value pr) waits on its merger; copy returned to the pool at $(meta_value parked_head) (parked)"
+  else
+    emit "done" status-log "branch $(meta_value parked_branch) waits for a CI slot; copy returned to the pool at $(meta_value parked_head) (parked)"
+  fi
 fi
 
 # A torn-down (or never-created) worktree has no current state to read. A

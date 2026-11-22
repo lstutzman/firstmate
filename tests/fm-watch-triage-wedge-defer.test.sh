@@ -1103,6 +1103,55 @@ if [ -n "${FM_TEST_ONLY:-}" ]; then
   exit 0
 fi
 
+# A parked ready branch: a ship that finished as a pushed branch with no PR,
+# whose copy bin/fm-tree-park.sh returned to the pool and whose worker stopped.
+parked_ready_fixture() {  # <name> [parked|held]
+  local dir state
+  dir=$(wedge_threshold_fixture "$1" \
+    "done [at=$(( $(date +%s) - 600 ))]: branch fm/lab pushed, no PR (CI slots)" 0 5)
+  state="$dir/state"
+  printf 'ready_branch=fm/lab\n' >> "$state/wedge.meta"
+  [ "${2:-parked}" = held ] || printf 'parked=1\nparked_branch=fm/lab\nparked_head=abc123\n' >> "$state/wedge.meta"
+  printf '%s\n' "$dir"
+}
+
+test_wedge_threshold_skips_a_parked_ready_branch() {
+  local dir state fakebin out capture window key n
+  local working='state: done · source: status-log · branch fm/lab waits for a CI slot (parked)'
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
+
+  dir=$(parked_ready_fixture parked-ready)
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  n=1
+  while [ "$n" -le 3 ]; do
+    wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" absorb \
+      || fail "a parked ready branch woke the watcher at threshold $n: $(cat "$out")"
+    n=$((n + 1))
+  done
+  [ "$(wedge_stale_wakes "$state" "$window")" -eq 0 ] \
+    || fail "a parked ready branch queued a stale wake: $(cat "$state/.wake-queue")"
+  [ ! -e "$state/.wedge-escalations-$key" ] \
+    || fail "a parked ready branch counted $(cat "$state/.wedge-escalations-$key") wedge escalation(s)"
+
+  # A ready branch whose copy is still held (not parked) keeps the ladder.
+  dir=$(parked_ready_fixture held-ready held)
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" exit \
+    || fail "a held ready branch stopped alarming"
+  grep -F 'possible wedge, escalation 1' "$out" >/dev/null \
+    || fail "a held ready branch lost its wedge alarm: $(cat "$out")"
+
+  # A parked branch steered back into work after its done line is live again.
+  dir=$(parked_ready_fixture parked-ready-steered)
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  mkdir -p "$state/wedge.inbox/handled"
+  printf 'schema=fm-task-inbox.v1\nat=%s\n--\nrun it\n' \
+    "$(iso_utc_at "$(( $(date +%s) - 60 ))")" > "$state/wedge.inbox/handled/001.msg"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" exit \
+    || fail "a parked ready branch steered since its done line stopped alarming"
+  pass "a parked ready branch's wedge alarm is skipped, and a held or steered one still alarms"
+}
+
 fm_test_run \
   test_wedge_threshold_defers_to_a_declared_wait_under_a_working_verdict \
   test_wedge_threshold_keeps_a_wait_past_a_default_key_answer \
@@ -1118,4 +1167,5 @@ fm_test_run \
   test_wedge_threshold_escalates_when_no_run_is_executing \
   test_wedge_threshold_validating_run_is_off_until_armed \
   test_wedge_threshold_skips_a_landing_task \
-  test_first_sight_skips_a_landing_task
+  test_first_sight_skips_a_landing_task \
+  test_wedge_threshold_skips_a_parked_ready_branch

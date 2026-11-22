@@ -58,6 +58,19 @@
 # parked_head=, parked_worktree=, and parked_at= are added. The task record,
 # its backlog item, its merge poll, and its status are left as they were.
 #
+# A ready branch parks the same way. A ship whose worker finished as a pushed
+# branch with no PR (the CI slots gate held its opening; bin/fm-ready-branch.sh
+# records ready_branch=, and runs park right after) is a candidate when it has
+# ready_branch= and no pr=, and fm_office_task_ready_branch_waiting holds: the
+# latest event is a stamped done line, no decision is open, and no steer arrived
+# since. There is no merge handoff, released run or forge head to check. park
+# then proves the copy clean, on the recorded ready branch, and equal to
+# origin/<branch> after a fetch, so the pushed branch is the proof; the rest of
+# park is unchanged. The sweep's one attempt is keyed on the branch and the done
+# line's stamp, so a branch released and finished again is parked again.
+# unpark follows origin/<branch> for it (no PR to ask) and its relaunch note
+# says the branch waited for a CI slot.
+#
 # unpark runs from bin/fm-send.sh before a steer to a parked task is recorded.
 # Under the project lock it first leases in place every slot this home's
 # records still name (fm_treehouse_lease_recorded_slots, as bin/fm-spawn.sh
@@ -74,7 +87,8 @@
 # record, so a refused unpark leaves the task parked and exits nonzero; when the
 # rollback itself cannot finish, the error names the copy still leased.
 #
-# bin/fm-teardown.sh treats a parked record as one with no copy to return.
+# bin/fm-teardown.sh treats a parked record as one with no copy to return, for a
+# parked ready branch too; it never deletes the pushed branch.
 # Exit codes: 0 done (or nothing to do), 1 refused or failed, 2 usage.
 set -eu
 
@@ -155,13 +169,21 @@ park_candidate() {
     *) PARK_WHY="pool slot claim is $FM_TREEHOUSE_SLOT_OWNER"; return 1 ;;
   esac
   PARK_URL=$(park_meta_value pr)
-  [ -n "$PARK_URL" ] || { PARK_WHY="no recorded PR"; return 1; }
+  PARK_READY=$(park_meta_value ready_branch)
+  PARK_MODE=$(park_meta_value mode)
+  [ -n "$PARK_MODE" ] || PARK_MODE=no-mistakes
+  if [ -z "$PARK_URL" ]; then
+    # A pushed ready branch with no PR (bin/fm-ready-branch.sh): it waits for a
+    # CI slot, not for a merger, and no pipeline run was ever started for it.
+    [ -n "$PARK_READY" ] || { PARK_WHY="no recorded PR or ready branch"; return 1; }
+    fm_office_task_ready_branch_waiting "$STATE" "$ID" || { PARK_WHY="task is not waiting, finished and unsteered, for a CI slot"; return 1; }
+    PARK_HANDOFF="ready-branch $PARK_READY $FM_OFFICE_READY_DONE_AT"
+    return 0
+  fi
   PARK_HANDOFF=$(park_record_line "$STATE/$ID.merge-handoff") || { PARK_WHY="PR not handed to another home's merger"; return 1; }
   [ "${PARK_HANDOFF%% *}" = "$PARK_URL" ] || { PARK_WHY="handoff record names another PR"; return 1; }
   self=$(park_home_id) || { PARK_WHY="this home's identity marker is unusable"; return 1; }
   fm_office_task_landing "$STATE" "$ID" "$self" || { PARK_WHY="task is not waiting on its merger"; return 1; }
-  PARK_MODE=$(park_meta_value mode)
-  [ -n "$PARK_MODE" ] || PARK_MODE=no-mistakes
   if [ "$PARK_MODE" = no-mistakes ]; then
     [ "$(park_record_line "$STATE/$ID.nm-released" || true)" = "$PARK_HANDOFF" ] \
       || { PARK_WHY="its no-mistakes run has not been released for this handoff"; return 1; }
@@ -177,7 +199,8 @@ park_copy_dirt() {  # <worktree>
 }
 
 # The copy is clean, on a branch, and its HEAD equals origin/<branch> after a
-# fetch and the forge's PR head. Sets PARK_BRANCH and PARK_HEAD.
+# fetch and, for a PR, the forge's PR head; for a ready branch the copy's branch
+# is the recorded one instead. Sets PARK_BRANCH and PARK_HEAD.
 park_copy_preserved() {
   local dirt remote
   PARK_TRANSIENT=0
@@ -191,6 +214,11 @@ park_copy_preserved() {
     || { PARK_WHY="origin/$PARK_BRANCH does not exist"; return 1; }
   [ -z "$(git -C "$PARK_WT" rev-list "$remote..HEAD" 2>/dev/null)" ] || { PARK_WHY="copy has commits not on origin/$PARK_BRANCH"; return 1; }
   [ "$remote" = "$PARK_HEAD" ] || { PARK_WHY="copy head $PARK_HEAD is not origin/$PARK_BRANCH $remote"; return 1; }
+  # A ready branch has no PR for the forge to name; the pushed branch is the whole proof.
+  if [ -z "$PARK_URL" ]; then
+    [ "$PARK_BRANCH" = "$PARK_READY" ] || { PARK_WHY="copy is on $PARK_BRANCH, not the recorded ready branch $PARK_READY"; return 1; }
+    return 0
+  fi
   park_forge_pr "$PARK_WT" || { PARK_WHY="the forge's PR head cannot be read"; PARK_TRANSIENT=1; return 1; }
   [ "$FORGE_HEAD" = "$PARK_HEAD" ] || { PARK_WHY="copy head $PARK_HEAD is not the PR head $FORGE_HEAD"; return 1; }
 }
@@ -328,7 +356,11 @@ cmd_park() {
     exit 1
   fi
   git -C "$PARK_PROJ" branch -D "$PARK_BRANCH" >/dev/null 2>&1 || true
-  printf 'parked: %s returned its copy %s; its PR %s waits on its merger at %s\n' "$ID" "$PARK_WT" "$PARK_URL" "$PARK_HEAD"
+  if [ -n "$PARK_URL" ]; then
+    printf 'parked: %s returned its copy %s; its PR %s waits on its merger at %s\n' "$ID" "$PARK_WT" "$PARK_URL" "$PARK_HEAD"
+  else
+    printf 'parked: %s returned its copy %s; its branch %s waits for a CI slot at %s\n' "$ID" "$PARK_WT" "$PARK_BRANCH" "$PARK_HEAD"
+  fi
 }
 
 UNPARK_WT=
@@ -383,7 +415,8 @@ cmd_unpark() {
     unpark_refuse "origin/$branch cannot be fetched for $ID"
   fi
   head=$remote
-  if park_forge_pr "$UNPARK_WT"; then
+  # A ready branch has no PR: origin's branch is the head to follow.
+  if [ -n "$PARK_URL" ] && park_forge_pr "$UNPARK_WT"; then
     [ "$FORGE_STATE" = OPEN ] || unpark_refuse "$ID's PR $PARK_URL is $(printf '%s' "$FORGE_STATE" | tr '[:upper:]' '[:lower:]'), so it has nothing left to steer"
     head=$FORGE_HEAD
     git -C "$UNPARK_WT" cat-file -e "$head^{commit}" 2>/dev/null \
@@ -401,12 +434,17 @@ cmd_unpark() {
   park_unlock_all
   note=$(mktemp "${TMPDIR:-/tmp}/fm-tree-park-note.XXXXXX") || unpark_relaunch_failed "$branch" "$head" "the relaunch note could not be written"
   {
-    printf '%s\n' "Your previous copy was returned to the pool while your PR $PARK_URL waited for its merger."
-    if [ -n "$moved" ]; then
-      printf '%s\n' "The PR head moved from $old to $head while your copy was parked: re-read the branch before you change anything."
+    if [ -n "$PARK_URL" ]; then
+      printf '%s\n' "Your previous copy was returned to the pool while your PR $PARK_URL waited for its merger."
+      [ -z "$moved" ] || printf '%s\n' "The PR head moved from $old to $head while your copy was parked: re-read the branch before you change anything."
+      printf '%s\n' "This is a fresh copy of branch $branch at $head, the PR head now; your earlier conversation is gone."
+    else
+      printf '%s\n' "Your previous copy was returned to the pool while your branch $branch, pushed with no PR, waited for a CI slot."
+      [ -z "$moved" ] || printf '%s\n' "The branch moved from $old to $head while your copy was parked: re-read it before you change anything."
+      printf '%s\n' "This is a fresh copy of branch $branch at $head, the pushed head now; your earlier conversation is gone." \
+        "Run your PR drain check before you open a PR; if it holds, report a new done line for the pushed branch and stop."
     fi
     printf '%s\n' \
-      "This is a fresh copy of branch $branch at $head, the PR head now; your earlier conversation is gone." \
       "Do not create the branch again: it is checked out. Read your steering inbox now for the instruction that brought you back."
   } > "$note"
   if ! out=$("$SCRIPT_DIR/fm-control.sh" "$ID" relaunch --note-file "$note" 2>&1); then
