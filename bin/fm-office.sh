@@ -129,7 +129,10 @@
 # host (except the upstream source, below), always exits 0, and prints one line at most:
 #   tick             "office <id>: tick <YYYY-MM-DDTHH>: <n> of <wip> places free, <q> queued"
 #                    (then ", <d> unread digest(s)" and ", <l> landing" when not 0)
-#                    once per slot of the registry line's tick: cadence, when a
+#                    once per slot of the registry line's tick: cadence, and again at
+#                    once, with ", place freed" added, when the live count has fallen
+#                    since the last check (a task finished, was torn down or had its
+#                    PR handed off; data/office/tick.live holds the last count), when a
 #                    place is free (fm_office_live_tasks in
 #                    bin/fm-office-authority-lib.sh counts fewer than wip) and
 #                    work could start: an unheld, unblocked Queued item in
@@ -283,7 +286,7 @@ office_problems() {
   role=$(line_field "$line" role || true)
   fm_office_role_check "$role" || printf '%s\n' "$FM_OFFICE_ERROR"
   v=$(line_field "$line" wip || true)
-  [[ "$v" =~ ^[1-9]$ ]] || printf 'wip must be a number from 1 to 9, got "%s"\n' "$v"
+  [[ "$v" =~ ^[1-9][0-9]?$ ]] || printf 'wip must be a number from 1 to 99, got "%s"\n' "$v"
   v=$(line_field "$line" tick || true)
   [[ "$v" =~ ^every\ ([1-9]|1[0-9]|2[0-4])h$ ]] || printf 'tick must be "every Nh" (N from 1 to 24), got "%s"\n' "$v"
   v=$(line_field "$line" auto-merge-classes || true)
@@ -880,13 +883,23 @@ unread_lanes() {
   printf '%s\n' "$n"
 }
 
+# freed_place: 0 when the live count fell since the last check (a task finished, was torn down or had its PR handed off), and records the
+# count in data/office/tick.live every time so one freed place is reported once.
+freed_place() {  # <live>
+  local rec="$DATA/office/tick.live" prev
+  prev=$(cat "$rec" 2>/dev/null) || prev=
+  mkdir -p "$DATA/office" 2>/dev/null && printf '%s\n' "$1" > "$rec" 2>/dev/null || return 1
+  [[ "$prev" =~ ^[0-9]+$ ]] && [ "$1" -lt "$prev" ]
+}
+
 check_tick() {
-  local cadence wip free queued unread sources line
+  local cadence wip free queued unread sources line freed=1
   cadence=$(line_field "$OFFICE_LINE" tick || true)
   wip=$(line_field "$OFFICE_LINE" wip || true)
-  [[ "$cadence" =~ ^every\ ([1-9]|1[0-9]|2[0-4])h$ ]] && [[ "$wip" =~ ^[1-9]$ ]] || return 0
+  [[ "$cadence" =~ ^every\ ([1-9]|1[0-9]|2[0-4])h$ ]] && [[ "$wip" =~ ^[1-9][0-9]?$ ]] || return 0
   slot_of "$cadence" "$(now_epoch)"
   count_live || return 0
+  freed_place "$LIVE" && freed=0
   free=$((wip - LIVE))
   [ "$free" -gt 0 ] || return 0
   queued=$(count_queued)
@@ -896,6 +909,12 @@ check_tick() {
   line="office $OFFICE_ID: tick $SLOT_KEY: $free of $wip places free, $queued queued"
   [ "$unread" -eq 0 ] || line="$line, $unread unread digest(s)"
   [ "$LANDING" -eq 0 ] || line="$line, $LANDING landing"
+  # A freed place refills at once: the line prints even when this slot was already reported, and marks the slot reported.
+  if [ "$freed" -eq 0 ]; then
+    mkdir -p "$DATA/office" 2>/dev/null && printf '%s\n' "$SLOT_KEY" > "$DATA/office/tick.seen" 2>/dev/null || return 0
+    printf '%s\n' "$line, place freed"
+    return 0
+  fi
   seen_once tick "$SLOT_KEY" "$line"
 }
 

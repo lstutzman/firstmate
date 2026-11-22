@@ -2015,6 +2015,16 @@ require_released_captain_hold() {
   esac
 }
 
+# Records state/<id>.merge-handoff as "<url> <head>", the file bin/fm-pr-check.sh
+# writes for a handoff to the project's merger, for a PR that an admission route
+# hands to another home. A failed write only leaves the task counted, so it warns.
+record_routed_handoff() {  # <verified-head>
+  local record="$STATE/$ID.merge-handoff" tmp
+  [ -f "$STATE/$ID.meta" ] && [ ! -L "$STATE/$ID.meta" ] && [ ! -L "$record" ] || return 0
+  tmp=$(mktemp "$STATE/.fm-merge-handoff.XXXXXX") && printf '%s %s\n' "$URL" "$1" > "$tmp" && mv -f -- "$tmp" "$record" \
+    || echo "warning: the routed handoff of $URL could not be recorded, so an office keeps counting task $ID" >&2
+}
+
 # The admission check for the selected pull request, bound to <verified-head>:
 # the header owns the contract. Reads the changed files, then the head again,
 # so the list is the verified head's.
@@ -2089,6 +2099,9 @@ require_admission_answers() {  # <verified-head>
       echo "error: PR merge refused: $URL changes $class, which is never merged from this home; hand the PR to home $home, which merges it only after a fresh reviewer who did not write it records on the PR that it loosens no check:" >&2
       print_merge_handoff "$home" \
         "$(status_stamp_line "needs-decision [key=merge-handoff-$PR_NUMBER] [cause=external]: [handoff=$home] $URL is ready to merge once a fresh reviewer who did not write it records on the PR that its $class change loosens no check; a change that loosens one goes to the captain")"
+      # The PR now has another home's merger, so record it where bin/fm-pr-check.sh records a handoff:
+      # an office then stops counting this task under wip (fm_office_task_landing).
+      record_routed_handoff "$head"
     fi
   fi
   [ -n "$missing" ] || return 1

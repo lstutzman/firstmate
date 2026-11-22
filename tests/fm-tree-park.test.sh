@@ -98,6 +98,8 @@ printf '%s %s\n' "${FM_TEST_GH_STATE:-OPEN}" "$(cat "$FM_TEST_LAB/gh-head")"
 SH
   cat > "$dir/fakebin/no-mistakes" <<'SH'
 #!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_TEST_LAB/nm.log"
+[ "${1:-} ${2:-}" != "axi handoff" ] || exit 0
 [ "${1:-} ${2:-}" = "axi status" ] || exit 2
 printf 'run:\n  id: r1\n  status: %s\n' "${FM_TEST_NM_STATUS:-handed_off}"
 [ "${FM_TEST_NM_STATUS:-handed_off}" != handed_off ] || printf '  outcome: handed-off\n'
@@ -200,6 +202,41 @@ test_parks_a_clean_handed_off_task() {
   out=$(lab_env "$dir" "$dir/root/bin/fm-crew-state.sh" "$ID" 2>/dev/null) || true
   case "$out" in "state: done"*parked*) ;; *) fail "park-clean: crew state does not read the parked task as done: $out" ;; esac
   pass "a clean handed-off ship whose head is the pushed PR head returns its copy and keeps its record"
+}
+
+# A routed handoff: the project has no merger= binding, so this home merges it,
+# and bin/fm-pr-merge.sh's routed-class refusal wrote state/<id>.merge-handoff as
+# "<url> <head>" (tests/fm-pr-merge.test.sh checks that exact record). That
+# record alone must release the no-mistakes run and park the copy, as a
+# merge-via handoff's does; without it neither happens.
+test_routed_handoff_record_releases_and_parks() {
+  local dir head
+  for dir in routed unrouted; do
+    dir=$(make_lab "$dir")
+    printf '%s\n' '- project [no-mistakes] - fixture (added 2026-01-01)' > "$dir/home/data/projects.md"
+    rm -f "$dir/home/state/$ID.merge-handoff" "$dir/home/state/$ID.nm-released"
+    : > "$dir/nm.log"
+  done
+  dir=$TMP_ROOT/routed
+  head=$(cat "$dir/gh-head")
+  printf '%s %s\n' "$URL" "$head" > "$dir/home/state/$ID.merge-handoff"
+  FM_TEST_NM_STATUS=succeeded lab_env "$dir" "$dir/root/bin/fm-pr-check.sh" release >/dev/null 2>"$dir/err" \
+    || fail "routed: the release sweep failed: $(cat "$dir/err")"
+  grep -qx 'axi handoff' "$dir/nm.log" || fail "routed: no-mistakes axi handoff did not run"
+  cmp -s "$dir/home/state/$ID.merge-handoff" "$dir/home/state/$ID.nm-released" \
+    || fail "routed: the release was not recorded for the routed handoff"
+  park "$dir" >/dev/null 2>"$dir/err" || fail "routed: the released task did not park: $(cat "$dir/err")"
+  [ "$(meta_value "$dir" parked)" = 1 ] || fail "routed: the record is not marked parked"
+  grep -qx "return --force $dir/pool/1/project" "$dir/treehouse.log" || fail "routed: the slot was not returned"
+
+  dir=$TMP_ROOT/unrouted
+  FM_TEST_NM_STATUS=succeeded lab_env "$dir" "$dir/root/bin/fm-pr-check.sh" release >/dev/null 2>&1 || true
+  [ ! -e "$dir/home/state/$ID.nm-released" ] || fail "unrouted: a task with no handoff record was released"
+  ! grep -qx 'axi handoff' "$dir/nm.log" || fail "unrouted: no-mistakes axi handoff ran without a handoff record"
+  park "$dir" >/dev/null 2>"$dir/err" && fail "unrouted: a task with no handoff record was parked"
+  grep -q "PR not handed to another home's merger" "$dir/err" || fail "unrouted: park did not refuse for the missing handoff: $(cat "$dir/err")"
+  assert_not_parked "$dir" unrouted
+  pass "a routed handoff record, with no merger binding, releases the no-mistakes run and parks the copy"
 }
 
 test_sweep_parks_once_per_handoff() {
@@ -518,6 +555,7 @@ test_teardown_after_merge_on_a_parked_task() {
 
 fm_test_run \
   test_parks_a_clean_handed_off_task \
+  test_routed_handoff_record_releases_and_parks \
   test_sweep_parks_once_per_handoff \
   test_sweep_reports_a_failure_after_the_agent_stopped_once \
   test_refuses_each_unsafe_copy \

@@ -1388,6 +1388,9 @@ test_admission_routed_class_hands_off_instead_of_merging() {
     "$case_dir/parent/state/gilligan.status" > "$case_dir/open-decisions"
   assert_grep $'merge-handoff-9\tneeds-decision\t[handoff=slarti] https://github.com/example/repo/pull/9 is ready to merge once a fresh reviewer who did not write it records on the PR that its payments change loosens no check' \
     "$case_dir/open-decisions" "admission-routed: the handoff did not open a keyed decision naming the PR, the class, and the review"
+  # The refusal records the handoff, so the sending office stops counting the PR against its wip.
+  assert_grep "https://github.com/example/repo/pull/9 deadbeefcafefeed0000000000000000deadbeef" "$case_dir/state/task-x1.merge-handoff" \
+    "admission-routed: the routed handoff was not recorded for the task"
 
   # A captain answer on the would-be hold does not admit a routed class.
   FM_HOME="$case_dir/home" "$ROOT/bin/fm-captain-hold.sh" hold \

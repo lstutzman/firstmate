@@ -101,6 +101,18 @@ test_valid_record_loads() {
   pass "a published, proven record loads the office's authority"
 }
 
+test_two_digit_wip_loads() {
+  local h n out
+  for n in 9 10 20 99; do
+    h="$TMP_ROOT/wip-$n"
+    fm_write_office_home "$h" quartermaster "${GOOD[@]/wip=2/wip=$n}"
+    assert_equals "0|quartermaster|" "$(resolve "$h")" "wip=$n loads"
+    out=$(bash -c '. "$1"; fm_office_resolve "$2" "$2/data" "$2/config"; printf "%s\n" "$FM_OFFICE_WIP"' _ "$LIB" "$h")
+    assert_equals "$n" "$out" "wip=$n is what the office enforces"
+  done
+  pass "a two-digit wip loads and is the number the office enforces"
+}
+
 test_malformed_record_refuses() {
   local name line h
   while IFS='|' read -r name line; do
@@ -117,6 +129,9 @@ test_malformed_record_refuses() {
 auto-class|auto-merge-classes=authority
 other-id|id=navigator
 wip-zero|wip=0
+wip-hundred|wip=100
+wip-leading-zero|wip=02
+wip-sign|wip=-2
 merge-outside|merge=nuggets
 via-overlap|merge-via=firstmate=slarti
 no-sha|admission-sha256=
@@ -263,6 +278,7 @@ test_homes_that_are_not_offices
 test_inconsistent_signals_refuse
 test_unpublished_or_unproven_record_refuses
 test_valid_record_loads
+test_two_digit_wip_loads
 test_malformed_record_refuses
 test_admission_digest
 test_admission_digest_follows_rules_argument
