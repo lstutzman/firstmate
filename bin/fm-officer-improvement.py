@@ -29,8 +29,10 @@ Cohort. A PR belongs to the run whose date first saw it in production:
               ancestry against main is read from the compare API, and
               production stays unconfirmed. A later run with fresh facts
               upgrades the record to production.
-On an empty lane the facts cohort is limited to PRs merged in the last
---window-days, so the first run does not dump the whole history.
+The first run that reads fresh facts limits the facts cohort to PRs merged in
+the last --window-days and records the in-production PRs it left out as the
+lane's baseline in prs.json; no later run counts a baseline PR, so the history
+never enters a cohort.
 A record is computed when it is first seen (and again on a rerun of that date)
 and then kept in prs.json, so a source that arrives later does not rewrite it.
 
@@ -42,12 +44,17 @@ Sources, all read-only; a missing one leaves its stages unmeasured:
             named as left unread;
   ledger    each --home's state/fleet-ledger.jsonl (task.dispatched,
             task.pr_ready), then its state/*.status and data/*/status*.log
-            (the first [at=] stamp, and the first line naming the PR URL);
+            (the first [at=] stamp, and the first done line in the ready-signal
+            shape `PR <url>`); a PR belongs to a task only through that task's
+            own ready signal, a ledger record first, so a pile, restack, merger
+            or review log that mentions the PR is ignored;
   gate      the gate-usage records (gate: a path or host:path): mode gate runs
             whose sha is the PR's head or merge sha, so a run on an earlier head
             or a pile candidate is not counted (a lower bound);
   archive   the session archive manifests' pr_urls, cost_usd and tokens only,
-            never a transcript.
+            never a transcript; a session's cost and tokens are split evenly
+            across the PRs it names (split_across); an archive with no by-date
+            folder is unreadable.
 Lee minutes and per-PR account usage have no source and are reported as such.
 
 Stage rules:
@@ -64,7 +71,8 @@ Stage rules:
 
 Weekly. On a Sunday run date the digest adds the week Monday to Sunday against
 the week before: the median and worst five end to end, each stage's median and
-change, and the stage that grew most. That run reports one actionable finding;
+change, and the stage that grew most, all over PRs promoted to main only; merged
+only records are listed apart as not yet measurable to production. That run reports one actionable finding;
 a daily run reports none, so a consumer wakes once a week.
 
 Outputs <date>.json and <date>.md in --out and prints
@@ -94,6 +102,7 @@ NO_SOURCE = {
 }
 PR_URL = re.compile(r"https://github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)/pull/(\d+)")
 STATUS_LINE = re.compile(r"^([a-z][a-z-]*)\s+\[at=(\d+)\]")
+READY_LINE = re.compile(r"^done\s+\[at=(\d+)\][^:]*:\s*PR (\S+)(?: checks green| published for review)?\s*$")
 REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 GH_PULL_JQ = ('"PRJSON " + ({number, created_at, merged_at, head: .head.sha, merge_sha: .merge_commit_sha, '
               'base: .base.ref, draft} | tojson)')
@@ -176,11 +185,13 @@ def read_facts(source, now, max_hours):
 
 
 def read_tasks(homes):
-    """{pr url: {task, start, ready}}: the fleet ledger first, then status logs, of each readable home."""
+    """{pr url: {task, start, ready}} of each readable home. A PR belongs to a task only through that task's own
+    ready signal: a task.pr_ready ledger record, or, for a PR no ledger record names, a status-log done line in
+    the ready-signal shape (`PR <url>`, optionally `checks green` or `published for review`)."""
     tasks = {}
 
     def task(home, name):
-        return tasks.setdefault((home, name), {"start": None, "prs": {}})
+        return tasks.setdefault((home, name), {"start": None, "ledger": {}, "status": {}})
 
     for home in homes:
         text = read_text(os.path.join(home, "state", "fleet-ledger.jsonl")) or ""
@@ -195,7 +206,7 @@ def read_tasks(homes):
             if rec.get("event") == "task.dispatched":
                 t["start"] = rec["ts"] if t["start"] is None else min(t["start"], rec["ts"])
             elif rec.get("event") == "task.pr_ready" and PR_URL.fullmatch(str(rec.get("pr"))):
-                t["prs"][rec["pr"]] = min(rec["ts"], t["prs"].get(rec["pr"], rec["ts"]))
+                t["ledger"][rec["pr"]] = min(rec["ts"], t["ledger"].get(rec["pr"], rec["ts"]))
         logs = []
         state = os.path.join(home, "state")
         if os.path.isdir(state):
@@ -216,22 +227,25 @@ def read_tasks(homes):
                     continue
                 at = int(m.group(2))
                 first = at if first is None else min(first, at)
-                for repo, number in PR_URL.findall(line):
-                    seen.setdefault("https://github.com/%s/pull/%s" % (repo, number), at)
+                ready = READY_LINE.match(line)
+                if ready and PR_URL.fullmatch(ready.group(2)):
+                    seen.setdefault(ready.group(2), at)
             if first is None:
                 continue
             t = task(home, name)
             if t["start"] is None:
                 t["start"] = first
             for url, at in seen.items():
-                t["prs"].setdefault(url, at)
+                t["status"].setdefault(url, at)
     index = {}
-    for (home, name), t in sorted(tasks.items()):
-        for url, ready in t["prs"].items():
-            entry = {"task": name, "start": t["start"], "ready": ready}
-            old = index.get(url)
-            if old is None or (ready, name) < (old["ready"], old["task"]):
-                index[url] = entry
+    for source in ("ledger", "status"):
+        found = {}
+        for (home, name), t in sorted(tasks.items()):
+            for url, ready in t[source].items():
+                old = found.get(url)
+                if url not in index and (old is None or (ready, name) < (old["ready"], old["task"])):
+                    found[url] = {"task": name, "start": t["start"], "ready": ready}
+        index.update(found)
     return index
 
 
@@ -259,7 +273,9 @@ def read_gate(source):
 
 
 def archive_costs(archive, first, last):
-    """{pr url: {usd, sessions, tokens}} from by-date manifests first..last; counts only, never a transcript."""
+    """{pr url: {usd, sessions, tokens, split_across}} from by-date manifests first..last; counts only, never a
+    transcript. A session's cost and tokens are split evenly across the PRs it names, so the shares add up to what
+    it spent; split_across lists, per session, how many PRs shared it."""
     out, seen = {}, set()
     day = datetime.date.fromisoformat(first)
     end = datetime.date.fromisoformat(last)
@@ -279,16 +295,16 @@ def archive_costs(archive, first, last):
             usd = s.get("cost_usd") if isinstance(s.get("cost_usd"), (int, float)) else 0
             raw_tokens = s.get("tokens")
             tokens = raw_tokens if isinstance(raw_tokens, dict) else {}
-            for url in s.get("pr_urls") or []:
-                if not PR_URL.fullmatch(str(url)):
-                    continue
-                e = out.setdefault(url, {"usd": 0, "sessions": 0})
-                e["usd"] = round(e["usd"] + usd, 6)
+            urls = sorted({str(u) for u in s.get("pr_urls") or [] if PR_URL.fullmatch(str(u))})
+            for url in urls:
+                e = out.setdefault(url, {"usd": 0, "sessions": 0, "split_across": []})
+                e["usd"] = round(e["usd"] + usd / len(urls), 6)
                 e["sessions"] += 1
+                e["split_across"].append(len(urls))
                 counts = e.setdefault("tokens", {})
                 for k, v in tokens.items():
                     if isinstance(v, int):
-                        counts[k] = counts.get(k, 0) + v
+                        counts[k] = round(counts.get(k, 0) + v / len(urls), 6)
         day += datetime.timedelta(days=1)
     return out
 
@@ -299,14 +315,17 @@ def read_archive(archive, first, last):
         return None, {"state": "absent", "note": "no archive: field on the registry line"}
     remote = re.match(r"^([A-Za-z0-9][A-Za-z0-9._@-]*):(.+)$", archive)
     if not remote:
-        if not os.path.isdir(os.path.join(archive, "by-date")) and not os.path.isdir(archive):
-            return None, {"state": "unreadable", "note": "session archive not found at %s" % archive}
+        if not os.path.isdir(os.path.join(archive, "by-date")):
+            return None, {"state": "unreadable", "note": "session archive has no by-date folder at %s" % archive}
         return archive_costs(archive, first, last), {"state": "used", "note": "archive manifests %s to %s" % (first, last)}
     with open(os.path.abspath(__file__), "rb") as fh:
         script = fh.read()
     proc = subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", remote.group(1), "python3 -I - costs --archive "
                            + shell_quote(remote.group(2)) + " --from " + first + " --to " + last],
                           input=script, capture_output=True, check=False)
+    if proc.returncode != 0:
+        return None, {"state": "unreadable", "note": "session archive on %s unreachable or has no by-date folder (exit %d)"
+                      % (remote.group(1), proc.returncode)}
     try:
         return json.loads(proc.stdout.decode("utf-8")), {"state": "used", "note": "archive manifests %s to %s on %s" % (first, last, remote.group(1))}
     except ValueError:
@@ -368,10 +387,10 @@ def fetch_on_main(gh, repo, merge_sha):
     return None if not rows else rows[0] in ("ahead", "identical")
 
 
-def interval(a, b, missing, what):
-    """A stage entry for b - a: measured, or unmeasured naming why."""
+def interval(a, b, a_missing, b_missing, what):
+    """A stage entry for b - a: measured, or unmeasured naming the source of each missing end."""
     if a is None or b is None:
-        return {"seconds": None, "unmeasured": missing}
+        return {"seconds": None, "unmeasured": "; ".join(m for v, m in ((a, a_missing), (b, b_missing)) if v is None)}
     if b < a:
         return {"seconds": None, "unmeasured": "%s runs backwards in the sources" % what}
     return {"seconds": b - a, "unmeasured": None}
@@ -379,23 +398,24 @@ def interval(a, b, missing, what):
 
 def measure(pr, ctx):
     """One PR's record from its gathered facts. pr: repo, number, cohort, created, merged, head, merge_sha, promoted,
-    task, events (None when unread), gh_reason (why GitHub data is missing, or None), on_main."""
+    task, events (None when unread), pull_reason and events_reason (why the PR record or its timeline is unread,
+    or None), on_main."""
     repo, number = pr["repo"], pr["number"]
     url = "https://github.com/%s/pull/%d" % (repo, number)
     task = ctx["tasks"].get(url)
     start, ready = (task["start"], task["ready"]) if task else (None, None)
     created, merged, promoted = pr["created"], pr["merged"], pr["promoted"]
-    reason = pr["gh_reason"]
-    no_task = "task record naming this PR (fleet ledger or a status log in a readable home)"
+    no_ready = ("task ready signal naming this PR (a task.pr_ready ledger record or a status-log done line "
+                "`PR <url>` in a readable home)")
+    no_start = "task record has no dispatch time" if task else no_ready
+    no_open = pr["pull_reason"] or "PR open time missing from the GitHub PR record"
     stages = {}
-    stages["work"] = interval(start, created, reason or no_task, "the dispatch record")
-    if task and start is None:
-        stages["work"]["unmeasured"] = "task record has no dispatch time"
-    stages["pr_ready"] = interval(created, ready, reason or "ready record naming this PR (fleet ledger or a status log)", "the ready record")
+    stages["work"] = interval(start, created, no_start, no_open, "the dispatch record")
+    stages["pr_ready"] = interval(created, ready, no_open, no_ready, "the ready record")
     if ready is None:
-        review = {"seconds": None, "unmeasured": "ready record naming this PR (fleet ledger or a status log)"}
+        review = {"seconds": None, "unmeasured": no_ready}
     elif pr["events"] is None:
-        review = {"seconds": None, "unmeasured": "PR timeline unread (%s)" % (reason or "GitHub read failed")}
+        review = {"seconds": None, "unmeasured": "PR timeline unread (%s)" % (pr["events_reason"] or pr["pull_reason"] or "GitHub read failed")}
     else:
         hits = [at for at, _ in pr["events"] if at >= ready]
         review = ({"seconds": hits[0] - ready, "unmeasured": None} if hits else
@@ -414,7 +434,7 @@ def measure(pr, ctx):
             stages["gate_run"] = {"seconds": sum(r["wall"] for r in runs), "unmeasured": None}
             gate_note = "gate runs on the final head and merge sha only (a lower bound)"
             stages["gate_run"]["note"] = gate_note
-            stages["merge"] = interval(max(r["end"] for r in runs), merged, "merge time", "the last gate end")
+            stages["merge"] = interval(max(r["end"] for r in runs), merged, "last gate end", "merge time", "the last gate end")
         else:
             none = "no gate-usage record for this PR's head or merge sha"
             stages["gate_run"] = {"seconds": None, "unmeasured": none}
@@ -422,7 +442,7 @@ def measure(pr, ctx):
     for name, why in NO_SOURCE.items():
         stages[name] = {"seconds": None, "unmeasured": why}
     if promoted is not None:
-        stages["release_cut"] = interval(merged, promoted, "merge time", "the merge")
+        stages["release_cut"] = interval(merged, promoted, "merge time", "promotion time", "the merge")
         stages["release_cut"]["note"] = "includes the staging deploy and staging checks, which the facts do not time apart"
     else:
         stages["release_cut"] = {"seconds": None, "unmeasured": ctx["release_cut_missing"]}
@@ -431,15 +451,16 @@ def measure(pr, ctx):
               "end_event": end_event, "head_sha": pr["head"], "task": task["task"] if task else None,
               "on_main": pr["on_main"],
               "stages": {name: stages[name] for name in STAGES},
-              "end_to_end": interval(start, end, (reason or no_task) if start is None else "end event time", "the dispatch record"),
-              "open_to_end": interval(created, end, reason or "PR open time", "the PR open"),
-              "ready_to_merge": interval(ready, merged, "ready record or merge time", "the ready record")}
+              "end_to_end": interval(start, end, no_start, "end event time", "the dispatch record"),
+              "open_to_end": interval(created, end, no_open, "end event time", "the PR open"),
+              "ready_to_merge": interval(ready, merged, no_ready, "merge time", "the ready record")}
     record["end_to_end"]["end_event"] = end_event
     costs = ctx["costs"]
     if costs is None:
         usd = {"value": None, "sessions": 0, "unmeasured": "session archive (%s)" % ctx["archive_state"]["note"]}
     elif url in costs:
-        usd = {"value": costs[url]["usd"], "sessions": costs[url]["sessions"], "tokens": costs[url]["tokens"], "unmeasured": None}
+        usd = {"value": costs[url]["usd"], "sessions": costs[url]["sessions"], "tokens": costs[url]["tokens"],
+               "split_across": costs[url]["split_across"], "unmeasured": None}
     else:
         usd = {"value": None, "sessions": 0, "unmeasured": "no archived session lists this PR in pr_urls"}
     record["cost"] = {
@@ -482,7 +503,12 @@ def weekly(state_prs, date):
     def between(lo, hi):
         return [r for r in state_prs.values() if lo.isoformat() <= r["cohort_date"] <= hi.isoformat()]
 
-    now, before = between(this_lo, day), between(prior_lo, prior_hi)
+    def promoted(recs):
+        return [r for r in recs if r["end_event"] == "promoted_to_main"]
+
+    week_all = between(this_lo, day)
+    now, before = promoted(week_all), promoted(between(prior_lo, prior_hi))
+    merged_only = sorted(r["key"] for r in week_all if r["end_event"] != "promoted_to_main")
 
     def values(recs, stage):
         return [r["stages"][stage]["seconds"] for r in recs if r["stages"][stage]["seconds"] is not None]
@@ -506,6 +532,7 @@ def weekly(state_prs, date):
             "prior_median_end_to_end": {"seconds": median(e2e(before)), "measured": len(e2e(before)), "of": len(before)},
             "worst_five": [{"key": k, "url": u, "seconds": s} for s, k, u in ranked[:5]],
             "stages": stages, "grew_most": grew,
+            "not_measurable_to_production": {"count": len(merged_only), "keys": merged_only},
             "unmeasured_stages": [n for n in STAGES if not values(now, n)]}
 
 
@@ -532,8 +559,11 @@ def render_md(doc):
     if w:
         lines += ["", "## Week %s to %s against %s to %s" % (w["week_start"], w["week_end"], w["prior_start"], w["prior_end"]), ""]
         m, p = w["median_end_to_end"], w["prior_median_end_to_end"]
-        lines.append("%d PR(s) this week (%d the week before). Median end to end %s (%d of %d measured), the week before %s." % (
+        lines.append("%d PR(s) promoted to main this week (%d the week before). Median end to end %s (%d of %d measured), the week before %s." % (
             w["prs"], w["prior_prs"], fmt(m["seconds"]), m["measured"], m["of"], fmt(p["seconds"])))
+        nm = w["not_measurable_to_production"]
+        lines.append("Merged only, not yet measurable to production (left out of every median): %d%s" % (
+            nm["count"], " (%s)" % ", ".join(nm["keys"]) if nm["keys"] else ""))
         lines.append("Worst five end to end:")
         for x in w["worst_five"] or []:
             lines.append("- %s %s" % (x["key"], fmt(x["seconds"])))
@@ -565,10 +595,11 @@ def run(args):
     state_path = os.path.join(args.out, "prs.json")
     try:
         with open(state_path, encoding="utf-8") as fh:
-            state = json.load(fh).get("prs", {})
+            lane = json.load(fh)
+        state, baseline = lane.get("prs", {}), lane.get("baseline")
     except (OSError, ValueError, AttributeError):
-        state = {}
-    seeding = not state
+        state, baseline = {}, None
+    seeding = baseline is None or baseline["date"] == date
     run_day = datetime.date.fromisoformat(date)
     window_lo = (run_day - datetime.timedelta(days=args.window_days - 1)).isoformat()
     facts, facts_state = read_facts(args.facts, args.now, args.max_facts_age)
@@ -578,17 +609,23 @@ def run(args):
     # Candidates: (repo, number) -> what the source already gives.
     candidates = {}
     if facts is not None:
+        skipped = []
         for key, rec in sorted(facts["records"].items()):
             if rec.get("repo") not in repos or rec.get("in_production") is not True:
                 continue
             old = state.get(key)
             if old and old["cohort"] == "production" and old["first_seen"] != date:
                 continue
+            if not old and not seeding and key in baseline["keys"]:
+                continue
             if not old and seeding and (not rec.get("merged_at") or day_of(to_epoch(rec["merged_at"]) or 0) < window_lo):
+                skipped.append(key)
                 continue
             candidates[(rec["repo"], rec["pr"])] = {"cohort": "production", "head": rec.get("head_sha"), "merge_sha": rec.get("merged_sha"),
                                                     "merged": to_epoch(rec.get("merged_at")), "promoted": to_epoch(rec.get("main_promoted_at")),
                                                     "cohort_date": date, "pull": None, "on_main": rec.get("on_main")}
+        if seeding:
+            baseline = {"date": date, "keys": skipped}
         cohort_basis = "in production, first seen on this run"
     else:
         for repo in repos:
@@ -636,16 +673,16 @@ def run(args):
     for repo, number in ordered:
         c = candidates[(repo, number)]
         pull = c["pull"]
-        reason = None
+        pull_reason = events_reason = None
         if pull is None:
             pull = fetch_pull(gh, repo, number)
             if pull is None:
-                reason = ("GitHub lookup cap (max-pr-lookups) left this PR unread" if gh.left <= 0 else "GitHub PR record unreadable")
+                pull_reason = ("GitHub lookup cap (max-pr-lookups) left this PR unread" if gh.left <= 0 else "GitHub PR record unreadable")
         events = None
         if pull is not None:
             events = fetch_events(gh, repo, number)
             if events is None and gh.left <= 0:
-                reason = reason or "GitHub lookup cap (max-pr-lookups) left this PR's timeline unread"
+                events_reason = "GitHub lookup cap (max-pr-lookups) left this PR's timeline unread"
             if c["cohort"] == "merged" and c["on_main"] is None and c["merge_sha"] and pull.get("base") != "main":
                 c["on_main"] = fetch_on_main(gh, repo, c["merge_sha"])
             elif c["cohort"] == "merged" and pull.get("base") == "main":
@@ -654,7 +691,7 @@ def run(args):
         merged = c["merged"] if c["merged"] is not None else (to_epoch(pull.get("merged_at")) if pull else None)
         info = {"repo": repo, "number": number, "cohort": c["cohort"], "created": created, "merged": merged,
                 "head": c["head"] or (pull or {}).get("head"), "merge_sha": c["merge_sha"], "promoted": c["promoted"],
-                "events": events, "gh_reason": reason, "on_main": c["on_main"]}
+                "events": events, "pull_reason": pull_reason, "events_reason": events_reason, "on_main": c["on_main"]}
         rec = measure(info, ctx)
         rec["cohort_date"] = c["cohort_date"]
         rec["first_seen"] = date
@@ -663,11 +700,12 @@ def run(args):
     mine = [state[k] for k in sorted(state) if state[k]["first_seen"] == date]
     week = weekly(state, date)
     findings = []
-    if week and week["prs"]:
+    if week and (week["prs"] or week["not_measurable_to_production"]["count"]):
         grew = week["grew_most"]
-        findings.append({"class": "weekly", "severity": "medium", "summary": "week %s to %s: %d PR(s), median end to end %s; %s" % (
+        findings.append({"class": "weekly", "severity": "medium",
+                         "summary": "week %s to %s: %d PR(s) promoted to main, median end to end %s; %s; %d merged only, not yet measurable to production" % (
             week["week_start"], week["week_end"], week["prs"], fmt(week["median_end_to_end"]["seconds"]),
-            "stage that grew most: %s" % grew if grew else "no stage grew")})
+            "stage that grew most: %s" % grew if grew else "no stage grew", week["not_measurable_to_production"]["count"])})
     sources = {"facts": facts_state, "gate": gate_state, "archive": archive_state,
                "github": {"state": "used" if not gh.gaps else "partial",
                           "note": "; ".join(sorted(set(gh.gaps))) or "read-only gh-axi api GET, %d call(s) left of %d" % (gh.left, args.max_pr_lookups)},
@@ -684,7 +722,10 @@ def run(args):
            "sources": sources, "prs": mine, "weekly": week, "findings": findings,
            "actionable": sum(1 for f in findings if f["severity"] in ("high", "medium"))}
     os.makedirs(args.out, exist_ok=True)
-    write_if_changed(state_path, json.dumps({"schema": 1, "prs": state}, sort_keys=True, indent=1) + "\n")
+    lane = {"schema": 1, "prs": state}
+    if baseline is not None:
+        lane["baseline"] = baseline
+    write_if_changed(state_path, json.dumps(lane, sort_keys=True, indent=1) + "\n")
     write_if_changed(os.path.join(args.out, date + ".json"), json.dumps(doc, sort_keys=True, indent=1, ensure_ascii=False) + "\n")
     write_if_changed(os.path.join(args.out, date + ".md"), render_md(doc))
     print("DIGEST %s %d %s.md" % (date, doc["actionable"], date))
@@ -712,6 +753,9 @@ def main(argv):
     c.add_argument("--to", dest="last", required=True)
     args = parser.parse_args(argv)
     if args.action == "costs":
+        if not os.path.isdir(os.path.join(args.archive, "by-date")):
+            print("fm-officer-improvement: no by-date folder in %s" % args.archive, file=sys.stderr)
+            return 1
         print(json.dumps(archive_costs(args.archive, args.first, args.last), sort_keys=True))
         return 0
     return run(args)

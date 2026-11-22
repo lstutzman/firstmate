@@ -13,8 +13,10 @@ Lee's aim for it (22 October 2026): "turn our SDLC and First Mate, Second Mate f
 - Every record names every stage as measured or unmeasured.
   An unmeasured stage names the source it lacks, and its time is never estimated.
 - Cost is model dollars from the session archive's `pr_urls` and `cost_usd`, plus gate machine minutes from the gate-usage records.
+  A session that names several PRs has its cost and tokens split evenly across them, and each PR's cost entry records the split (`split_across`), so the shares add up to what was spent.
   Lee minutes and per-PR account usage have no source, so they are reported as unmeasured.
 - The weekly digest (a Sunday run date) gives the median and the worst five PRs end to end, each stage's median against the week before, and the stage that grew most.
+  All of these count only PRs promoted to main; a merged-only record (the facts were absent or stale that day) is listed apart, with its count, as not yet measurable to production.
   It proposes nothing: the consumer office reads the digest and proposes at most three changes as cards, then measures each one after it lands.
 
 ## How stages are measured
@@ -23,6 +25,8 @@ Lee's aim for it (22 October 2026): "turn our SDLC and First Mate, Second Mate f
 - Five stages have no source yet: gate_queue (the gate request time), pile_wait (pile order files), staging_deploy and staging_checks (their timestamps), and production (the deploy time).
 - release_cut is the merge to promotion to main, and it holds the staging deploy and staging checks, which the facts do not time apart.
 - The end event is promotion to main when the facts give it, else the merge, because production has no timestamp in the facts today.
+- A PR belongs to a task only through that task's own ready signal: a `task.pr_ready` ledger record, or a status-log `done:` line in the ready-signal shape (`PR <url>`). A pile, restack, merger or review log that only mentions the PR is ignored, and a PR with no ready signal has its work and end-to-end times unmeasured.
+- The first run that reads fresh facts keeps only PRs merged in the window and records the rest as the lane's baseline, which no later run counts.
 - gate_run counts only gate runs on the PR's final head or merge sha, so a run on an earlier head or a pile candidate is not counted.
   It is a lower bound and its record says so.
 

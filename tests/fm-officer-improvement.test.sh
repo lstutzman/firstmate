@@ -10,7 +10,11 @@
 # GitHub merge and git ancestry when facts are absent or stale, the GitHub
 # lookup cap, a byte-identical rerun, the weekly digest (median, worst five,
 # per-stage medians against the week before, the stage that grew most), the
-# daily run raising nothing, GET-only GitHub calls, and refusal of writes: linear.
+# daily run raising nothing, GET-only GitHub calls, and refusal of writes: linear;
+# a baseline that keeps the history out of every later cohort, task attribution
+# only through a ready signal, a session's cost split across the PRs it names,
+# weekly medians over PRs promoted to main only, and the archive, gate and facts
+# read over ssh, with an archive that has no by-date folder named unreadable.
 set -u
 
 # shellcheck source=tests/officer-helpers.sh
@@ -72,7 +76,8 @@ for p in prs:
     for sess in p.get("sessions", []):
         archive.setdefault(sess["day"], []).append({"machine": "alpha", "harness": "claude-code", "name": sess["id"], "session_id": sess["id"],
                                                     "started": sess["day"] + "T10:00:00Z", "cost_usd": sess["usd"],
-                                                    "tokens": {"input": sess["tok"], "output": 1}, "pr_urls": [url]})
+                                                    "tokens": {"input": sess["tok"], "output": 1},
+                                                    "pr_urls": [url] + ["https://github.com/%s/pull/%d" % (p["repo"], n) for n in sess.get("also", [])]})
 gate.close(); ledger.close()
 facts = {"schema_version": 2, "generated_at": spec.get("generated_at", until), "staging_sha": "aaaa", "production_sha": "bbbb",
          "records": records, "items": items}
@@ -105,6 +110,17 @@ case "\$path" in
 esac
 SH
   chmod +x "$1/gh-axi"
+}
+
+fake_ssh() {  # <fakebin> <log>: an ssh that drops its options and host, logs the call and runs the command here.
+  cat > "$1/ssh" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$2"
+while [ "\$1" = "-o" ]; do shift 2; done
+shift
+exec bash -c "\$*"
+SH
+  chmod +x "$1/ssh"
 }
 
 # make_world <name> <spec.json> <visible-until> [extra registry fields]: sets WORLD, WORLD_HOME, FAKEBIN, GH_LOG.
@@ -367,6 +383,127 @@ test_full_list_page_is_a_named_coverage_gap() {
   pass "fm-officer improvement: a full GitHub list page is a named coverage gap"
 }
 
+test_history_never_enters_a_later_cohort() {
+  local json
+  python3 -I - "$TMP_ROOT/daily.json" "$TMP_ROOT/history.json" "$REPO" <<'PYEOF'
+import json, sys
+spec = json.load(open(sys.argv[1]))
+spec["prs"].append({"n": 301, "repo": sys.argv[3], "created": "2026-09-30T10:00:00Z", "merged": "2026-10-01T10:00:00Z", "promoted": "2026-10-02T10:00:00Z"})
+json.dump(spec, open(sys.argv[2], "w"))
+PYEOF
+  make_world history "$TMP_ROOT/history.json" "$DAILY_UNTIL"
+  run_improvement "$DAILY_DATE" "$DAILY_NOW" >/dev/null || fail "run 1 must succeed"
+  run_improvement 2026-11-17 2026-11-18T07:30:00Z >/dev/null || fail "run 2 must succeed"
+  json=$(lane_json 2026-11-17)
+  assert_equals "" "$(pr_field "$json" 301 .key)" "a PR the first run left out of the window never joins a later cohort"
+  assert_equals 0 "$(jq '.prs | length' "$json")" "and the second run measures nothing new"
+  assert_equals false "$(jq '.prs | has("lstutzman/PropertyCompass2#301")' "$WORLD_HOME/data/officers/improvement/prs.json")" "nor keeps it in the lane state"
+  make_world history-fallback "$TMP_ROOT/history.json" "$DAILY_UNTIL"
+  cp "$WORLD_HOME/data/officers.md" "$WORLD/with-facts.md"
+  sed -i.bak "s#facts: [^;]*; ##" "$WORLD_HOME/data/officers.md"
+  run_improvement "$DAILY_DATE" "$DAILY_NOW" >/dev/null || fail "a fallback first run must succeed"
+  cp "$WORLD/with-facts.md" "$WORLD_HOME/data/officers.md"
+  run_improvement 2026-11-17 2026-11-18T07:30:00Z >/dev/null || fail "the first run with facts must succeed"
+  json=$(lane_json 2026-11-17)
+  assert_equals "" "$(pr_field "$json" 301 .key)" "a lane first filled by fallback runs keeps the history out when facts arrive"
+  assert_equals production "$(pr_field "$json" 201 .cohort)" "while a merged record is still upgraded"
+  pass "fm-officer improvement: the history the first facts run leaves out never enters a later cohort"
+}
+
+test_only_a_ready_signal_ties_a_pr_to_a_task() {
+  local json url="https://github.com/$REPO/pull/205"
+  cat > "$TMP_ROOT/unowned.json" <<JSON
+{"prs": [{"n": 205, "repo": "$REPO", "created": "2026-11-16T12:00:00Z", "merged": "2026-11-16T13:00:00Z", "promoted": "2026-11-16T15:00:00Z"}]}
+JSON
+  make_world unowned "$TMP_ROOT/unowned.json" "$DAILY_UNTIL" "max-pr-lookups: 1"
+  mkdir -p "$WORLD_HOME/data/pile-7"
+  printf 'working [at=%s]: pile candidate with %s\ndone [at=%s]: merged %s\n' \
+    "$(epoch 2026-11-16T06:00:00Z)" "$url" "$(epoch 2026-11-16T13:00:00Z)" "$url" > "$WORLD_HOME/data/pile-7/status.log"
+  printf 'working [at=%s]: restack %s\n' "$(epoch 2026-11-16T05:00:00Z)" "$url" > "$WORLD_HOME/state/restack-9.status"
+  run_improvement "$DAILY_DATE" "$DAILY_NOW" >/dev/null || fail "improvement run must succeed"
+  json=$(lane_json "$DAILY_DATE")
+  assert_equals null "$(pr_field "$json" 205 .task)" "a pile or restack log that mentions the PR is not its task"
+  assert_equals null "$(pr_field "$json" 205 .stages.work.seconds)" "so work is unmeasured"
+  assert_contains "$(pr_field "$json" 205 .stages.work.unmeasured)" "ready signal" "and names the missing ready signal"
+  assert_not_contains "$(pr_field "$json" 205 .stages.work.unmeasured)" "lookup cap" "not the timeline cap, which work does not need"
+  assert_not_contains "$(pr_field "$json" 205 .stages.pr_ready.unmeasured)" "lookup cap" "pr_ready names the ready signal, not the cap"
+  assert_equals null "$(pr_field "$json" 205 .end_to_end.seconds)" "end to end is unmeasured"
+  assert_contains "$(pr_field "$json" 205 .end_to_end.unmeasured)" "ready signal" "and names the missing ready signal"
+  assert_equals 10800 "$(pr_field "$json" 205 .open_to_end.seconds)" "open to end still comes from the PR record that was read"
+  pass "fm-officer improvement: only a task's own ready signal ties a PR to it, and each gap names its own source"
+}
+
+test_a_session_cost_is_split_across_its_prs() {
+  local json
+  jq '.prs[0].sessions += [{"day": "2026-11-16", "id": "s3", "usd": 0.9, "tok": 900, "also": [202, 203]}]' "$TMP_ROOT/daily.json" > "$TMP_ROOT/split.json"
+  make_world split "$TMP_ROOT/split.json" "$DAILY_UNTIL"
+  run_improvement "$DAILY_DATE" "$DAILY_NOW" >/dev/null || fail "improvement run must succeed"
+  json=$(lane_json "$DAILY_DATE")
+  assert_equals 230 "$(pr_field "$json" 201 "(.cost.model_usd.value * 100 | round)")" "201 gets its own 2.00 and a third of the shared 0.90"
+  assert_equals 30 "$(pr_field "$json" 202 "(.cost.model_usd.value * 100 | round)")" "202 gets a third of the shared session"
+  assert_equals 30 "$(pr_field "$json" 203 "(.cost.model_usd.value * 100 | round)")" "and so does 203"
+  assert_equals 90 "$(jq '[.prs[] | .cost.model_usd.value // 0 | if . > 2 then . - 2 else . end] | add * 100 | round' "$json")" "the shares add up to what the session spent"
+  assert_equals 300 "$(pr_field "$json" 202 "(.cost.model_usd.tokens.input | round)")" "tokens are split the same way"
+  assert_equals "[3]" "$(pr_field "$json" 202 '.cost.model_usd.split_across | tojson')" "the cost entry records the split"
+  assert_equals "[1,1,3]" "$(pr_field "$json" 201 '.cost.model_usd.split_across | sort | tojson')" "per session"
+  pass "fm-officer improvement: a session's cost is split evenly across the PRs it names"
+}
+
+test_weekly_medians_count_only_prs_promoted_to_main() {
+  local json
+  make_weekly_spec "$TMP_ROOT/weekly-mixed.json"
+  jq --arg r "$REPO" '.prs += [{"n": 217, "repo": $r, "start": "2026-11-10T00:00:00Z", "created": "2026-11-18T00:00:00Z", "ready": "2026-11-18T00:10:00Z",
+      "review": "2026-11-18T05:00:00Z", "review_kind": "reviewed", "merged": "2026-11-19T06:00:00Z", "promoted": "2026-12-01T00:00:00Z"}]' \
+    "$TMP_ROOT/weekly-mixed.json" > "$TMP_ROOT/weekly-mixed2.json"
+  make_world weekly-mixed "$TMP_ROOT/weekly-mixed2.json" 2026-11-12T23:40:00Z
+  cp "$WORLD_HOME/data/officers.md" "$WORLD/with-facts.md"
+  run_improvement 2026-11-12 2026-11-13T07:30:00Z >/dev/null || fail "run 1 must succeed"
+  build_world "$WORLD" "$TMP_ROOT/weekly-mixed2.json" 2026-11-16T23:40:00Z
+  run_improvement 2026-11-16 2026-11-17T07:30:00Z >/dev/null || fail "run 2 must succeed"
+  sed -i.bak "s#facts: [^;]*; ##" "$WORLD_HOME/data/officers.md"
+  run_improvement 2026-11-19 2026-11-20T07:30:00Z >/dev/null || fail "a run without facts must succeed"
+  cp "$WORLD/with-facts.md" "$WORLD_HOME/data/officers.md"
+  build_world "$WORLD" "$TMP_ROOT/weekly-mixed2.json" 2026-11-21T23:40:00Z
+  run_improvement 2026-11-21 2026-11-22T07:30:00Z >/dev/null || fail "run 3 must succeed"
+  build_world "$WORLD" "$TMP_ROOT/weekly-mixed2.json" 2026-11-22T23:40:00Z
+  run_improvement 2026-11-22 2026-11-23T07:30:00Z >/dev/null || fail "weekly run must succeed"
+  json=$(lane_json 2026-11-22)
+  assert_equals merged "$(pr_field "$(lane_json 2026-11-19)" 217 .end_event)" "the fallback run measured 217 to its merge only"
+  assert_equals 6 "$(jq '.weekly.prs' "$json")" "the week counts only PRs promoted to main"
+  assert_equals 18900 "$(jq '.weekly.median_end_to_end.seconds' "$json")" "a merged-only record does not move the median"
+  assert_equals "lstutzman/PropertyCompass2#214" "$(jq -r '.weekly.worst_five[0].key' "$json")" "nor enter the worst five"
+  assert_equals 4500 "$(jq '.weekly.stages.review.median' "$json")" "nor any stage median"
+  assert_equals 1 "$(jq '.weekly.not_measurable_to_production.count' "$json")" "it is counted apart"
+  assert_equals '["lstutzman/PropertyCompass2#217"]' "$(jq -c '.weekly.not_measurable_to_production.keys' "$json")" "and named"
+  assert_contains "$(cat "$WORLD_HOME/data/officers/improvement/2026-11-22.md")" "not yet measurable to production" "the markdown lists it apart"
+  pass "fm-officer improvement: weekly medians and the worst five count only PRs promoted to main"
+}
+
+test_archive_gate_and_facts_over_ssh() {
+  local json ssh_log
+  make_world nobydate "$TMP_ROOT/daily.json" "$DAILY_UNTIL"
+  mv "$WORLD/archive/by-date" "$WORLD/archive/elsewhere"
+  run_improvement "$DAILY_DATE" "$DAILY_NOW" >/dev/null || fail "a run with an empty archive folder must succeed"
+  json=$(lane_json "$DAILY_DATE")
+  assert_equals unreadable "$(jq -r .sources.archive.state "$json")" "an archive with no by-date folder is unreadable, not empty"
+  assert_contains "$(pr_field "$json" 201 .cost.model_usd.unmeasured)" "by-date" "and each PR's cost names it"
+  make_world remote "$TMP_ROOT/daily.json" "$DAILY_UNTIL"
+  ssh_log="$WORLD/ssh.calls"
+  fake_ssh "$FAKEBIN" "$ssh_log"
+  sed -i.bak "s#facts: #facts: archhost:#; s#gate: #gate: archhost:#; s#archive: #archive: archhost:#" "$WORLD_HOME/data/officers.md"
+  run_improvement "$DAILY_DATE" "$DAILY_NOW" >/dev/null || fail "a run reading over ssh must succeed"
+  json=$(lane_json "$DAILY_DATE")
+  assert_equals used "$(jq -r .sources.facts.state "$json")" "the facts are read over ssh"
+  assert_equals 880 "$(pr_field "$json" 201 .stages.gate_run.seconds)" "the gate records are read over ssh"
+  assert_equals 200 "$(pr_field "$json" 201 "(.cost.model_usd.value * 100 | round)")" "the archive costs come from the costs subcommand run over ssh"
+  assert_contains "$(jq -r .sources.archive.note "$json")" "archhost" "and the note names the host"
+  assert_contains "$(cat "$ssh_log")" "python3 -I - costs" "the script is piped to the host"
+  mv "$WORLD/archive/by-date" "$WORLD/archive/elsewhere"
+  run_improvement "$DAILY_DATE" "$DAILY_NOW" >/dev/null || fail "a run with a remote archive lacking by-date must succeed"
+  assert_equals unreadable "$(jq -r .sources.archive.state "$(lane_json "$DAILY_DATE")")" "a remote archive with no by-date folder is unreadable"
+  pass "fm-officer improvement: the archive, gate and facts read over ssh, and an archive with no by-date folder is unreadable"
+}
+
 test_refuses_linear_writes() {
   local out
   make_world writes "$TMP_ROOT/daily.json" "$DAILY_UNTIL"
@@ -385,4 +522,9 @@ test_lookup_cap_and_missing_sources_are_named
 test_weekly_digest
 test_first_run_seeds_only_the_window_and_facts_upgrade_a_merge
 test_full_list_page_is_a_named_coverage_gap
+test_history_never_enters_a_later_cohort
+test_only_a_ready_signal_ties_a_pr_to_a_task
+test_a_session_cost_is_split_across_its_prs
+test_weekly_medians_count_only_prs_promoted_to_main
+test_archive_gate_and_facts_over_ssh
 test_refuses_linear_writes

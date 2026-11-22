@@ -38,7 +38,7 @@ Officers live locally in the primary home's `data/officers.md`, one line per off
 | `team` | Landing, progress, surgeon, friction, corpus, library and pagecheck, optional: the Linear team key to read (a surgeon, friction, corpus, library or pagecheck officer that writes must use `PC`, because fleet findings reach team FLEET through the contract's fleet rule, not this field; a progress officer may list `PC,FLEET` to discover both teams' unstarted items, the first team being the one a project-less row's Linear id places in PropertyCompass2); default `PC` |
 | `repos` | Progress, required: comma-separated GitHub `owner/repo` names whose open PRs prevent duplicate starts. Improvement, optional: the repositories whose PRs it measures; default `lstutzman/PropertyCompass2` |
 | `gate` | Improvement only, optional: the gate-usage records (`records.jsonl`), a path or `<host>:<path>`; without it the gate stages and gate minutes are unmeasured |
-| `window-days` | Improvement only, optional: how many days back an empty lane (and a fallback run) looks for merged PRs; default 7, at least 1 |
+| `window-days` | Improvement only, optional: how many days back the first run with fresh facts (and a fallback run) looks for merged PRs; default 7, at least 1 |
 | `max-pr-lookups` | Improvement only, optional: the most read-only GitHub calls one run makes; the PRs the cap leaves unread have unmeasured stages that name it; default 200 |
 | `requested` | Progress only, optional: comma-separated Linear root identifiers for features or fleet work Lee has already requested; children inherit that recorded authority at any depth |
 | `writes` | Landing, optional: `corrections` (default) lets the officer reopen false-Done items and report release-path misses (every linked PR in production but the item not Done or Released) with one comment each on PC-4688, never writing Done or Released; `none` turns Linear writes off |
@@ -189,7 +189,7 @@ It is read-only: `writes: none` is the only value its line accepts, and it calls
 `bin/fm-officer-improvement.py`'s header owns the sources, the cohort rule (production when fresh landing-truth facts exist, else GitHub merge and git ancestry through the compare API), every stage's interval, the cost fields and the weekly digest; [`docs/officers/improvement-rubric.md`](../officers/improvement-rubric.md) owns the design answers.
 Each record names every stage as measured or unmeasured, and an unmeasured stage names its missing source; nothing is guessed.
 A daily run raises no actionable finding, and the weekly run (a Sunday run date) raises one, so a consumer wakes once a week.
-It reads the registry's `repos`, `facts`, `gate`, `archive`, `window-days`, `max-pr-lookups` and `max-facts-age`, and joins a task to its PR through this home's and each local second mate home's fleet ledger and status logs.
+It reads the registry's `repos`, `facts`, `gate`, `archive`, `window-days`, `max-pr-lookups` and `max-facts-age`, and joins a task to its PR only through that task's ready signal in this home's and each local second mate home's fleet ledger and status logs.
 
 ### Page-check officer
 
