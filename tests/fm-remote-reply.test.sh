@@ -1569,4 +1569,34 @@ handoff_ingest "$HD" || fail "refused handoffs stopped the ingest: $(cat "$HD/in
 [ ! -e "$HD/send.log" ] || fail "a handoff naming the sending mate or a non-URL was delivered: $(cat "$HD/send.log")"
 pass "a handoff naming the sending mate, or carrying no PR URL, is never delivered"
 
+{
+  printf 'needs-decision [key=merge-handoff-77] [cause=external] [at=1700000000]: [handoff=slarti] %s is ready to merge now\n' "$HANDOFF_URL"
+  printf 'needs-decision [key=merge-handoff-78] [cause=external] [at=1700000000]: [handoff=slarti] %s is ready to merge\n' "$HANDOFF_URL"
+  printf 'needs-decision [key=merge-handoff-77] [cause=external] [prio=high] [at=1700000000]: [handoff=slarti] %s is ready to merge\n' "$HANDOFF_URL"
+  printf 'note needs-decision [key=merge-handoff-77] [cause=external]: [handoff=slarti] %s is ready to merge\n' "$HANDOFF_URL"
+} > "$TMP_ROOT/handoff-payload-loose"
+HD=$(handoff_case loose "$TMP_ROOT/handoff-payload-loose")
+handoff_ingest "$HD" || fail "non-canonical handoffs stopped the ingest: $(cat "$HD/ingest.out")"
+[ ! -e "$HD/send.log" ] || fail "a non-canonical handoff line was delivered: $(cat "$HD/send.log")"
+assert_grep "$HANDOFF_URL is ready to merge now" "$HD/state/ios.status" "a handoff with extra text was not kept as written"
+assert_grep '[key=merge-handoff-78]' "$HD/state/ios.status" "a handoff with a mismatched key was not kept as written"
+assert_grep '[prio=high]' "$HD/state/ios.status" "a handoff with an extra tag was not kept as written"
+pass "a handoff with extra text, an extra tag, or a key that does not match its URL is never delivered"
+
+printf 'needs-decision [key=merge-handoff-77] [cause=external]: [handoff=slarti] https://github.com/o/r/pull/77 is ready to merge\n' > "$TMP_ROOT/handoff-payload-unstamped"
+HD=$(handoff_case unstamped "$TMP_ROOT/handoff-payload-unstamped")
+handoff_ingest "$HD" || fail "an unstamped handoff stopped the ingest: $(cat "$HD/ingest.out")"
+[ "$(sed -n 6p "$HD/send.log")" = 'needs-decision [key=merge-handoff-77] [cause=external]: [handoff=slarti] https://github.com/o/r/pull/77 is ready to merge' ] \
+  || fail "the merger was not sent the canonical handoff line: $(cat "$HD/send.log" 2>/dev/null)"
+pass "an unstamped handoff is sent to the merger as the canonical line"
+
+for n in 1 2 3 4; do handoff_line "170000000$n"; done > "$TMP_ROOT/handoff-payload-many"
+HD=$(handoff_case capped "$TMP_ROOT/handoff-payload-many")
+handoff_ingest "$HD" || fail "a delta with many handoffs stopped the ingest: $(cat "$HD/ingest.out")"
+[ "$(handoff_sends "$HD")" -eq 3 ] || fail "a delta did not deliver exactly three handoffs: $(cat "$HD/send.log" 2>/dev/null)"
+[ "$(grep -c 'merge handoff delivered' "$HD/state/ios.status")" -eq 3 ] || fail "three delivered handoffs were not recorded"
+assert_grep "$(handoff_line 1700000004)" "$HD/state/ios.status" "the fourth handoff in one delta was not kept to wake the parent"
+[ "$(handoff_open "$HD")" -eq 1 ] || fail "the fourth handoff in one delta does not stand open on the parent"
+pass "a delta delivers at most three handoffs and leaves the rest to wake the parent"
+
 echo "ALL TESTS PASSED"

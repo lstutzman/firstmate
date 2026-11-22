@@ -551,7 +551,7 @@ It stops when that registration is retired, the registered command changes, or t
 `bin/fm-procevent.sh` owns the generic relisten rule, and `bin/fm-procevent-remote-reply.sh` owns this adapter's answer.
 
 A mirrored merge-handoff line (`[handoff=<home>]`, from `fm_merge_handoff_line`) is delivered into that merger's inbox with `bin/fm-send.sh --fire-and-forget` before it is appended, because the remote home has no route back to do it.
-A delivered line becomes a silent `working` line; a merger this home does not record as a secondmate, or an unconfirmed delivery, leaves the line as written so it wakes the parent.
+A delivered line becomes a silent `working` line; a line that is not exactly that canonical form, a merger this home does not record as a secondmate, an unconfirmed delivery, or a handoff past the first three in one delta leaves the line as written so it wakes the parent.
 
 Only a structured `report=data/....md` pointer offers a document.
 A bare path inside prose is a mention.

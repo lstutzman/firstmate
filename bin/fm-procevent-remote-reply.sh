@@ -560,37 +560,42 @@ stage_mirror_lines() { # <source> <rewritten> <source-record> <status> <status-a
 # back, so it can only write the keyed handoff line (fm_merge_handoff_line in
 # bin/fm-parent-channel-lib.sh) on its channel; this parent, which holds the
 # merger's record, delivers it the way a local worker home's fm-pr-check does
-# (fm_merge_handoff_deliver). A delivered line is replaced by a silent working
-# line, so it neither opens a decision nor wakes the parent; a line whose merger
-# is not a recorded secondmate here (the main home merges it), is this mate
-# itself, or whose delivery is not confirmed stays exactly as written and wakes
-# the parent as before. The source identity is committed either way, so a replay
-# does not deliver twice; the line is the delivery seed because the remote line
+# (fm_merge_handoff_deliver). Only a line that is exactly that canonical form,
+# with a key that matches the PR URL's last segment, is delivered, and the
+# merger is sent a line rebuilt from the validated parts, never the remote
+# bytes. A delivered line is replaced by a silent working line, so it neither
+# opens a decision nor wakes the parent; any other line, a merger that is not a
+# recorded secondmate here (the main home merges it) or is this mate itself, an
+# unconfirmed delivery, or a handoff past the first three in one delta stays
+# exactly as written and wakes the parent as before. Each send is bounded by
+# FM_REMOTE_REPLY_HANDOFF_BUDGET seconds, so the cap bounds how long the ingest
+# lock is held. The source identity is committed either way, so a replay does
+# not deliver twice; the line is the delivery seed because the remote line
 # carries no PR head. Rewrites <status-additions> in place.
 route_merge_handoffs() { # <status-additions> <mate-id>
-  local additions=$1 mate=$2 out line head rest merger tail url budget=${FM_REMOTE_REPLY_HANDOFF_BUDGET:-20} routed=0
+  local additions=$1 mate=$2 out line merger url at message canonical budget=${FM_REMOTE_REPLY_HANDOFF_BUDGET:-10} routed=0 attempts=0
+  local LC_ALL=C
+  local re='^needs-decision \[key=merge-handoff-([0-9]+)\] \[cause=external\]( \[at=([0-9]+)\])?: \[handoff=([A-Za-z0-9_-][A-Za-z0-9._-]*)\] (https?://[^][[:space:][:cntrl:]]+) is ready to merge$'
   out="$additions.routed"
   : > "$out" || return 1
   while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in
-      needs-decision\ *": [handoff="*"] "*" is ready to merge")
-        head=${line%%": [handoff="*}
-        rest=${line#*": [handoff="}
-        merger=${rest%%\]*}
-        tail=${rest#*\] }
-        url=${tail% is ready to merge}
-        case "$head" in *" [key=merge-handoff-"[0-9]*"]"*) ;; *) merger='' ;; esac
-        case "$url" in http://*|https://*) ;; *) merger='' ;; esac
-        case "$url" in *" "*) merger='' ;; esac
-        if [ -n "$merger" ] && [ "$merger" != "$mate" ] \
-          && fm_merge_handoff_deliver "$FM_HOME" "$merger" "$line" "$line" "$budget" "$SCRIPT_DIR/fm-send.sh"; then
+    if [ "$attempts" -lt 3 ] && [[ $line =~ $re ]]; then
+      at=${BASH_REMATCH[3]}
+      merger=${BASH_REMATCH[4]}
+      url=${BASH_REMATCH[5]}
+      if [ "${url##*/}" = "${BASH_REMATCH[1]}" ] && [ "$merger" != "$mate" ]; then
+        canonical=$(fm_merge_handoff_line "$merger" "$url")
+        message=$canonical
+        [ -z "$at" ] || message="${canonical%%": [handoff="*} [at=$at]: ${canonical#*": "}"
+        attempts=$((attempts + 1))
+        if fm_merge_handoff_deliver "$FM_HOME" "$merger" "$message" "$line" "$budget" "$SCRIPT_DIR/fm-send.sh"; then
           status_stamp_line "working: merge handoff delivered to home $merger inbox: $url" >> "$out" || return 1
           printf '\n' >> "$out" || return 1
           routed=1
           continue
         fi
-        ;;
-    esac
+      fi
+    fi
     printf '%s\n' "$line" >> "$out" || return 1
   done < "$additions"
   if [ "$routed" -eq 1 ]; then
