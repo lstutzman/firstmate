@@ -1293,7 +1293,12 @@ _fm_decision_fold_line() {  # <open-set> <status-line> <resolve-verb> <held-verb
   _fm_decision_key_transition_allowed "$key" "$note" \
     || { _fm_decision_fold_emit "$open" "$out"; return 0; }
   if [ "$unkeyed" = 0 ]; then
-    open=$(_fm_noted_key_drop "$open" "$key" "$timed")
+    # Prefilter: a note can only name <key> if "[key=<key>]" occurs in the set,
+    # so skip the per-entry scan (a fork plus a loop over the whole set) when
+    # it cannot drop anything. The pattern part is quoted so "[" is literal.
+    case "$open" in
+      *"[key=${key}]"*) open=$(_fm_noted_key_drop "$open" "$key" "$timed") ;;
+    esac
   fi
   case "$verb" in
     needs-decision|blocked)

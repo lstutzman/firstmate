@@ -989,6 +989,35 @@ CASES
   pass "status_line_dep reads a named dependency and status_dep_pr_url its pull request"
 }
 
+# The per-line note-head drop forks and scans the whole open set, so the fold
+# runs it only when some open note can name the line's key. Count calls by
+# shadowing the function after saving the real one.
+test_noted_key_drop_runs_only_when_a_note_names_the_key() {
+  local dir opener calls
+  dir=$(case_dir drop-prefilter)
+  calls="$dir/calls"
+  : > "$calls"
+  eval "_fm_noted_key_drop_real() $(declare -f _fm_noted_key_drop | tail -n +2)"
+  _fm_noted_key_drop() { printf 'x\n' >> "$calls"; _fm_noted_key_drop_real "$@"; }
+
+  opener='needs-decision [corr=b43c750e736da8fc] [at=1794922660]: [cause=decision] [key=named-key] pick'
+  printf '%s\nblocked [at=1794922661] [key=other-key]: unrelated\n' "$opener" > "$dir/none.status"
+  status_open_decisions_incremental "$dir/none.status" > /dev/null
+  [ "$(wc -l < "$calls")" -eq 0 ] \
+    || fail "_fm_noted_key_drop ran for a keyed line no open note names"
+
+  : > "$calls"
+  printf '%s\nresolved [at=1794922661] [key=named-key]: answered\n' "$opener" > "$dir/named.status"
+  assert_fold "$dir/named.status" '' "named key still closes its unkeyed ask"
+  [ "$(wc -l < "$calls")" -ge 1 ] \
+    || fail "_fm_noted_key_drop was skipped although an open note names the key"
+
+  unset -f _fm_noted_key_drop
+  eval "_fm_noted_key_drop() $(declare -f _fm_noted_key_drop_real | tail -n +2)"
+  unset -f _fm_noted_key_drop_real
+  pass "the note-head drop runs only when an open note names the key"
+}
+
 test_whole_fold_ten_thousand_lines() {
   local dir started elapsed
   dir=$(case_dir ten-thousand)
@@ -1058,6 +1087,7 @@ SH
 
 test_whole_fold_ten_thousand_lines
 test_whole_fold_cost_does_not_grow_with_open_decisions
+test_noted_key_drop_runs_only_when_a_note_names_the_key
 test_whole_fold_matches_captured_stream
 test_status_line_cause
 test_status_line_dep
