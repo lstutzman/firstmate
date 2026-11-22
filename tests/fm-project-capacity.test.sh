@@ -1354,6 +1354,20 @@ STUB
   assert_contains "$out" "spawned sec-nolabel" "the unqualified security ship did not relaunch: $out"
   grep -q 'PR drain check: just before you open a new pull request' "$home/data/sec-nolabel/launch-brief.md" ||
     fail "a relaunch gave an unqualified security ship its PR drain exemption back"
+  grep -q 'CI slots check: just before you open a new pull request' "$home/data/sec-nolabel/launch-brief.md" ||
+    fail "a relaunch gave an unqualified security ship its CI slots exemption back"
+  write_brief "$home" sec-local
+  sed -i 's/^Delivery contract: mode=no-mistakes$/Delivery contract: mode=local-only/' "$home/data/sec-local/brief.md"
+  printf 'PR drain: security\n> Quoted from Linear PC-5174 (read-only, verbatim). Stub.\n' >> "$home/data/sec-local/brief.md"
+  add_item "$home" sec-local
+  printf '#!/usr/bin/env bash\ntouch "%s/linear-called"\nprintf %%s %s\n' "$case_dir" "'{\"priority\": 3, \"labels\": []}'" > "$reader"
+  rc=0
+  out=$(FM_PR_DRAIN_LINEAR_READER="$reader" run_spawn "$case_dir" "$home" "$(new_worktree "$case_dir" sec-local)" sec-local "$case_dir/project" --mode local-only --yolo off) || rc=$?
+  expect_code 0 "$rc" "a local-only security ship in drain was refused a start: $out"
+  assert_contains "$out" "spawned sec-local" "a local-only security ship in drain did not launch: $out"
+  assert_absent "$case_dir/linear-called" "a local-only security ship, which opens no pull request, read Linear"
+  grep -q 'PR drain check:\|CI slots check:' "$home/data/sec-local/launch-brief.md" &&
+    fail "a local-only security ship, which opens no pull request, got a PR drain or CI slots check"
   pass "a security ship in drain always launches, and keeps its PR drain exemption only with a qualifying Linear item, across a relaunch too"
 }
 
