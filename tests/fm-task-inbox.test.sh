@@ -1795,7 +1795,7 @@ test_inline_ring_lands_only_on_an_empty_verdict() {
 # types anything: a busy, unknown or unreadable read types nothing and returns 4
 # so the sender hands the record to the ladder. A pointer record is unaffected.
 test_inline_ring_types_nothing_unless_the_agent_is_idle() {
-  local dir state rec ptr busy rc typed
+  local dir state rec ptr busy rc
   dir="$TMP_ROOT/inline-ring-idle"; state="$dir/state"; mkdir -p "$state"
   rec=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 "please continue" "" inline) || fail "inline write failed"
   ptr=$(inbox_lib "$state" fm_task_inbox_write "$state" t1 $'pointer\nsteer') || fail "pointer write failed"
