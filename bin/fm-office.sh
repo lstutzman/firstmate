@@ -131,7 +131,7 @@
 # check <source> is the body of a source check. It is fast, contacts no other
 # host (except the upstream source, below), always exits 0, and prints one line at most:
 #   tick             "office <id>: tick <YYYY-MM-DDTHH>: <n> of <wip> places free, <q> queued"
-#                    (then ", <d> unread digest(s)" and ", <l> landing" when not 0)
+#                    (then ", <d> unread digest(s)", ", <l> landing" and ", <k> parked" when not 0)
 #                    once per slot of the registry line's tick: cadence, and again at
 #                    once, with ", place freed" added, when the live count has fallen
 #                    since the last check (a task finished, was torn down or had its
@@ -880,11 +880,12 @@ except Exception:
 
 # count_live: this home's task records that hold a place under wip=, from the
 # one count bin/fm-office-authority-lib.sh owns (fm_office_live_tasks); sets
-# LIVE and LANDING, and returns 1 when a record cannot be read.
+# LIVE, LANDING and PARKED, and returns 1 when a record cannot be read.
 count_live() {
   fm_office_live_tasks "$STATE" '' "$OFFICE_ID" || return 1
   LIVE=$FM_OFFICE_LIVE
   LANDING=$FM_OFFICE_LANDING
+  PARKED=$FM_OFFICE_PARKED
 }
 
 # count_queued: unheld, unblocked items in the backlog's Queued section.
@@ -936,6 +937,7 @@ check_tick() {
   line="office $OFFICE_ID: tick $SLOT_KEY: $free of $wip places free, $queued queued"
   [ "$unread" -eq 0 ] || line="$line, $unread unread digest(s)"
   [ "$LANDING" -eq 0 ] || line="$line, $LANDING landing"
+  [ "$PARKED" -eq 0 ] || line="$line, $PARKED parked"
   # A freed place refills at once: the line prints even when this slot was already reported, and marks the slot reported.
   if [ "$freed" -eq 0 ]; then
     mkdir -p "$DATA/office" 2>/dev/null && printf '%s\n' "$SLOT_KEY" > "$DATA/office/tick.seen" 2>/dev/null || return 0

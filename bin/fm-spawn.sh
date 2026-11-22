@@ -4459,7 +4459,7 @@ fi
 # Office authority, project-dependent part: the project must be in the office's
 # dispatch=, a yolo-on ship's project must be one it merges or hands to a
 # merger, and a fresh spawn past the office's wip= live tasks
-# (fm_office_live_tasks, which leaves landing tasks out) is deferred like
+# (fm_office_live_tasks, which leaves landing tasks and parked ready branches out) is deferred like
 # a capacity deferral (exit 75, nothing created, item still queued). It runs
 # under the task-set lock a fresh spawn already holds, so two spawns in this
 # home cannot both take the last place. A relaunch keeps its place and
@@ -4487,6 +4487,7 @@ if [ -n "$FM_OFFICE_ID" ]; then
     if [ "$FM_OFFICE_LIVE" -ge "$FM_OFFICE_WIP" ]; then
       SPAWN_OFFICE_LANDING=
       [ "$FM_OFFICE_LANDING" -eq 0 ] || SPAWN_OFFICE_LANDING=", while $FM_OFFICE_LANDING landing task(s) hold no place ($FM_OFFICE_LANDING_IDS)"
+      [ "$FM_OFFICE_PARKED" -eq 0 ] || SPAWN_OFFICE_LANDING="$SPAWN_OFFICE_LANDING, while $FM_OFFICE_PARKED parked ready branch(es) hold no place ($FM_OFFICE_PARKED_IDS)"
       echo "deferred: office $FM_OFFICE_ID runs at most $FM_OFFICE_WIP task(s) at once (its authority record's wip=) and $FM_OFFICE_LIVE are live ($FM_OFFICE_LIVE_IDS)$SPAWN_OFFICE_LANDING; task $ID was not launched and its backlog item stays queued - dispatch it again once one of them is cleaned up or its PR is handed to its merger" >&2
       exit "$FM_PROJECT_CAPACITY_DEFER_EXIT"
     fi
