@@ -13,13 +13,14 @@
 # through bin/fm-nm-run-lib.sh, the same reader fm-crew-state.sh uses:
 #   pending  the run is pending and no step has started, for 5 minutes or more
 #            (FM_NM_STALL_PENDING_SECS), while a run slot is free. A slot counts as
-#            free unless this repo's overview shows as many running runs as
-#            max_concurrent_runs in $NM_HOME/config.yaml (default ~/.no-mistakes),
-#            so a run queued behind full slots stays silent and its clock does
-#            not start. When the count or the cap cannot be read the wake still
-#            goes out and says the slot state is unknown. The overview lists only
-#            this repo while the cap is machine-wide, so a wake can fire for a
-#            run queued behind other repos' runs; inspect before acting.
+#            free unless the running runs, counted machine-wide, reach
+#            max_concurrent_runs. Both are read once per sweep from the no-mistakes
+#            home (NM_HOME, default ~/.no-mistakes): the runs with status running
+#            across every repo from its state.sqlite, opened read-only, and the cap
+#            from its config.yaml. A run queued behind full slots stays silent and
+#            its clock does not start. When the count or the cap cannot be read the
+#            wake still goes out and says the run slot state is unknown; it never
+#            claims a slot is free.
 #   gate     the run is parked at a gate for 30 minutes or more
 #            (FM_NM_STALL_GATE_SECS) with no answer. The wake names the gate and
 #            routes it: a finding whose action column is ask-user is owed by the
@@ -107,20 +108,40 @@ gate_name() {  # <toon-output>
   printf '%s' "${name:-gate}"
 }
 
-# 0 when the machine's run slots are provably full. Prints the running/cap note.
+# 0 when the machine's run slots are provably full. Sets SLOT_NOTE to the phrase
+# the pending wake uses. The cap is machine-wide, so the count is too: runs with
+# status running over every repo, from no-mistakes' state database (opened
+# read-only) beside the config that holds the cap, read once per sweep for each
+# database. A count or cap that cannot be read leaves the state unknown, never
+# free.
 SLOT_NOTE=
+SLOT_RC=
+SLOT_DB=
 slots_full() {  # <worktree>
-  local wt=$1 overview running cap cfg
-  SLOT_NOTE="run slot state unknown"
-  overview=$(fm_nm_run "$wt" "$READ_SECS" axi)
-  [ -n "$overview" ] || return 1
-  printf '%s\n' "$overview" | grep -q '^runs\[' || return 1
-  running=$(fm_nm_table_column "$overview" runs status | grep -c '^running$')
-  cfg="${NM_HOME:-$HOME/.no-mistakes}/config.yaml"
-  cap=$(sed -n 's/^max_concurrent_runs:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$cfg" 2>/dev/null | head -1)
+  local wt=$1 db running cap
+  db=$(fm_nm_state_db "$wt")
+  [ -z "$SLOT_RC" ] || [ "$db" != "$SLOT_DB" ] || return "$SLOT_RC"
+  SLOT_DB=$db
+  SLOT_RC=1
+  SLOT_NOTE="the run slot state is unknown"
+  [ "$SECONDS" -lt "$BUDGET_SECS" ] || return 1
+  running=$(fm_nm_bounded "$wt" "$READ_SECS" python3 -I - "$db" "$READ_SECS" 2>/dev/null <<'PY'
+import sqlite3
+import sys
+from contextlib import closing
+from pathlib import Path
+
+database, timeout = sys.argv[1], float(sys.argv[2])
+with closing(sqlite3.connect(Path(database).as_uri() + "?mode=ro", uri=True, timeout=timeout)) as db:
+    print(db.execute("SELECT COUNT(*) FROM runs WHERE status = 'running'").fetchone()[0])
+PY
+  ) || return 1
+  case "$running" in ''|*[!0-9]*) return 1 ;; esac
+  cap=$(sed -n 's/^max_concurrent_runs:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "${db%/*}/config.yaml" 2>/dev/null | head -1)
   [ -n "$cap" ] || return 1
-  SLOT_NOTE="$running of $cap run slots in use in this repo"
-  [ "$running" -ge "$cap" ]
+  SLOT_NOTE="a run slot is free ($running of $cap run slots in use machine-wide)"
+  [ "$running" -lt "$cap" ] || SLOT_RC=0
+  return "$SLOT_RC"
 }
 
 # Who owes the gate's answer.
@@ -202,7 +223,7 @@ cmd_sweep() {
         fi ;;
       pending)
         if [ "$notified" = 0 ] && [ "$age" -ge "$PENDING_SECS" ]; then
-          lines="${lines:+$lines; }$id run $run_id pending with no step started for $(mins "$age")m while a run slot is free ($SLOT_NOTE); inspect it, nothing was cancelled or restarted"
+          lines="${lines:+$lines; }$id run $run_id pending with no step started for $(mins "$age")m while $SLOT_NOTE; inspect it, nothing was cancelled or restarted"
           notified=1
         fi ;;
     esac

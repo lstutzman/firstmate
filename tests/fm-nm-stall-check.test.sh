@@ -14,7 +14,8 @@ CHECK="$ROOT/bin/fm-nm-stall-check.sh"
 
 # A world: <root>/state with metas, <root>/wt/<task> copies, a fake no-mistakes
 # serving <root>/fake/<task>.status for `axi status` (exit 1 when <task>.fail
-# exists) and <root>/fake/overview for the bare `axi` overview.
+# exists), and <root>/nmhome as the no-mistakes home whose state.sqlite holds the
+# machine's runs (see set_runs).
 make_world() {  # <name> <max_concurrent_runs|none> -> prints root
   local root="$TMP_ROOT/$1"
   mkdir -p "$root/state" "$root/wt" "$root/fake" "$root/bin" "$root/nmhome"
@@ -25,8 +26,6 @@ name=$(basename "$PWD")
 if [ "${2:-}" = status ]; then
   [ ! -e "$FAKE_DIR/$name.fail" ] || exit 1
   cat "$FAKE_DIR/$name.status" 2>/dev/null
-elif [ "$#" -eq 1 ]; then
-  cat "$FAKE_DIR/overview" 2>/dev/null
 fi
 exit 0
 SH
@@ -58,10 +57,29 @@ gate_toon() {  # <task> <run> <gate> <action> [parked]
     "$2" "$1" "${5:-1m}" "$4" "$3"
 }
 
-overview_toon() {  # <running count> <branch-prefix>
-  local n=$1 i rows=""
-  for ((i = 0; i < n; i++)); do rows="$rows  \"01R$i\",fm/other$i,running,abc1234,\"\""$'\n'; done
-  printf 'count: %s of %s total\nruns[%s]{id,branch,status,head,pr}:\n%s' "$n" "$n" "$n" "$rows"
+# Replace the machine's run rows in <root>/nmhome/state.sqlite, laid out as
+# no-mistakes keeps them (runs.status). Each spec is <repo>:<status>:<count>.
+set_runs() {  # <root> <spec...>
+  local root=$1
+  shift
+  python3 -I - "$root/nmhome/state.sqlite" "$@" <<'PY'
+import sqlite3
+import sys
+
+db = sqlite3.connect(sys.argv[1])
+db.execute("CREATE TABLE IF NOT EXISTS repos (id TEXT PRIMARY KEY, working_path TEXT)")
+db.execute("CREATE TABLE IF NOT EXISTS runs (id TEXT PRIMARY KEY, repo_id TEXT NOT NULL, branch TEXT NOT NULL, "
+           "head_sha TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', created_at INTEGER NOT NULL)")
+db.execute("DELETE FROM runs")
+n = 0
+for spec in sys.argv[2:]:
+    repo, status, count = spec.split(":")
+    db.execute("INSERT OR IGNORE INTO repos VALUES (?, ?)", (repo, "/repos/" + repo))
+    for _ in range(int(count)):
+        n += 1
+        db.execute("INSERT INTO runs VALUES (?, ?, ?, 'abc1234', ?, ?)", ("R%d" % n, repo, "fm/r%d" % n, status, n))
+db.commit()
+PY
 }
 
 sweep() {  # <root> <now>
@@ -74,14 +92,14 @@ test_pending_with_no_steps_wakes_once_after_five_minutes() {
   root=$(make_world pending 4)
   add_task "$root" t1
   set_status "$root" t1 "$(pending_toon t1 RUN1 pending pending)"
-  printf '%s\n' "$(overview_toon 1)" > "$root/fake/overview"
+  set_runs "$root" here:running:1 here:pending:1 here:completed:5
   out=$(sweep "$root" 1000)
   [ -z "$out" ] || fail "first sight must stay silent: $out"
   out=$(sweep "$root" 1299)
   [ -z "$out" ] || fail "under five minutes must stay silent: $out"
   out=$(sweep "$root" 1300)
   assert_contains "$out" "t1 run RUN1 pending with no step started" "five minutes pending wakes"
-  assert_contains "$out" "1 of 4 run slots in use" "wake names the slot state"
+  assert_contains "$out" "while a run slot is free (1 of 4 run slots in use machine-wide)" "wake names the slot state"
   out=$(sweep "$root" 1900)
   [ -z "$out" ] || fail "the same run and state must not wake twice: $out"
   pass "pending with no steps wakes once at five minutes"
@@ -92,7 +110,7 @@ test_pending_run_that_started_a_step_clears_and_a_new_stall_wakes_again() {
   root=$(make_world clear 4)
   add_task "$root" t1
   set_status "$root" t1 "$(pending_toon t1 RUN1)"
-  printf '%s\n' "$(overview_toon 0)" > "$root/fake/overview"
+  set_runs "$root" here:pending:1
   sweep "$root" 1000 >/dev/null
   out=$(sweep "$root" 1400)
   assert_contains "$out" "t1 run RUN1 pending" "empty steps table also counts as no step started"
@@ -115,13 +133,13 @@ test_pending_behind_full_slots_is_silent_and_starts_no_clock() {
   root=$(make_world full 2)
   add_task "$root" t1
   set_status "$root" t1 "$(pending_toon t1 RUN1 pending)"
-  printf '%s\n' "$(overview_toon 2)" > "$root/fake/overview"
+  set_runs "$root" here:running:2 here:pending:1
   sweep "$root" 1000 >/dev/null
   out=$(sweep "$root" 5000)
   [ -z "$out" ] || fail "queued behind full slots must stay silent: $out"
   assert_absent "$root/state/.nm-stall-check" "no clock may start while the slots are full"
   # A slot frees; the clock starts then, not before.
-  printf '%s\n' "$(overview_toon 1)" > "$root/fake/overview"
+  set_runs "$root" here:running:1 here:completed:1 here:pending:1
   out=$(sweep "$root" 5100)
   [ -z "$out" ] || fail "clock starts when the slot frees: $out"
   out=$(sweep "$root" 5400)
@@ -129,15 +147,86 @@ test_pending_behind_full_slots_is_silent_and_starts_no_clock() {
   pass "full run slots keep a pending run silent"
 }
 
+assert_unknown_slot_state() {  # <out> <what>
+  assert_contains "$1" "t1 run RUN1 pending with no step started for 5m while the run slot state is unknown" "$2 is disclosed"
+  case "$1" in *"slot is free"*) fail "$2 must never claim a free slot: $1" ;; esac
+}
+
 test_unknown_slot_state_still_wakes_and_says_so() {
   local root out
   root=$(make_world unknown none)
   add_task "$root" t1
   set_status "$root" t1 "$(pending_toon t1 RUN1)"
+  set_runs "$root" here:pending:1
   sweep "$root" 1000 >/dev/null
   out=$(sweep "$root" 1300)
-  assert_contains "$out" "run slot state unknown" "unreadable cap is disclosed, not hidden"
+  assert_unknown_slot_state "$out" "an unreadable cap"
   pass "unreadable slot state wakes with a caveat"
+}
+
+# Machine-wide cap: one pending run here (task "t1"), and <n> running runs in a
+# repo this home has no task in.
+machine_world() {  # <name> <running elsewhere> <cap>
+  local root
+  root=$(make_world "$1" "$3")
+  add_task "$root" t1
+  set_status "$root" t1 "$(pending_toon t1 RUN1)"
+  set_runs "$root" here:pending:1 elsewhere:running:"$2" elsewhere:pending:2 elsewhere:failed:3
+  printf '%s' "$root"
+}
+
+test_runs_in_another_repo_fill_the_machine_slots() {
+  local root out
+  root=$(machine_world other4 4 4)
+  sweep "$root" 1000 >/dev/null
+  out=$(sweep "$root" 5000)
+  [ -z "$out" ] || fail "four running elsewhere must keep the pending run silent: $out"
+  assert_absent "$root/state/.nm-stall-check" "no clock while machine slots are full"
+  pass "machine-wide count: full slots held by a repo with no task here stay silent"
+}
+
+test_free_machine_slot_with_runs_elsewhere_still_alarms() {
+  local root out
+  root=$(machine_world other3 3 4)
+  sweep "$root" 1000 >/dev/null
+  out=$(sweep "$root" 1300)
+  assert_contains "$out" "t1 run RUN1 pending with no step started for 5m while a run slot is free (3 of 4 run slots in use machine-wide)" "three of four slots wakes"
+  pass "machine-wide count: a free slot still alarms"
+}
+
+test_unreadable_machine_count_never_claims_a_free_slot() {
+  local root out kind
+  for kind in missing corrupt; do
+    root=$(make_world "unread-$kind" 4)
+    add_task "$root" t1
+    set_status "$root" t1 "$(pending_toon t1 RUN1)"
+    [ "$kind" = missing ] || printf 'not a database' > "$root/nmhome/state.sqlite"
+    sweep "$root" 1000 >/dev/null
+    out=$(sweep "$root" 1300)
+    assert_unknown_slot_state "$out" "a $kind state database"
+  done
+  assert_absent "$TMP_ROOT/unread-missing/nmhome/state.sqlite" "the read-only count must never create the database"
+  pass "machine-wide count: an unreadable count is unknown, not free"
+}
+
+test_slot_count_is_read_once_per_sweep() {
+  local root out
+  root=$(make_world once 2)
+  add_task "$root" t1
+  add_task "$root" t2
+  set_status "$root" t1 "$(pending_toon t1 RUN1)"
+  set_status "$root" t2 "$(pending_toon t2 RUN2)"
+  set_runs "$root" here:running:1 here:pending:2
+  # shellcheck disable=SC2016 # the stub script must keep "$@" and ${1:-} literal
+  printf '#!/usr/bin/env bash\n[ "${1:-}" != -I ] || printf x >> "%s"\nexec "%s" "$@"\n' \
+    "$root/fake/python.calls" "$(command -v python3)" > "$root/bin/python3"
+  chmod +x "$root/bin/python3"
+  sweep "$root" 1000 >/dev/null
+  out=$(sweep "$root" 1300)
+  assert_contains "$out" "t1 run RUN1 pending" "first pending task wakes"
+  assert_contains "$out" "t2 run RUN2 pending" "second pending task wakes"
+  [ "$(cat "$root/fake/python.calls")" = xx ] || fail "one count per sweep expected, saw: $(cat "$root/fake/python.calls")"
+  pass "the machine-wide count is read once per sweep"
 }
 
 test_gate_wakes_after_thirty_minutes_routed_to_the_captain_for_ask_user() {
@@ -263,7 +352,7 @@ esac
 SH
   sweep "$root" 1000 >/dev/null
   sweep "$root" 9000 >/dev/null
-  assert_absent "$root/fake/forbidden.log" "the sweep may only read status and the overview"
+  assert_absent "$root/fake/forbidden.log" "the sweep may only read status"
   pass "the sweep only reads"
 }
 
@@ -316,6 +405,10 @@ fm_test_run \
   test_pending_run_that_started_a_step_clears_and_a_new_stall_wakes_again \
   test_pending_behind_full_slots_is_silent_and_starts_no_clock \
   test_unknown_slot_state_still_wakes_and_says_so \
+  test_runs_in_another_repo_fill_the_machine_slots \
+  test_free_machine_slot_with_runs_elsewhere_still_alarms \
+  test_unreadable_machine_count_never_claims_a_free_slot \
+  test_slot_count_is_read_once_per_sweep \
   test_gate_wakes_after_thirty_minutes_routed_to_the_captain_for_ask_user \
   test_gate_owed_by_the_worker_routes_to_the_worker \
   test_run_reported_parked_age_counts_on_first_sight \
