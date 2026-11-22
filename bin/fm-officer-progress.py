@@ -2,7 +2,7 @@
 """Deterministic progress officer. Run through fm-officer.sh.
 
 Usage: fm-officer-progress.py run --date YYYY-MM-DD --out <lane>
-         --home <dir|host:/dir> [--home ...] [--team PC]
+         --home <dir|host:/dir> [--home ...] [--team PC[,FLEET]]
          [--repos owner/repo,...] [--requested PC-1,...] [--now <epoch>]
          [--writes none|linear] [--max-linear-calls <n>] [--rubric <file>]
        fm-officer-progress.py scan --home <dir>
@@ -16,6 +16,10 @@ no candidates; backlog and Linear discovery still proceed without cached asks.
 Reads backlog rows and task status without changing them. Only this officer's
 lane receives dated JSON, Markdown, and the latest progress-state.json.
 The registry and state schema are documented in docs/configuration.md.
+--team takes one Linear team key or a comma-separated list (PC,FLEET): every listing,
+label read and Linear id match covers each team, and the first team is the one whose
+ids place a project-less row in PropertyCompass2. A FLEET id places it with the office
+whose role is quartermaster, after the linked-repository, project-name and first-team rungs.
 Linear reads use 100-item cursor pages, at most 100 pages per listing. The team
 listing reads only open state types (triage, backlog, unstarted, started); the
 unblocked listing reads only backlog and unstarted, where dependencies matter.
@@ -501,15 +505,24 @@ def view_parent(entry):
     return parent[0] if parent else None
 
 
-def linear_rows(team, home, requested, discovery, problems):
+def merged_labels(teams, deadline):
+    """read_labels over each team, one dict; a team that cannot be read raises, so the gap is named for the run."""
+    labels = {}
+    for team in teams:
+        labels.update(read_labels(team, deadline))
+    return labels
+
+
+def linear_rows(teams, home, requested, discovery, problems):
     listed, unblocked, team_complete = [], [], True
     for entries, is_unblocked, states in ((listed, False, OPEN_STATES), (unblocked, True, BLOCKABLE_STATES)):
-        for state in states:
-            try:
-                discovery.listing(team, state, entries, unblocked=is_unblocked)
-            except RuntimeError as exc:
-                problems.append("Linear discovery: " + str(exc))
-                team_complete = team_complete and is_unblocked
+        for team in teams:
+            for state in states:
+                try:
+                    discovery.listing(team, state, entries, unblocked=is_unblocked)
+                except RuntimeError as exc:
+                    problems.append("Linear discovery: " + str(exc))
+                    team_complete = team_complete and is_unblocked
     clear = {r["identifier"] for r in unblocked}
     rows = {entry["identifier"]: linear_row(entry, home, clear) for entry in listed}
     pending = sorted(requested) if team_complete else []
@@ -874,11 +887,11 @@ def top_of_mind_items(asks, rows, issues, prs, homes):
     return extra
 
 
-def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers, top_of_mind=(), repo_gaps=None, repos=()):
+def judge(snapshots, issues, requested, prs, problems, team, unchecked, blockers, top_of_mind=(), repo_gaps=None, repos=(), teams=()):
     doc = {"schema_version": 1, "source": "progress-officer", "doing": [], "done": [],
            "start_requests": [], "asks_for_lee": [], "excluded": [], "unclassified": 0,
            "filler": None, "coverage": problems}
-    team_id = re.compile(r"\b%s-\d+\b" % re.escape(team))
+    team_id = re.compile(r"\b(?:%s)-\d+\b" % "|".join(map(re.escape, teams or (team,))))
     rows = [row for snapshot in snapshots for row in snapshot["rows"]]
     homes = [snapshot["home"] for snapshot in snapshots] or ["unknown"]
     asks = []
@@ -1144,11 +1157,13 @@ def scope_route(row, offices, team, jev=None):
     named = set(words) | {a + b for a, b in zip(words, words[1:])}
     repos = {alnum(m[1].removesuffix(".git")) for m in GITHUB_REPO.findall(" ".join([row.get("link", ""), *row.get("links", []), text]))}
     linear = {"propertycompass2"} if any(i.partition("-")[0] == team for i in row["linear_ids"]) else set()
+    fleet = any(i.partition("-")[0] == "FLEET" for i in row["linear_ids"])
     title = row["title"].lstrip()
     rungs = (("a linked repository", lambda o: {n for n in map(alnum, o.projects) if n in repos}),
              ("a project name in the text", lambda o: {n for n in map(alnum, o.projects)
                                                        if n in named or n.rstrip("0123456789") in named}),
              ("a Linear id in team " + team, lambda o: {n for n in map(alnum, o.projects) if n in linear}),
+             ("a Linear id in team FLEET", lambda o: {o.role} if fleet and o.role == "quartermaster" else set()),
              ("its source", lambda o: {role for mark, role in SOURCE_ROLES if o.role == role and mark.match(title)}))
     for label, match in rungs:
         hits = {o.home: found for o in offices if (found := match(o))}
@@ -1746,7 +1761,7 @@ def main(argv):
     parser.add_argument("--start-home", action="append", default=[], help="<home>=<project,project>[=<role>[=<mandate>]]: start requests for those projects, a role's source, or what local-jev labels for that office go to that office home")
     parser.add_argument("--out")
     parser.add_argument("--date")
-    parser.add_argument("--team", default="PC")
+    parser.add_argument("--team", default="PC", help="one Linear team key, or a comma-separated list such as PC,FLEET")
     parser.add_argument("--repos", default="")
     parser.add_argument("--requested", default="")
     parser.add_argument("--officer", default="progress")
@@ -1756,6 +1771,11 @@ def main(argv):
     parser.add_argument("--max-linear-calls", type=int, default=450)
     parser.add_argument("--rubric", default=RUBRIC_FILE)
     args = parser.parse_args(argv)
+    teams = list(dict.fromkeys(t.strip() for t in args.team.split(",") if t.strip()))
+    if not teams or not all(re.fullmatch(r"[A-Z][A-Z0-9]*", t) for t in teams):
+        parser.error("--team takes Linear team keys such as PC or PC,FLEET")
+    args.team = teams[0]
+    team_ids = re.compile(r"(?:%s)-\d+" % "|".join(map(re.escape, teams)))
     if args.action == "scan":
         print(json.dumps(scan_home(args.home[0]), sort_keys=True))
         return 0
@@ -1785,12 +1805,12 @@ def main(argv):
     requested.update(i for ask in top_of_mind if ask.get("kind") != "statement" and not non_work(ask["words"], free_text=True)
                      and not ask_skip(ask["words"])[0]
                      for i in LINEAR_ID.findall(json.dumps(ask))
-                     if re.fullmatch(re.escape(args.team) + r"-\d+", i))
+                     if team_ids.fullmatch(i))
     for snapshot in snapshots:
         for row in snapshot["rows"]:
             if row["tags"].get("requested-by", "").lower() == "lee":
                 requested.update(i for i in row["linear_ids"]
-                                 if re.fullmatch(re.escape(args.team) + r"-\d+", i))
+                                 if team_ids.fullmatch(i))
     now = args.now if args.now is not None else int(time.time())
     discovery = LinearDiscovery(started, now)
     resume_path = os.path.join(args.out, "linear-resume-after.json")
@@ -1802,7 +1822,7 @@ def main(argv):
         discovery.stopped_reason = "Linear quota exhausted earlier; discovery skipped until " + iso(resume_after)
     rows, clear = {}, set()
     try:
-        rows, clear = linear_rows(args.team, args.home[0], requested, discovery, problems)
+        rows, clear = linear_rows(teams, args.home[0], requested, discovery, problems)
     except (KeyError, TypeError, ValueError):
         problems.append("Linear discovery: malformed issue data")
     except RuntimeError as exc:
@@ -1820,7 +1840,7 @@ def main(argv):
         repo_gaps = {}
     if rows and not discovery.stopped_reason:
         try:
-            for identifier, names in read_labels(args.team, discovery.deadline).items():
+            for identifier, names in merged_labels(teams, discovery.deadline).items():
                 if identifier in rows:
                     rows[identifier]["labels"] = names
         except (RuntimeError, subprocess.TimeoutExpired) as exc:
@@ -1831,7 +1851,7 @@ def main(argv):
     checked, unchecked = set(), {}
     while not blockers:
         trial = judge(copy.deepcopy(snapshots), copy.deepcopy(list(rows.values())), set(configured),
-                      prs, [], args.team, unchecked, [], top_of_mind, repo_gaps, repos)
+                      prs, [], args.team, unchecked, [], top_of_mind, repo_gaps, repos, teams)
         candidates = [i for row in trial["start_requests"] for i in row["linear_ids"] if i not in checked]
         if not candidates:
             break
@@ -1850,7 +1870,7 @@ def main(argv):
     # judge() strips the fields a digest does not carry from the rows it returns, which are these same dicts.
     facts = {i: dict({k: r.get(k) for k in ("description", "assignee", "priority", "project")},
                      full=i in discovery.viewed and not r["description_truncated"]) for i, r in rows.items()}
-    doc = judge(snapshots, list(rows.values()), configured, prs, problems, args.team, unchecked, blockers, top_of_mind, repo_gaps, repos)
+    doc = judge(snapshots, list(rows.values()), configured, prs, problems, args.team, unchecked, blockers, top_of_mind, repo_gaps, repos, teams)
     doc["linear_coverage"] = discovery.stats
     doc["date"] = args.date
     doc["generated_at"] = iso(now)
