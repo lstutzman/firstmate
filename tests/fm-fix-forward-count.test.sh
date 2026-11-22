@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # tests/fm-fix-forward-count.test.sh - bin/fm-fix-forward-count.sh counts merged PRs, PRs carrying the
 # `Fixes-regression-from:` line, and reverts per repository, with text and JSON output. A fake gh on PATH
-# answers `gh pr list` from per-repository JSON files, applies `--limit` and the `merged:>=DATE` / `merged:>DATE` qualifier the way
-# GitHub search documents it (by UTC merge date, inclusive for >=), records its arguments, and fails for an
+# answers `gh pr list` from per-repository JSON files, applies `--limit` and the `merged:A..B` / `merged:>=DATE` / `merged:>DATE` qualifier the way
+# GitHub search documents it (by UTC merge date, inclusive for A..B and >=), records its arguments, and fails for an
 # unreadable repo the way real gh does: `gh repo view` fails, while `gh pr list --search` answers [] with exit 0.
 set -u
 
@@ -35,6 +35,8 @@ done
 f="$FAKE_GH_DATA/$(printf '%s' "$repo" | tr '/' '_')"
 [ -f "$f" ] || { [ -n "$search" ] && { echo '[]'; exit 0; }; echo "GraphQL: could not resolve to a Repository with the name '$repo'" >&2; exit 1; }
 case $search in
+  'merged:'*..*) r=${search#merged:}
+    jq --arg a "${r%..*}" --arg b "${r#*..}" '[.[] | select(.mergedAt == null or (.mergedAt[0:10] | . >= $a and . <= $b))]' "$f" ;;
   'merged:>='*) jq --arg d "${search#merged:>=}" '[.[] | select((.mergedAt // "9999")[0:10] >= $d)]' "$f" ;;
   'merged:>'*) jq --arg d "${search#merged:>}" '[.[] | select((.mergedAt // "9999")[0:10] > $d)]' "$f" ;;
   *) cat "$f" ;;
@@ -101,16 +103,39 @@ test_bsd_date_fallback() {
   cat > "$bsdbin/date" <<SH
 #!/usr/bin/env bash
 for a in "\$@"; do [ "\$a" = -d ] && { echo "date: illegal option -- d" >&2; exit 1; }; done
-args=()
+args=() base= n=0 skip=0
 for a in "\$@"; do
-  case \$a in -v-*d) n=\${a#-v-}; args+=(-d "\${n%d} days ago") ;; *) args+=("\$a") ;; esac
+  [ "\$skip" = 1 ] && { skip=0; continue; }
+  case \$a in -j) ;; -f) skip=1 ;; -v-*d) n=\${a#-v-}; n=\${n%d} ;; -*|+*) args+=("\$a") ;; *) base=\$a ;; esac
 done
+[ -n "\$base" ] && args+=(-d "\$base \$n days ago")
 exec "$real_date" "\${args[@]}"
 SH
   chmod +x "$bsdbin/date"
   assert_equals "o/w merged=2 fix_forward=0 reverts=0" "$(PATH="$bsdbin:$PATH" bash "$COUNT" --repo o/w)" \
     "BSD-style date gives the same window"
+  assert_equals "2026-10-20" "$(PATH="$bsdbin:$PATH" bash "$COUNT" --json --until 2026-10-26 --repo o/u | jq -r .since)" \
+    "and the same since for --until"
   pass "fm-fix-forward-count.sh: falls back to BSD date -v when date -d is unavailable"
+}
+
+cat > "$DATA/o_u" <<'JSON'
+[
+ {"number":1,"title":"Last moment of the until day","body":"","mergedAt":"2026-10-26T23:59:59Z"},
+ {"number":2,"title":"First day of the window","body":"","mergedAt":"2026-10-20T00:00:01Z"},
+ {"number":3,"title":"The day before the window","body":"","mergedAt":"2026-10-19T23:59:59Z"},
+ {"number":4,"title":"The day after until","body":"","mergedAt":"2026-10-27T00:00:01Z"}
+]
+JSON
+
+test_until_ends_the_window_on_that_date() {
+  local out
+  out=$(bash "$COUNT" --json --until 2026-10-26 --repo o/u)
+  assert_equals "2026-10-20 2" "$(jq -r '"\(.since) \(.repos[0].merged)"' <<<"$out")" \
+    "the 7 days ending 2026-10-26 run from 2026-10-20 and exclude the 19th and the 27th"
+  assert_equals "o/u merged=1 fix_forward=0 reverts=0" "$(bash "$COUNT" --days 1 --until 2026-10-27 --repo o/u)" \
+    "a 1-day window counts only the until day"
+  pass "fm-fix-forward-count.sh: --until ends the window on that date, whatever the clock says"
 }
 
 test_truncated_marker() {
@@ -157,6 +182,10 @@ test_usage_errors() {
   assert_equals 2 "$rc" "days 0"
   bash "$COUNT" --bogus >/dev/null 2>&1; rc=$?
   assert_equals 2 "$rc" "unknown flag"
+  for bad in 26-10-2026 2026-13-01 2026-02-30 today; do
+    bash "$COUNT" --until "$bad" --repo o/a >/dev/null 2>&1; rc=$?
+    assert_equals 2 "$rc" "--until $bad"
+  done
   pass "fm-fix-forward-count.sh: usage errors exit 2"
 }
 
@@ -165,6 +194,7 @@ fm_test_run \
   test_json_output_and_window \
   test_window_is_exactly_n_days \
   test_bsd_date_fallback \
+  test_until_ends_the_window_on_that_date \
   test_truncated_marker \
   test_default_limit_reads_a_busy_week \
   test_unreadable_repo_is_reported_and_others_still_print \

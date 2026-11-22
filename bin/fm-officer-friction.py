@@ -323,8 +323,8 @@ Linear item, answers the reply through fleet-axi, and adds its start, discuss or
 pass runs only when such a reply was read and needs --writes linear; the digest's `velocity_taps` section names what it
 handled and what waits.
 
-Fix-forward evidence. On a run whose --date is a Monday (UTC) the pass also runs bin/fm-fix-forward-count.sh --json
-(read-only, default 7-day window, no model) and adds its per-repository counts to the digest and to the velocity file's
+Fix-forward evidence. On a run whose --date is a Monday (UTC) the pass also runs bin/fm-fix-forward-count.sh --json --until <date>
+(read-only, the 7 days ending that Monday, so a re-run counts the same PRs; no model) and adds its per-repository counts to the digest and to the velocity file's
 evidence, so the office reading the digest sees them; other days are unchanged. A repository the script could not
 read is shown as unreadable, never as zero merges, and a script that fails (a usage error, no gh or jq) is noted as
 not read while the rest of the run stands (FM_FIX_FORWARD_SCRIPT names another script, for tests). Nothing is filed in Linear from these counts.
@@ -2179,7 +2179,7 @@ def github_merge_lookup(cache_path, gaps):
 
 
 def fix_forward_evidence(date, gaps):
-    """The weekly fix-forward counts (bin/fm-fix-forward-count.sh --json), or None unless `date` is a Monday (UTC).
+    """The fix-forward counts for the 7 days ending `date` (bin/fm-fix-forward-count.sh), or None unless it is a Monday.
 
     Read-only and model-free: the script asks GitHub for counts only. {"days", "since", "repos": [...]} on success, where a
     repository it could not read carries "error" instead of counts, so it never reads as zero merges. A usage error,
@@ -2191,7 +2191,7 @@ def fix_forward_evidence(date, gaps):
         os.path.dirname(os.path.abspath(__file__)), "fm-fix-forward-count.sh")
     reason = None
     try:
-        proc = subprocess.run(["bash", script, "--json"], capture_output=True, text=True, timeout=300, check=False)
+        proc = subprocess.run(["bash", script, "--json", "--until", date], capture_output=True, text=True, timeout=300, check=False)
         got = json.loads(proc.stdout) if proc.returncode in (0, 1) else None
         if proc.returncode not in (0, 1):
             reason = (proc.stderr.strip().splitlines() or ["exit %d" % proc.returncode])[0]

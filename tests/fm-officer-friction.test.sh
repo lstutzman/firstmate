@@ -35,6 +35,11 @@ T=1792749600      # 2026-10-23T10:00:00Z
 PREV=1792663200   # 2026-10-22T10:00:00Z
 NOW=1792818000    # 2026-10-24T05:00:00Z
 export TZ=UTC
+# A Monday-dated run calls the fix-forward count script; this stub keeps every test off the real gh unless it sets
+# FM_FIX_FORWARD_SCRIPT itself (empty means the real bin/fm-fix-forward-count.sh, which only the fake gh then answers).
+mkdir -p "$TMP_ROOT/ffstub"
+printf '#!/usr/bin/env bash\necho "error: fix-forward stub" >&2\nexit 2\n' > "$TMP_ROOT/ffstub/count.sh"
+export FM_FIX_FORWARD_SCRIPT="$TMP_ROOT/ffstub/count.sh"
 
 # fake_linear <bindir>: linear-axi driven by $FAKE_LINEAR_DIR (labels.txt, exists.txt, state.<id>); it logs every
 # call to $FAKE_LINEAR_DIR/log and refuses to run without that variable, so no test can reach the real Linear.
@@ -2130,11 +2135,17 @@ test_monday_run_adds_fix_forward_counts() {
   fakebin=$(fm_fakebin "$TMP_ROOT/monday")
   fake_ff_gh "$fakebin"
   FAKE_GH_LOG="$TMP_ROOT/monday/gh.log" PATH="$fakebin:$PATH" FM_FIX_FORWARD_REPOS="o/r o/gone" FAKE_FF_BAD="o/gone" \
-    run_officer "$home" >/dev/null || { DATE=2026-10-23; fail "a Monday run must succeed"; }
+    FM_FIX_FORWARD_SCRIPT='' run_officer "$home" >/dev/null || { DATE=2026-10-23; fail "a Monday run must succeed"; }
   json="$home/data/officers/friction/$DATE.json"
   vel="$home/data/officers/friction/$DATE.velocity-findings.json"
   md="$home/data/officers/friction/$DATE.md"
+  cp "$json" "$TMP_ROOT/monday/first.json"
+  FAKE_GH_LOG="$TMP_ROOT/monday/gh2.log" PATH="$fakebin:$PATH" FM_FIX_FORWARD_REPOS="o/r o/gone" FAKE_FF_BAD="o/gone" \
+    FM_FIX_FORWARD_SCRIPT='' run_officer "$home" >/dev/null || { DATE=2026-10-23; fail "a Monday re-run must succeed"; }
   DATE=2026-10-23
+  assert_equals "2026-10-20" "$(jq -r .fix_forward.since "$json")" "the counts cover the 7 days ending the digest's Monday"
+  assert_grep "merged:2026-10-20..2026-10-26" "$TMP_ROOT/monday/gh.log" "gh is asked for that week, not the clock's"
+  cmp -s "$TMP_ROOT/monday/first.json" "$json" || fail "a re-run of a past Monday must give the same digest"
   assert_equals "3 1 1" "$(jq -r '.fix_forward.repos[0] | "\(.merged) \(.fix_forward) \(.reverts)"' "$json")" \
     "the digest carries the repository's merged, fix-forward and revert counts"
   assert_equals "null" "$(jq -r '.fix_forward.repos[1].merged' "$json")" "an unreadable repository carries no count"
@@ -2156,7 +2167,8 @@ test_non_monday_run_has_no_fix_forward_counts() {
   home=$(make_world nonmonday)   # $DATE is a Friday
   fakebin=$(fm_fakebin "$TMP_ROOT/nonmonday")
   fake_ff_gh "$fakebin"
-  FAKE_GH_LOG="$TMP_ROOT/nonmonday/gh.log" PATH="$fakebin:$PATH" run_officer "$home" >/dev/null || fail "run must succeed"
+  FAKE_GH_LOG="$TMP_ROOT/nonmonday/gh.log" PATH="$fakebin:$PATH" FM_FIX_FORWARD_SCRIPT='' run_officer "$home" >/dev/null ||
+    fail "run must succeed"
   json="$home/data/officers/friction/$DATE.json"
   assert_equals "false" "$(jq 'has("fix_forward")' "$json")" "a non-Monday digest has no fix-forward section"
   assert_equals "0" "$(jq '[.evidence[] | select(.name == "fix-forward")] | length' "$home/data/officers/friction/$DATE.velocity-findings.json")" \
