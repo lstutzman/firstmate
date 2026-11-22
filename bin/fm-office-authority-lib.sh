@@ -121,6 +121,10 @@
 #       branch, FM_OFFICE_LANDING and FM_OFFICE_LANDING_IDS to the landing
 #       tasks it left out, and FM_OFFICE_PARKED and FM_OFFICE_PARKED_IDS to the
 #       parked ready branches it left out; returns 1 with FM_OFFICE_ERROR when a record cannot be read.
+#   fm_office_task_admit_held <state-dir> <id>
+#       0 when task <id> is a finished ship whose PR waits on an open
+#       <id>-admit-<pr>-<class> captain call (bin/fm-watch.sh skips its stale
+#       wakes; the definition sits above the function).
 #   fm_office_task_landing <state-dir> <id> <office-id>
 #       0 when task <id> is landing, as defined below. bin/fm-watch.sh reads it
 #       too, to skip wedge alarms for a landing task (wedge_skip_landing), with
@@ -596,6 +600,31 @@ EOF
   FM_STATE_OVERRIDE="$state" "$(dirname "${BASH_SOURCE[0]}")/fm-captain-hold.sh" open "$id" --distinguish-absent >/dev/null 2>&1 || rc=$?
   case "$rc" in 1|3) return 0 ;; esac
   return 1
+}
+
+# 0 when task <id> is a ship whose finished PR waits on the captain's word for
+# an admission class: pr= in its record, a stamped done line as its latest
+# event with no open status decision, no steer since that line, and a still-open
+# captain call whose id starts <id>-admit-<n>- (bin/fm-pr-merge.sh holds one per
+# flagged class). Its worker has stopped and only the merge poll, which wakes on
+# merge, close or a failing check, can change the PR. bin/fm-watch.sh reads it
+# through wedge_skip_landing; it is deliberately not fm_office_task_landing, so
+# an office still counts the task under wip=. Any doubt keeps the ladder.
+fm_office_task_admit_held() {  # <state-dir> <id>
+  local state=$1 id=$2 meta=$1/$2.meta status=$1/$2.status url n last verb done_at rc=0
+  [ "$(fm_office_meta_value "$meta" kind)" = ship ] || return 1
+  url=$(fm_office_meta_value "$meta" pr)
+  [ -n "$url" ] || return 1
+  n=${url##*/}
+  [ -f "$status" ] && [ ! -L "$status" ] && [ -r "$status" ] || return 1
+  [ -z "$(status_open_decisions "$status" ship)" ] || return 1
+  last=$(_fm_status_latest_event "$status" merge-handoff-)
+  status_line_verb "$last" verb
+  [ "$verb" = "done" ] || return 1
+  done_at=$(status_line_at_epoch "$last") || return 1
+  fm_office_inbox_quiet_since "$state" "$id" "$done_at" || return 1
+  FM_STATE_OVERRIDE="$state" "$(dirname "${BASH_SOURCE[0]}")/fm-captain-hold.sh" open-prefix "$id-admit-$n-" >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 0 ]
 }
 
 fm_office_live_tasks() {  # <state-dir> <own-id> <office-id>
