@@ -1929,8 +1929,10 @@ EOF
 # (replaced/rotated/recreated), which a changed device+inode makes an O(1) check
 # via a single `stat` call - no content hashing, no re-reading the consumed
 # prefix. Any signal falls back to a full re-fold of the whole current file from
-# byte 0 - byte for byte what status_open_decisions itself would compute - and
-# rewrites the cursor from that clean baseline. A same-inode, same-size,
+# byte 0 - byte for byte what status_open_decisions itself would compute, run as
+# one awk pass over FM_OPEN_DECISIONS_REBUILD_BUDGET_BYTES_DEFAULT-sized slices
+# rather than the per-line fold - and rewrites the cursor from that clean
+# baseline. The timed view has no awk fold and rebuilds per line. A same-inode, same-size,
 # in-place byte edit is NOT detected; that is a deliberately accepted gap
 # because no code path in this repo ever does that to a status file.
 #
@@ -1993,6 +1995,11 @@ FM_OPEN_DECISIONS_FOLD_VERSION=12
 # so this bounds one call's time; the cursor is saved after every call, and a
 # call that stops short returns 3 (partial: call again).
 FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES_DEFAULT=262144
+
+# The same bound for the one-awk-pass rebuild from byte 0, which is fast enough
+# to read a log of ordinary size in one call. A rebuild stopped inside a larger
+# log keeps its slices, and the rest folds per line.
+FM_OPEN_DECISIONS_REBUILD_BUDGET_BYTES_DEFAULT=67108864
 
 # Portable device:inode identity for the rotation/recreation check below.
 _fm_open_decisions_file_ident() {  # <file> -> strongest available identity
@@ -2091,7 +2098,7 @@ _fm_status_read_span() {  # <status-file> <start-offset> <byte-length>
 status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [timed]
   local f=$1 captured_end=${2:-} cf offset ident open='' trusted_open='' cursor_data first rest offset_line ident_line
   local version='' size actual_size cur_ident resolve held chunk_file chunk_size line cursor_dirty=0
-  local target_cursor kind fold_version timed=${3:-} want budget cut
+  local target_cursor kind fold_version timed=${3:-} want budget cut rebuild=0 awk_fold=0
   case "$timed" in ''|timed) ;; *) return 2 ;; esac
   [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 0
   kind=$(_fm_status_kind "$f")
@@ -2168,12 +2175,22 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [
     open=''
     trusted_open=''
     cursor_dirty=1
+    rebuild=1
   fi
 
   if [ "$offset" -lt "$size" ]; then
     chunk_file="$cf.read.$$"
     want=$((size - offset))
-    budget=${FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES:-$FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES_DEFAULT}
+    # A rebuild from byte 0 folds with one awk pass, which costs no process per
+    # line, so it takes a far larger slice than the per-line fold does; an
+    # explicit FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES still bounds both.
+    budget=${FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES:-}
+    if [ "$rebuild" -eq 1 ] && [ "$timed" != timed ]; then
+      awk_fold=1
+      [ -n "$budget" ] || budget=$FM_OPEN_DECISIONS_REBUILD_BUDGET_BYTES_DEFAULT
+    else
+      [ -n "$budget" ] || budget=$FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES_DEFAULT
+    fi
     case "$budget" in ''|*[!0-9]*|0*) budget=$FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES_DEFAULT ;; esac
     [ "$want" -le "$budget" ] || want=$budget
     _fm_status_read_span "$f" "$offset" "$want" > "$chunk_file" 2>/dev/null \
@@ -2205,9 +2222,17 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [
       && printf '%s\t%s\n' "$f" "$chunk_size" >> "$FM_OPEN_DECISIONS_READ_PROBE"
     resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
     held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
-    while IFS= read -r line || [ -n "$line" ]; do
-      open=$(_fm_decision_fold_line "$open" "$line" "$resolve" "$held" "$kind" "$timed")
-    done < "$chunk_file"
+    if [ "$awk_fold" -eq 1 ]; then
+      # The rebuild starts from an empty set, so the whole-file awk fold over
+      # the slice is the per-line fold's answer, which the corpus tests pin. An
+      # awk failure leaves the cursor unwritten and the next call tries again.
+      open=$(status_open_decisions "$chunk_file" "$kind") \
+        || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0; }
+    else
+      while IFS= read -r line || [ -n "$line" ]; do
+        open=$(_fm_decision_fold_line "$open" "$line" "$resolve" "$held" "$kind" "$timed")
+      done < "$chunk_file"
+    fi
     rm -f "$chunk_file"
     offset=$((offset + chunk_size))
     cursor_dirty=1

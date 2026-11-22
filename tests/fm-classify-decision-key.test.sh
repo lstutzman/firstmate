@@ -118,8 +118,12 @@ test_key_behind_a_cause_tag_still_closes_by_corr() {
     assert_equals "" "$(status_open_decisions_incremental "$f" '' timed)" \
       "${closer%% *} with the opener's corr closes it in the timed view"
     # Cut the incremental fold between the opener and the closer, so the
-    # closure has to come through the saved cursor.
-    cp "$f" "$f.cut"
+    # closure has to come through the saved cursor. An empty file leaves a
+    # current cursor, so the budget slices the appended bytes instead of the
+    # one-pass rebuild reading them all.
+    : > "$f.cut"
+    status_open_decisions_incremental "$f.cut" > /dev/null
+    cat "$f" >> "$f.cut"
     [ -n "$(FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES=$(( ${#opener} + 1 )) status_open_decisions_incremental "$f.cut")" ] \
       || fail "${closer%% *}: the first budget slice should leave the entry open"
     assert_equals "" "$(status_open_decisions_incremental "$f.cut")" \
@@ -1001,13 +1005,19 @@ test_noted_key_drop_runs_only_when_a_note_names_the_key() {
   _fm_noted_key_drop() { printf 'x\n' >> "$calls"; _fm_noted_key_drop_real "$@"; }
 
   opener='needs-decision [corr=b43c750e736da8fc] [at=1794922660]: [cause=decision] [key=named-key] pick'
-  printf '%s\nblocked [at=1794922661] [key=other-key]: unrelated\n' "$opener" > "$dir/none.status"
+  # An empty file leaves a current cursor, so the appended lines fold per line;
+  # a rebuild from byte 0 is one awk pass and never calls the shadowed function.
+  : > "$dir/none.status"
+  status_open_decisions_incremental "$dir/none.status" > /dev/null
+  printf '%s\nblocked [at=1794922661] [key=other-key]: unrelated\n' "$opener" >> "$dir/none.status"
   status_open_decisions_incremental "$dir/none.status" > /dev/null
   [ "$(wc -l < "$calls")" -eq 0 ] \
     || fail "_fm_noted_key_drop ran for a keyed line no open note names"
 
   : > "$calls"
-  printf '%s\nresolved [at=1794922661] [key=named-key]: answered\n' "$opener" > "$dir/named.status"
+  : > "$dir/named.status"
+  status_open_decisions_incremental "$dir/named.status" > /dev/null
+  printf '%s\nresolved [at=1794922661] [key=named-key]: answered\n' "$opener" >> "$dir/named.status"
   assert_fold "$dir/named.status" '' "named key still closes its unkeyed ask"
   [ "$(wc -l < "$calls")" -ge 1 ] \
     || fail "_fm_noted_key_drop was skipped although an open note names the key"
@@ -1016,6 +1026,91 @@ test_noted_key_drop_runs_only_when_a_note_names_the_key() {
   eval "_fm_noted_key_drop() $(declare -f _fm_noted_key_drop_real | tail -n +2)"
   unset -f _fm_noted_key_drop_real
   pass "the note-head drop runs only when an open note names the key"
+}
+
+# The rebuild path: a missing or version-mismatched cursor refolds the file from
+# byte 0. The per-line fold is the reference: fold every line with it and demand
+# the same open set and the same cursor bytes the rebuild writes, at every
+# corpus checkpoint and for every task kind.
+_rebuild_reference() {  # <status-file> <kind> -> the per-line fold's open set
+  local f=$1 kind=$2 line open='' resolve held
+  resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
+  held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
+  while IFS= read -r line || [ -n "$line" ]; do
+    open=$(_fm_decision_fold_line "$open" "$line" "$resolve" "$held" "$kind")
+  done < "$f"
+  printf '%s' "$open"
+}
+
+_rebuild_expected_cursor() {  # <status-file> <kind> <open-set>
+  _fm_status_read_ident_size "$1" || return 1
+  printf 'version=%s:%s\noffset=%s\nident=%s\n%s' \
+    "$FM_OPEN_DECISIONS_FOLD_VERSION" "$2" "$_FM_STAT_SIZE" "$_FM_STAT_IDENTITY" "$3"
+}
+
+test_rebuild_matches_the_per_line_fold_over_the_corpus() {
+  local dir kind line n=0 mode f cf want got open
+  dir=$(case_dir rebuild-corpus)
+  for kind in unknown ship scout secondmate; do
+    f="$dir/prefix-$kind"
+    : > "$f"
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in
+        '=== '*) ;;
+        *) printf '\n%s' "${line//'<SP>'/' '}" >> "$f"; continue ;;
+      esac
+      for mode in missing mismatched; do
+        n=$((n + 1))
+        # The task kind lives in the sibling .meta; no .meta reads as unknown.
+        [ "$kind" = unknown ] || printf 'kind=%s\n' "$kind" > "$dir/$kind-$n.meta"
+        cp "$f" "$dir/$kind-$n.status"
+        cf=$(_fm_open_decisions_cursor_path "$dir/$kind-$n.status")
+        if [ "$mode" = mismatched ]; then
+          printf 'version=0:%s\noffset=1\nident=stale\nphantom\tblocked\tnot real' "$kind" > "$cf"
+        fi
+        open=$(_rebuild_reference "$dir/$kind-$n.status" "$kind")
+        got=$(status_open_decisions_incremental "$dir/$kind-$n.status")
+        [ "$got" = "$open" ] \
+          || fail "$kind $mode checkpoint $n: rebuild open set differs: got '$got' want '$open'"
+        want=$(_rebuild_expected_cursor "$dir/$kind-$n.status" "$kind" "$open"; printf .)
+        got=$(LC_ALL=C command cat "$cf"; printf .)
+        [ "$got" = "$want" ] \
+          || fail "$kind $mode checkpoint $n: rebuilt cursor bytes differ: got '$got' want '$want'"
+      done
+    done < "$ROOT/tests/fixtures/decision-fold.log"
+  done
+  pass "a missing or version-mismatched cursor rebuilds to the per-line open set and cursor bytes ($n checkpoints)"
+}
+
+# Count calls, never time: a rebuild runs the per-line fold zero times, and the
+# appends after it run it once per new line, so the counter is known to count.
+test_rebuild_runs_the_per_line_fold_zero_times() {
+  local dir f counts line
+  dir=$(case_dir rebuild-zero-calls)
+  f="$dir/t.status"
+  counts="$dir/fold-calls"
+  : > "$counts"
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in '=== '*) ;; *) printf '\n%s' "${line//'<SP>'/' '}" >> "$f" ;; esac
+  done < "$ROOT/tests/fixtures/decision-fold.log"
+  (
+    eval "_fm_orig_$(declare -f _fm_decision_fold_line)"
+    _fm_decision_fold_line() { echo call >> "$counts"; _fm_orig__fm_decision_fold_line "$@"; }
+    status_open_decisions_incremental "$f" > "$dir/rebuilt"
+    [ ! -s "$counts" ] || fail "the rebuild ran the per-line fold $(wc -l < "$counts") times"
+    printf '%s\n' 'needs-decision [key=late]: one' 'working: two' >> "$f"
+    status_open_decisions_incremental "$f" > "$dir/appended"
+    [ "$(wc -l < "$counts")" -eq 2 ] \
+      || fail "the incremental path should run the per-line fold once per appended line, ran $(wc -l < "$counts")"
+    # A version-mismatched cursor rebuilds again with no further per-line calls.
+    printf 'version=0:unknown\noffset=1\nident=stale\n' > "$(_fm_open_decisions_cursor_path "$f")"
+    : > "$counts"
+    status_open_decisions_incremental "$f" > "$dir/rebuilt-again"
+    [ ! -s "$counts" ] || fail "the second rebuild ran the per-line fold $(wc -l < "$counts") times"
+  ) || exit 1
+  [ "$(status_open_decisions "$f")" = "$(LC_ALL=C command cat "$dir/rebuilt-again")" ] \
+    || fail "the rebuilt set differs from the whole-file fold"
+  pass "a rebuild runs the per-line fold zero times and the incremental path runs it per appended line"
 }
 
 test_whole_fold_ten_thousand_lines() {
@@ -1085,6 +1180,8 @@ SH
   pass "folding 20,000 keyed and 10,000 synthetic correlated asks stays within the time budget"
 }
 
+test_rebuild_matches_the_per_line_fold_over_the_corpus
+test_rebuild_runs_the_per_line_fold_zero_times
 test_whole_fold_ten_thousand_lines
 test_whole_fold_cost_does_not_grow_with_open_decisions
 test_noted_key_drop_runs_only_when_a_note_names_the_key
