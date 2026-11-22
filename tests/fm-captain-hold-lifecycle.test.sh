@@ -1845,6 +1845,58 @@ test_external_hold_publishes_a_declared_wait_not_a_decision() {
   pass "an external hold publishes a declared wait, not a needs-decision, and answer and release close it"
 }
 
+# Re-holding an active decision hold as external moves it to a wait on another
+# home, so the earlier needs-decision closes and only the paused wait stays open.
+test_external_rehold_closes_the_earlier_decision() {
+  local parent mate channel open norm
+  parent=$(make_home rehold-parent)
+  mate=$(make_home rehold-mate)
+  printf 'rehold-mate\n' > "$mate/.fm-secondmate-home"
+  printf 'schema=fm-secondmate-parent.v1\nroute=local\nparent_home=%s\n' "$parent" \
+    > "$mate/.fm-secondmate-parent"
+  channel="$parent/state/rehold-mate.status"
+
+  run_captain "$mate" hold moved-call --title "Moved call" --reason "needs the captain" \
+    --repo sample --cause decision >/dev/null || fail "decision hold failed"
+  run_captain "$mate" hold moved-call --reason "now waiting on Slarti" \
+    --repo sample --cause external >/dev/null || fail "external re-hold failed"
+  norm=$(sed -E 's/ \[at=[0-9]+\]//' "$channel")
+  assert_grep 'resolved [key=captain-hold-moved-call-1]: hold moved-call moved to a wait on another home' \
+    <(printf '%s\n' "$norm") "the external re-hold did not close the earlier needs-decision"
+  python3 -I - "$ROOT/bin/fm-officer-friction.py" \
+    "$(grep -F 'resolved [key=captain-hold-moved-call-1]' "$channel")" <<'PY' \
+    || fail "the friction officer reads the automatic close as the captain's answer"
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("fm_officer_friction", sys.argv[1])
+friction = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(friction)
+parsed = friction.parse_status_line(sys.argv[2])
+assert parsed and parsed[0] == "resolved", parsed
+assert not friction.LEE_RE.search(parsed[3]), parsed[3]
+PY
+  assert_grep 'paused [key=captain-hold-moved-call-1] [cause=external]: captain hold moved-call: now waiting on Slarti' \
+    <(printf '%s\n' "$norm") "the external re-hold did not publish the paused wait"
+  open=$(bash -c '. "$1"; status_open_decisions "$2"' _ "$ROOT/bin/fm-classify-lib.sh" "$channel")
+  printf '%s\n' "$open" | grep -Fq 'needs-decision' \
+    && fail "a needs-decision stayed open after the external re-hold: $open"
+
+  run_captain "$mate" hold fresh-ext --title "Fresh wait" --reason "waiting on Gilligan" \
+    --repo sample --cause external >/dev/null || fail "fresh external hold failed"
+  grep -F 'captain-hold-fresh-ext-1' "$channel" | grep -Fq 'resolved' \
+    && fail "an external hold with no earlier decision published a resolved line: $(cat "$channel")"
+
+  run_captain "$mate" hold stay-dec --title "Stay decision" --reason "first ask" \
+    --repo sample --cause decision >/dev/null || fail "stay-dec hold failed"
+  run_captain "$mate" hold stay-dec --reason "second ask" \
+    --repo sample --cause decision >/dev/null || fail "stay-dec re-hold failed"
+  grep -F 'captain-hold-stay-dec-1' "$channel" | grep -Fq 'resolved' \
+    && fail "a decision re-hold closed its own needs-decision: $(cat "$channel")"
+  open=$(bash -c '. "$1"; status_open_decisions "$2"' _ "$ROOT/bin/fm-classify-lib.sh" "$channel")
+  printf '%s\n' "$open" | grep -Fq 'captain-hold-stay-dec-1' \
+    || fail "a decision re-hold did not stay open: $open"
+  pass "an external re-hold closes the earlier needs-decision; other holds are unchanged"
+}
+
 # A call first raised as `needs-decision [key=<task-id>]` and then held under that
 # task id must close that original key when the hold is answered or released, so
 # the parent's open-decision fold stops re-asking an answered call.
@@ -5856,6 +5908,7 @@ test_terminal_single_owner_status_decision_does_not_block_empty_inventory
 test_secondmate_hold_stays_in_authoritative_home
 test_secondmate_home_publishes_holds_and_answers
 test_external_hold_publishes_a_declared_wait_not_a_decision
+test_external_rehold_closes_the_earlier_decision
 test_hold_answer_closes_originating_decision_key
 test_secondmate_reconcile_publishes_before_request_retirement
 test_bound_channel_answers_close_at_answer_time

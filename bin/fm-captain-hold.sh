@@ -422,6 +422,21 @@ publish_parent_hold() {  # <task-id> <occurrence> <verb> <note> [<cause>] [until
   esac
 }
 
+# A decision hold moved to an external wait keeps its key, and the paused line
+# does not close an open needs-decision, so the captain's card would stay. Close
+# it first; a key with no open needs-decision is left alone.
+close_open_hold_decision() {  # <task-id> <occurrence>
+  local id=$1 key="captain-hold-$1-$2" channel rc=0
+  channel=$(fm_parent_channel_destination "$FM_HOME" "$STATE") && [ -f "$channel" ] || return 0
+  [ "$(_fm_open_set_verb "$(status_open_decisions "$channel")" "$key")" = needs-decision ] || return 0
+  fm_parent_channel_report "$FM_HOME" "$STATE" \
+    "resolved [key=$key]: hold $id moved to a wait on another home" "$key" || rc=$?
+  case "$rc" in
+    0|1) : ;;
+    *) printf 'actionable: task %s moved to an external wait but its needs-decision %s did not close on the parent channel (rc=%s)\n' "$id" "$key" "$rc" >&2 ;;
+  esac
+}
+
 # The needs-decision key a hold was raised from lives in a small state file named
 # for the held task and its hold occurrence, written by `hold --origin-key`.
 # Absent that, a call raised as `needs-decision [key=<task-id>]` and held under
@@ -1575,7 +1590,10 @@ command_hold() {
   # An external-cause hold waits on another home, not on the captain, so it goes
   # out as a declared wait and never becomes a captain-facing needs-decision.
   parent_verb=needs-decision
-  [ "$cause" != external ] || parent_verb=paused
+  if [ "$cause" = external ]; then
+    parent_verb=paused
+    close_open_hold_decision "$id" "$occurrence"
+  fi
   publish_parent_hold "$id" "$occurrence" "$parent_verb" "$reason" "$cause" "$until" "$origin_key"
   if [ -n "$origin" ]; then
     write_hold_origin "$id" "$(show_field "$show" body)" "$origin" || exit $?
