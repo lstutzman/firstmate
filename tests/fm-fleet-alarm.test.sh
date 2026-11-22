@@ -1134,6 +1134,18 @@ paused_ask_mate -7200
 assert_contains "$(run_alarm check)" 'holding work silent' 'a pause past its until behind an open needs-decision falls back to the ordinary check'
 mate 0 0 0
 run_alarm check >/dev/null
+undated_paused_ask_mate() { # pause age in seconds
+  mate 1 0 7200
+  printf 'needs-decision [at=%s] [key=ask-x]: waiting on the captain\npaused [at=%s]: waiting on the captain\n' "$((now - $1 - 100))" "$((now - $1))" > "$HOME_FIX/state/mate.status"
+}
+undated_paused_ask_mate 7200
+[ -z "$(run_alarm check)" ] || fail 'an undated pause behind an open needs-decision inside six silence windows is waiting, not silent'
+mate 0 0 0
+run_alarm check >/dev/null
+undated_paused_ask_mate 25200
+assert_contains "$(run_alarm check)" 'holding work silent' 'an undated pause behind an open needs-decision older than six silence windows alarms'
+mate 0 0 0
+run_alarm check >/dev/null
 pass 'an open latest needs-decision or an unexpired pause is not silent'
 
 # Proxy view (a stale account supplies the quota card that carries the context line): a rotated-away exhausted account raises no decision while a headroom account serves.
