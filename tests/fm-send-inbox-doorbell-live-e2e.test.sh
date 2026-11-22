@@ -14,10 +14,10 @@
 # INSTALLED verified harness: each is launched idle in an isolated tmux server,
 # steered through the REAL fm-send (durable record + doorbell), and must both
 # ACT on the instruction (create a named file) and ACKNOWLEDGE it (the mv into
-# handled/), failing loudly with the harness name and version. A second pass per
-# harness steers a plain short message, which fm-send delivers as an inline
-# steer (the record is born taken and the doorbell carries the body after a
-# constant prefix): the worker must ACT on the body alone, with no inbox read.
+# handled/), failing loudly with the harness name and version. There is no
+# inline pass here: an inline steer needs a backend that reports the agent
+# idle, and the isolated tmux server has no such read, so fm-send always takes
+# the pointer path under it (tests/fm-send-inbox.test.sh pins the inline rule).
 #
 # Run explicitly with FM_SEND_INBOX_LIVE_E2E=1. This test spends a small
 # number of real model tokens per installed harness (one short turn each) -
@@ -219,7 +219,6 @@ HARNESSES=${FM_SEND_INBOX_LIVE_HARNESSES:-'claude codex opencode pi grok kimi mu
 for h in $HARNESSES; do
   if command -v "$h" >/dev/null 2>&1; then
     check_harness_doorbell "$h" pointer
-    check_harness_doorbell "$h" inline
   else
     note "harness absent, not verified here: $h"
   fi

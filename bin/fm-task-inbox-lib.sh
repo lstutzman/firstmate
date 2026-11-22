@@ -65,11 +65,13 @@
 # repeat the steer once through the pointer record, never lose it. Inline
 # applies to local steers only: every remote secondmate steer is marked, and a
 # marked steer is never inline, so the remote leg always rings the pointer.
-# A local steer to an agent the backend reports busy is not inline either
-# (bin/fm-send.sh): a busy agent queues typed input and reads an empty composer,
-# so a lost queued line could not be told from a delivered one, and only an
-# unhandled record stays in the ladder. Everything else keeps the pointer
-# doorbell.
+# A local steer is inline only to an agent the backend reports exactly idle
+# (bin/fm-send.sh, and again in fm_task_inbox_ring before anything is typed): a
+# busy or unreadable agent queues typed input and reads an empty composer, so a
+# lost queued line could not be told from a delivered one, and only an
+# unhandled record stays in the ladder. Backends with no idle read (tmux,
+# zellij, orca, cmux, paseo) therefore always ring the pointer. Everything else
+# keeps the pointer doorbell.
 #
 # Sequence numbers are never reused within a task: allocation scans both the
 # inbox root and handled/, so a message is processed at most once per worker
@@ -531,7 +533,8 @@ fm_task_inbox_untake() {  # <record-path>
 # failed (the doorbell line could not be built, the backend errored, or a key
 # could not be delivered), 3 skipped because the endpoint is positively
 # dead or missing (nothing typed; recovery owns the record), 4 an inline
-# doorbell whose submit was not confirmed empty (typed, but not proven landed).
+# doorbell whose agent was not reported idle (nothing typed) or whose submit was
+# not confirmed empty (typed, but not proven landed).
 # After every call FM_TASK_INBOX_RING_STEP is a short stable code for the
 # outcome and FM_TASK_INBOX_RING_REASON a one-line sentence (both empty after a
 # ring that landed); they never carry message text, and callers print them so a
@@ -606,6 +609,14 @@ _fm_task_inbox_ring_locked() {  # <backend> <target> <record-path> [expected-lab
       return 3
       ;;
   esac
+  # An inline record is born taken, so the ring must prove the agent idle at
+  # typing time (the sender's probe ran before its locks): anything else types
+  # nothing and returns 4, and the sender turns the record into a pointer one.
+  if fm_task_inbox_is_inline "$rec" \
+    && [ "$(fm_backend_busy_state "$backend" "$target" 2>/dev/null || true)" != idle ]; then
+    _fm_task_inbox_ring_note inline-not-idle 'the agent is not reported idle, so the inline doorbell was not typed; the pointer record takes over'
+    return 4
+  fi
   if ! line=$(fm_task_inbox_doorbell_line "$rec"); then
     _fm_task_inbox_ring_note doorbell-line-build 'the doorbell line could not be built from the record'
     return 2
