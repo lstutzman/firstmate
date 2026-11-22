@@ -52,6 +52,8 @@ on a task with no captain-hold row of the same id, a truncated decision list, an
 invalidity kind, or in-flight work with no open captain decision still alarms. A child ask on a
 task the mate holds for the captain is suppressed for as long as that hold is open, including a
 later, unrelated ask from the same child.
+A secondmate whose own latest line is a needs-decision with no resolved line for its key is parked
+on an answer and is never silent, whatever the key names, unless a child is asking it something.
 A secondmate whose every in-flight item (not waiting on merge) is a non-secondmate child
 endpoint named by the key of the mate's own open needs-decision (the item id, or
 captain-hold-<id>-<n>) is waiting on the captain too. A blocked line never exempts, and a
@@ -480,7 +482,10 @@ while IFS= read -r line || [ -n "$line" ]; do
       # An external merge handoff ([handoff=<home>]) waits on another home, not on the captain or the mate going quiet, so it is not an unanswered decision here.
       open=$(printf '%s\n' "$folded" | LC_ALL=C awk -F '\t' '($2 == "needs-decision" || $2 == "blocked") && !($2 == "needs-decision" && $1 ~ /^merge-handoff-/ && $3 ~ /^\[handoff=/)' | LC_ALL=C wc -l | tr -d ' ')
       asks=$(printf '%s\n' "$folded" | LC_ALL=C awk -F '\t' '$2 == "needs-decision" { printf "%s%s", sep, $1; sep = " " }')
-      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$SECONDMATE_REGISTRY_HOST" "$SECONDMATE_REGISTRY_HOME" "$age" "$open" "$verb" "$until" "$asks" "$cause" "$state_age"
+      # The latest line is a needs-decision whose key has no resolved line: the mate is parked on an answer.
+      latest_ask=0
+      [ -z "$(status_open_keyed_decision_line "$3/$id.status")" ] || latest_ask=1
+      printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$SECONDMATE_REGISTRY_HOST" "$SECONDMATE_REGISTRY_HOME" "$age" "$open" "$verb" "$until" "$asks" "$cause" "$state_age" "$latest_ask"
       ;;
   esac
 done < "$2"
@@ -488,7 +493,7 @@ done < "$2"
     seen = set()
     routes = list(csv.reader(io.StringIO(roster), delimiter='\t'))
     for index, row in enumerate(routes):
-        name, host, home, age, open_decisions, last_verb, paused_until, asks, cause, state_age = row
+        name, host, home, age, open_decisions, last_verb, paused_until, asks, cause, state_age, latest_ask = row
         if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]*', name) or name in seen or not Path(home).is_absolute():
             raise ValueError('invalid or duplicate secondmate route')
         seen.add(name)
@@ -567,6 +572,12 @@ done < "$2"
             if waiting_on_captain(summary, counts):
                 continue
             if asks and work[0] and waiting_on_open_ask(summary, counts, asks.split()):
+                continue
+            # The mate's own latest line is an open needs-decision: it is parked on an answer, so its
+            # silence is expected whatever the key names. A child asking the mate still counts. A
+            # dated pause is covered by working_on_task below, and falls back to the ordinary check
+            # once past its until.
+            if latest_ask == '1' and not child_asking(summary, counts):
                 continue
             if working_on_task(summary, counts, open_decisions, last_verb, paused_until, state_age, cfg, cause):
                 continue
