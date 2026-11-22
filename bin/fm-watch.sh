@@ -3904,6 +3904,33 @@ office_unprovisioned_tick() {
   wake "$reason"
 }
 
+# Remote-summary cache refresh: the CI-slot and landing-lag counts read remote
+# homes' ships from state/secondmate-summary-cache and ignore a copy older than
+# FM_REMOTE_SHIP_MAX_AGE (bin/fm-project-capacity-lib.sh), and only the fleet
+# snapshot wrote that cache, so a home nobody viewed for two hours went uncounted.
+# This tick runs the snapshot's remote ledger collector alone
+# (bin/fm-fleet-snapshot.sh --remote-summary-refresh) every
+# FM_REMOTE_SUMMARY_INTERVAL_SECS (default 1800, so at least three attempts fit
+# in the default max age; 0 turns it off). Only a home whose registry lists a
+# remote secondmate runs it. Detached and bounded like decision_sweep_tick; the
+# stamp is touched at launch so a slow collection is not relaunched, and the
+# last result is kept in state/.remote-summary-refresh.last for diagnosis.
+remote_summary_tick() {
+  local interval
+  interval=${FM_REMOTE_SUMMARY_INTERVAL_SECS:-1800}
+  case "$interval" in '' | *[!0-9]*) interval=1800 ;; esac
+  [ "$interval" -gt 0 ] || return 0
+  [ -f "$DATA/secondmates.md" ] && grep -q '(host:' "$DATA/secondmates.md" 2>/dev/null || return 0
+  [ "$(age_of "$STATE/.remote-summary-last-run")" -ge "$interval" ] || return 0
+  touch "$STATE/.remote-summary-last-run"
+  (
+    fm_run_timed 120 env FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" FM_CONFIG_OVERRIDE="$CONFIG" \
+      "$SCRIPT_DIR/fm-fleet-snapshot.sh" --remote-summary-refresh \
+      </dev/null >"$STATE/.remote-summary-refresh.last.tmp" 2>&1 || true
+    mv -f "$STATE/.remote-summary-refresh.last.tmp" "$STATE/.remote-summary-refresh.last"
+  ) </dev/null >/dev/null 2>&1 &
+}
+
 # --- Main entry: the runtime below runs only when this file is executed as a
 # script. When sourced (unit tests loading the functions above), return here
 # before acquiring the singleton lock or entering the blocking loop.
@@ -4473,6 +4500,7 @@ while :; do
 
   decision_sweep_tick
   external_wait_tick
+  remote_summary_tick
   office_unprovisioned_tick
 
   # Daily archive pass for the grow-only process-event inbox (handled

@@ -84,7 +84,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Watcher and wake-queue coordination, away-mode state, and generated Relay artifacts.
 - Inactive terminal-outcome receipts under `state/terminal-outcomes/`.
 - Enabled extension working namespaces under `state/extensions/`.
-- Parent-side remote ledger copies under `state/secondmate-summary-cache/`.
+- Parent-side remote ledger copies under `state/secondmate-summary-cache/`, refreshed by the fleet snapshot and, every `FM_REMOTE_SUMMARY_INTERVAL_SECS`, by the watcher's remote-summary refresh (`bin/fm-fleet-snapshot.sh --remote-summary-refresh`).
 - One-shot Bearings reconcile requests under `state/reconcile-notify/`.
 - Private secondmate config-reread generations with their retry and quarantine state.
 - Per-task steering-inbox records under `state/<id>.inbox/` (`bin/fm-task-inbox-lib.sh`).

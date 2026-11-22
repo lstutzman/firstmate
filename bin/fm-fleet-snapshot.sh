@@ -256,6 +256,7 @@ usage() {
   cat <<'EOF'
 usage: fm-fleet-snapshot.sh --json
        fm-fleet-snapshot.sh --secondmate-home-summary
+       fm-fleet-snapshot.sh --remote-summary-refresh
 
 Print a structured snapshot of the firstmate fleet.
 JSON is the stable machine-readable output contract. The default snapshot
@@ -263,6 +264,13 @@ refreshes only its parent-side remote-summary cache as an observational side eff
 
 --contribution-input emits the canonical local backlog/tasks ownership pair only,
 without worker observations or cross-home collection.
+
+--remote-summary-refresh runs only the remote ledger collector below and stores
+each valid summary in the parent-side cache, which the CI-slot and landing-lag
+counts read (bin/fm-project-capacity-lib.sh). The watcher runs it on a cadence
+(bin/fm-watch.sh remote_summary_tick). It prints "fresh=<n> cached=<n>
+failed=<n>" and exits 1 when a home has no readable summary and no cached copy
+younger than FM_REMOTE_SHIP_MAX_AGE (default 7200 seconds).
 
 --secondmate-home-summary emits the bounded structured summary used after a
 validated registered-home handoff. It is local-only, skips nested secondmate
@@ -339,6 +347,7 @@ case "${1:---json}" in
   --json) ;;
   --secondmate-home-summary) OUTPUT_MODE=secondmate-home-summary ;;
   --contribution-input) OUTPUT_MODE=contribution-input ;;
+  --remote-summary-refresh) OUTPUT_MODE='remote-summary-refresh' ;;
   -h|--help) usage; exit 0 ;;
   *) usage >&2; exit 2 ;;
 esac
@@ -2137,6 +2146,53 @@ scout_report_lines() {
     done \
     | jq -s 'sort_by(.id)'
 }
+
+# --remote-summary-refresh: the remote ledger collector alone, run by the
+# watcher on a cadence (bin/fm-watch.sh remote_summary_tick). It reads every
+# registered remote home's state/home-summary.json under FM_SNAPSHOT_BUDGET and
+# stores each valid copy in the parent-side cache, the same copies the CI-slot and
+# landing-lag counts read (bin/fm-project-capacity-lib.sh). It reads no backlog,
+# task or local home, and writes nothing besides the cache. Prints one line,
+# "fresh=<n> cached=<n> failed=<n>": a home whose read failed keeps its cached
+# copy and counts as cached only while that copy is younger than
+# FM_REMOTE_SHIP_MAX_AGE (default 7200), the age past which the counts ignore it.
+# Exits 1 when any home counts as failed, so a caller can log the miss.
+remote_summary_refresh() {
+  local rows manifest row id home cache slot out fresh=0 cached=0 failed=0 max=${FM_REMOTE_SHIP_MAX_AGE:-7200} age
+  case "$max" in ''|*[!0-9]*) max=7200 ;; esac
+  rows=$(registry_secondmates_json | jq -c '.records[]?') || return 1
+  if [ -n "$rows" ]; then
+    prepare_remote_summary_collection "$rows" || return 1
+  fi
+  manifest="$SNAPSHOT_COLLECT_DIR/manifest.jsonl"
+  if [ -n "$SNAPSHOT_COLLECT_DIR" ] && [ -s "$manifest" ]; then
+    while IFS= read -r row; do
+      [ -n "$row" ] || continue
+      id=$(printf '%s' "$row" | jq -r '.id')
+      home=$(printf '%s' "$row" | jq -r '.home')
+      cache=$(printf '%s' "$row" | jq -r '.cache')
+      slot=$(printf '%s' "$row" | jq -r '.slot')
+      out="$SNAPSHOT_COLLECT_DIR/refresh-$slot.json"
+      if [ -n "$cache" ] && summary_file_read "$SNAPSHOT_COLLECT_DIR/$slot.fetch" "$home" "$out" \
+          && snapshot_cache_store "$out" "$cache"; then
+        fresh=$((fresh + 1))
+      elif [ -n "$cache" ] && summary_file_read "$cache" "$home" "$out" \
+          && age=$(snapshot_summary_age "$out") && [ "$age" != null ] && [ "$age" -le "$max" ]; then
+        cached=$((cached + 1))
+      else
+        failed=$((failed + 1))
+        echo "fm-fleet-snapshot: remote home $id: no readable summary and no cached copy younger than $max seconds" >&2
+      fi
+    done < "$manifest"
+  fi
+  printf 'fresh=%s cached=%s failed=%s\n' "$fresh" "$cached" "$failed"
+  [ "$failed" -eq 0 ]
+}
+
+if [ "$OUTPUT_MODE" = remote-summary-refresh ]; then
+  remote_summary_refresh
+  exit $?
+fi
 
 BACKLOG_JSON=$(backlog_json) || { echo "fm-fleet-snapshot: backlog read failed" >&2; exit 1; }
 contribution_tasks_json() {

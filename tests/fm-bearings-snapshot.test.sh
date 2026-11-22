@@ -3475,7 +3475,63 @@ test_supplied_secondmate_questions_and_legacy_optional_fields() {
   pass "supplied secondmate questions preserve text with missing optional fields"
 }
 
+test_remote_summary_refresh_mode_writes_only_the_cache() {
+  local parent fakebin out rc=0 cache file now
+  parent=$(make_home remote-refresh-only)
+  make_remote_ledger_fleet "$parent" 2
+  now=$(date +%s)
+  write_remote_home_summary "$TMP_ROOT/remote-ledger-home-1" "$now"
+  write_remote_home_summary "$TMP_ROOT/remote-ledger-home-2" "$now"
+  fakebin=$(make_remote_ledger_ssh "$parent/remote-ssh")
+  cache="$parent/state/secondmate-summary-cache"
+  out=$(FM_HOME="$parent" FM_ROOT_OVERRIDE="$ROOT" FM_SSH_BIN="$fakebin/fake-ssh" \
+    FM_TEST_LEDGER_CALL_LOG="$parent/ledger-calls.log" \
+    "$ROOT/bin/fm-fleet-snapshot.sh" --remote-summary-refresh) || rc=$?
+  [ "$rc" -eq 0 ] || fail "the remote-summary refresh failed with $rc: $out"
+  assert_contains "$out" "fresh=2 cached=0 failed=0" "the refresh did not report its result"
+  [ "$(find "$cache" -maxdepth 1 -name '*.json' | wc -l | tr -d ' ')" = 2 ] \
+    || fail "the refresh did not write one cache copy per remote home: $(ls "$cache")"
+  for file in "$cache"/*.json; do
+    jq -e --argjson now "$now" '.schema == "fm-secondmate-home-summary.v1" and .generated_epoch == $now' "$file" >/dev/null \
+      || fail "a cache copy is not the remote home's summary: $file"
+  done
+  assert_equals "2" "$(wc -l < "$parent/ledger-calls.log" | tr -d ' ')" "the refresh read more than one summary per remote home"
+  [ -z "$(find "$parent/state" -maxdepth 1 -type f ! -name '*.meta' | head -1)" ] \
+    || fail "the refresh wrote state besides the cache: $(ls -A "$parent/state")"
+  pass "the remote-summary refresh mode copies each remote home's summary into the cache and nothing else"
+}
+
+test_remote_summary_refresh_keeps_a_cached_copy_when_a_home_is_unreachable() {
+  local parent fakebin out rc=0 cache before
+  parent=$(make_home remote-refresh-down)
+  make_remote_ledger_fleet "$parent" 1
+  write_remote_home_summary "$TMP_ROOT/remote-ledger-home-1" "$(date +%s)"
+  fakebin=$(make_remote_ledger_ssh "$parent/remote-ssh")
+  cache="$parent/state/secondmate-summary-cache"
+  FM_HOME="$parent" FM_ROOT_OVERRIDE="$ROOT" FM_SSH_BIN="$fakebin/fake-ssh" \
+    FM_TEST_LEDGER_CALL_LOG="$parent/ledger-calls.log" \
+    "$ROOT/bin/fm-fleet-snapshot.sh" --remote-summary-refresh >/dev/null || fail "the first refresh failed"
+  before=$(cat "$cache"/*.json)
+  rm -f "$TMP_ROOT/remote-ledger-home-1/state/home-summary.json"
+  out=$(FM_HOME="$parent" FM_ROOT_OVERRIDE="$ROOT" FM_SSH_BIN="$fakebin/fake-ssh" \
+    FM_TEST_LEDGER_CALL_LOG="$parent/ledger-calls.log" \
+    "$ROOT/bin/fm-fleet-snapshot.sh" --remote-summary-refresh) || rc=$?
+  [ "$rc" -eq 0 ] || fail "a home with a valid cached copy made the refresh fail: $out"
+  assert_contains "$out" "fresh=0 cached=1 failed=0" "the refresh did not report the cached copy"
+  assert_equals "$before" "$(cat "$cache"/*.json)" "an unreachable home changed its cached copy"
+  rm -f "$cache"/*.json
+  rc=0
+  out=$(FM_HOME="$parent" FM_ROOT_OVERRIDE="$ROOT" FM_SSH_BIN="$fakebin/fake-ssh" \
+    FM_TEST_LEDGER_CALL_LOG="$parent/ledger-calls.log" \
+    "$ROOT/bin/fm-fleet-snapshot.sh" --remote-summary-refresh) || rc=$?
+  [ "$rc" -eq 1 ] || fail "a home with no summary and no cache did not fail the refresh (exit $rc): $out"
+  assert_contains "$out" "fresh=0 cached=0 failed=1" "the refresh did not count the failed home"
+  pass "an unreachable remote home keeps its cached copy, and one with no copy fails the refresh loudly"
+}
+
 fm_test_run \
+  test_remote_summary_refresh_mode_writes_only_the_cache \
+  test_remote_summary_refresh_keeps_a_cached_copy_when_a_home_is_unreachable \
   test_full_captain_questions_survive_local_and_secondmate_projection \
   test_supplied_secondmate_questions_and_legacy_optional_fields \
   test_task_teardown_during_metadata_capture_does_not_abort_snapshot \
