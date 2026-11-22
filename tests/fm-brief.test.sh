@@ -2159,6 +2159,7 @@ test_fast_path_briefs_forbid_self_review() {
   local ready="Do not start your own review sub-agents or a separate review pass before you stop at the ready branch; the merge authority is the check."
   home="$TMP_ROOT/no-self-review-home"
   mkdir -p "$home/data" "$home/config"
+  # shellcheck disable=SC2016 # Backticks are literal adapter text.
   printf '%s\n' 'Run `review-tool upload --draft`.' > "$home/config/external-review.md"
   for spec in "direct-PR|--mode direct-PR" "direct-PR-gerrit|--mode direct-PR --forge gerrit" \
     "direct-PR-external|--mode direct-PR --forge external" "local-only|--mode local-only" \
