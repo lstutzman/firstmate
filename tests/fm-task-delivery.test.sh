@@ -434,7 +434,7 @@ STUB
   for mode in no-mistakes direct-PR local-only; do
     id="promote-dod-$(printf '%s' "$mode" | tr '[:upper:]' '[:lower:]')"
     meta="$home/state/$id.meta"
-    printf 'window=fm-%s\nkind=scout\nworktree=/tmp/wt\n' "$id" > "$meta"
+    printf 'window=fm-%s\nkind=scout\nworktree=/tmp/wt\nproject=/tmp/fixture-project\n' "$id" > "$meta"
     FM_HOME="$home" "$BRIEF" "$id" fixture-project --scout >/dev/null 2>&1 \
       || fail "$mode: scout brief generation should succeed"
     fill_brief_subsections "$home/data/$id/brief.md" \
@@ -529,7 +529,7 @@ test_promotion_persists_the_selected_ship_branch() {
   id=promote-branch-e1
   meta="$home/state/$id.meta"
   mkdir -p "$home/state"
-  printf 'window=fm-%s\nkind=scout\nworktree=/tmp/wt\n' "$id" > "$meta"
+  printf 'window=fm-%s\nkind=scout\nworktree=/tmp/wt\nproject=/tmp/fixture-project\n' "$id" > "$meta"
   FM_HOME="$home" "$BRIEF" "$id" fixture-project --scout >/dev/null 2>&1 \
     || fail "branch-prefix promotion scout brief should scaffold"
   fill_brief_subsections "$home/data/$id/brief.md" \
@@ -559,7 +559,7 @@ test_promotion_branch_command_is_shell_safe() {
   prefix="\$(touch\${IFS}$marker)/"
   meta="$home/state/$id.meta"
   mkdir -p "$home/state"
-  printf 'window=fm-%s\nkind=scout\nworktree=/tmp/wt\n' "$id" > "$meta"
+  printf 'window=fm-%s\nkind=scout\nworktree=/tmp/wt\nproject=/tmp/fixture-project\n' "$id" > "$meta"
   FM_HOME="$home" "$BRIEF" "$id" fixture-project --scout >/dev/null 2>&1 \
     || fail "shell-safe promotion scout brief should scaffold"
   fill_brief_subsections "$home/data/$id/brief.md" \
@@ -1225,7 +1225,7 @@ EOF
   id=promote-unfilled-e1
   meta="$home/state/$id.meta"
   mkdir -p "$home/state"
-  printf 'window=fm-%s\nkind=scout\nworktree=/tmp/wt\n' "$id" > "$meta"
+  printf 'window=fm-%s\nkind=scout\nworktree=/tmp/wt\nproject=/tmp/fixture-project\n' "$id" > "$meta"
   FM_HOME="$home" "$BRIEF" "$id" proj --scout >/dev/null 2>&1 \
     || fail "unfilled promote scout brief should scaffold"
   out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" "$id" --mode direct-PR --yolo on 2>&1)
@@ -1239,7 +1239,7 @@ EOF
 
   id=promote-missing-brief
   meta="$home/state/$id.meta"
-  printf 'window=fm-%s\nkind=scout\nworktree=/tmp/wt\n' "$id" > "$meta"
+  printf 'window=fm-%s\nkind=scout\nworktree=/tmp/wt\nproject=/tmp/fixture-project\n' "$id" > "$meta"
   out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" "$id" --mode direct-PR --yolo off 2>&1)
   status=$?
   [ "$status" -ne 0 ] || fail "promotion without a scout brief should exit non-zero"
@@ -1251,7 +1251,7 @@ EOF
 
   id=promote-unmarked-legacy
   meta="$home/state/$id.meta"
-  printf 'window=fm-%s\nkind=scout\nworktree=/tmp/wt\n' "$id" > "$meta"
+  printf 'window=fm-%s\nkind=scout\nworktree=/tmp/wt\nproject=/tmp/fixture-project\n' "$id" > "$meta"
   mkdir -p "$home/data/$id"
   cat > "$home/data/$id/brief.md" <<'EOF'
 # Task
@@ -1275,7 +1275,7 @@ EOF
 
   id=promote-filled-e2
   meta="$home/state/$id.meta"
-  printf 'window=fm-%s\nkind=scout\nworktree=/tmp/wt\n' "$id" > "$meta"
+  printf 'window=fm-%s\nkind=scout\nworktree=/tmp/wt\nproject=/tmp/fixture-project\n' "$id" > "$meta"
   FM_HOME="$home" "$BRIEF" "$id" proj --scout >/dev/null 2>&1 \
     || fail "filled promote scout brief should scaffold"
   fill_brief_subsections "$home/data/$id/brief.md" \
@@ -1300,7 +1300,7 @@ EOF
 
   id=promote-nested-spec
   meta="$home/state/$id.meta"
-  printf 'window=fm-%s\nkind=scout\nworktree=/tmp/wt\n' "$id" > "$meta"
+  printf 'window=fm-%s\nkind=scout\nworktree=/tmp/wt\nproject=/tmp/fixture-project\n' "$id" > "$meta"
   mkdir -p "$home/data/$id"
   cat > "$home/data/$id/brief.md" <<'EOF'
 # Task
@@ -1339,7 +1339,7 @@ EOF
 
   id=promote-legacy-e3
   meta="$home/state/$id.meta"
-  printf 'window=fm-%s\nkind=scout\nworktree=/tmp/wt\n' "$id" > "$meta"
+  printf 'window=fm-%s\nkind=scout\nworktree=/tmp/wt\nproject=/tmp/fixture-project\n' "$id" > "$meta"
   mkdir -p "$home/data/$id"
   cat > "$home/data/$id/brief.md" <<'EOF'
 You are a crewmate.
