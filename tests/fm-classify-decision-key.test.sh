@@ -69,6 +69,89 @@ test_stated_key_is_honored_in_both_positions() {
   pass "a stated [key=X] opens X whether it precedes or follows the verb colon"
 }
 
+test_key_after_a_note_head_cause_tag_is_honored() {
+  local dir opener row
+  dir=$(case_dir cause-then-key)
+  # The real Slarti sequence (state/slarti.status lines 17520-17525 and 18600):
+  # the decision was opened with its cause tag AHEAD of the key after the colon,
+  # so the line states no key and opens the synthetic u-<epoch>-<corr> entry; a
+  # done on another corr and a resolved on another key leave it open, and the
+  # later resolved line with the exact key must close it.
+  opener='needs-decision [corr=b43c750e736da8fc] [at=1794922660]: [cause=decision] [key=pc-2499-sev1-test] pick the Sev 1 test'
+  row=$(printf 'u-1794922660-b43c750e736da8fc\tneeds-decision\t[cause=decision] [key=pc-2499-sev1-test] pick the Sev 1 test\n')
+  {
+    printf '%s\n' "$opener"
+    printf 'done [corr=d7ae96f24cd47d29] [at=1794922727]: closed out; the Sev 1 test stays an open call (key pc-2499-sev1-test)\n'
+    printf 'resolved [key=captain-hold-pc-2499-sev1-test-1] [at=1794922861]: answered\n'
+  } > "$dir/a.status"
+  assert_fold "$dir/a.status" "$row" "a key behind a cause tag opens the corr-carrying unkeyed entry"
+  [ -n "$(status_open_decisions_incremental "$dir/a.status" '' timed)" ] \
+    || fail "the timed view should hold the entry open before its resolution"
+  printf 'resolved [key=pc-2499-sev1-test] [at=1795308143]: answered by Lee\n' >> "$dir/a.status"
+  assert_fold "$dir/a.status" "" "an exact-key resolved line closes it"
+  assert_equals "" "$(status_open_decisions_incremental "$dir/a.status" '' timed)" \
+    "the timed view that fm-watch wakes on closes it too"
+  assert_equals "resolved" "$(status_key_closing_verb "$dir/a.status" u-1794922660-b43c750e736da8fc)" \
+    "the closing verb names the exact-key resolution"
+
+  printf 'blocked [at=1794922660]: [dep=pr/o/r/1] [cause=external] [key=k] wait\n' > "$dir/dep.status"
+  printf 'captain-held [key=k]: handed to the captain\n' >> "$dir/dep.status"
+  assert_fold "$dir/dep.status" "" "a held line with the key closes a key behind a dep and cause run"
+  pass "a note-head [key=X] behind leading [cause=..] and [dep=..] tags closes on that key"
+}
+
+# Before the exact-key rule, such a line was closed by a later corr-only done or
+# resolved line with its corr; that closure must survive, through the persisted
+# incremental cursor too, so no historical decision reopens.
+test_key_behind_a_cause_tag_still_closes_by_corr() {
+  local dir closer opener f
+  dir=$(case_dir cause-then-key-corr)
+  opener='needs-decision [corr=b43c750e736da8fc] [at=1794922660]: [cause=decision] [key=pc-2499-sev1-test] pick the Sev 1 test'
+  for closer in \
+    'done [corr=b43c750e736da8fc] [at=1794922700]: settled with the captain' \
+    'resolved [corr=b43c750e736da8fc] [at=1794922700]: settled with the captain'; do
+    f="$dir/${closer%% *}.status"
+    printf '%s\n' "$opener" > "$f"
+    printf 'working [at=1794922690]: still going\n' >> "$f"
+    printf '%s\n' "$closer" >> "$f"
+    assert_fold "$f" "" "${closer%% *} with the opener's corr closes it"
+    assert_equals "" "$(status_open_decisions_incremental "$f" '' timed)" \
+      "${closer%% *} with the opener's corr closes it in the timed view"
+    # Cut the incremental fold between the opener and the closer, so the
+    # closure has to come through the saved cursor.
+    cp "$f" "$f.cut"
+    [ -n "$(FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES=$(( ${#opener} + 1 )) status_open_decisions_incremental "$f.cut")" ] \
+      || fail "${closer%% *}: the first budget slice should leave the entry open"
+    assert_equals "" "$(status_open_decisions_incremental "$f.cut")" \
+      "${closer%% *} closes it across a saved cursor"
+  done
+
+  # A key in first position keeps exact-key-only closure: a corr-only done
+  # never closes it.
+  printf 'needs-decision [corr=b43c750e736da8fc] [at=1794922660]: [key=k] q\n' > "$dir/first.status"
+  printf 'done [corr=b43c750e736da8fc] [at=1794922700]: done\n' >> "$dir/first.status"
+  assert_fold "$dir/first.status" "$(printf 'k\tneeds-decision\tq\n')" \
+    "a corr-only done leaves a first-position key open"
+  pass "a key behind a cause tag still closes on a corr-only done or resolved line"
+}
+
+# A cursor folded under fold version 11 kept the unkeyed entry open past the
+# exact-key resolution; it must be discarded and rebuilt, not trusted.
+test_stale_cursor_with_the_unkeyed_entry_is_refolded() {
+  local dir f cf size
+  dir=$(case_dir stale-cursor)
+  f="$dir/s.status"
+  printf 'needs-decision [corr=b43c750e736da8fc] [at=1794922660]: [cause=decision] [key=pc-2499-sev1-test] pick\n' > "$f"
+  [ -n "$(status_open_decisions_incremental "$f")" ] || fail "the opener should open the entry"
+  printf 'resolved [key=pc-2499-sev1-test] [at=1795308143]: answered by Lee\n' >> "$f"
+  cf=$(_fm_open_decisions_cursor_path "$f")
+  size=$(wc -c < "$f"); size=${size//[[:space:]]/}
+  sed -i -e 's/^version=[0-9]*/version=11/' -e "s/^offset=.*/offset=$size/" "$cf"
+  assert_equals "" "$(status_open_decisions_incremental "$f")" \
+    "a version-11 cursor holding the entry is rebuilt and the entry closes"
+  pass "a stale cursor holding the unkeyed entry is refolded"
+}
+
 test_bare_keyless_line_still_folds_to_default() {
   local dir
   dir=$(case_dir keyless)
@@ -265,6 +348,9 @@ test_incremental_agrees_with_full_fold_across_appends() {
 }
 
 test_stated_key_is_honored_in_both_positions
+test_key_after_a_note_head_cause_tag_is_honored
+test_key_behind_a_cause_tag_still_closes_by_corr
+test_stale_cursor_with_the_unkeyed_entry_is_refolded
 test_bare_keyless_line_still_folds_to_default
 test_resolution_closes_across_positions
 test_blocked_is_position_tolerant_like_needs_decision
