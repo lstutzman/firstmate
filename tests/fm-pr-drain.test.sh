@@ -461,6 +461,60 @@ state_r() {
   FM_HOME="$GATE_HOME" "$DRAIN" state "$PROJECT" r
 }
 
+test_label_on_a_recorded_hold_changes_neither_count() {
+  printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
+  rm -f "$GATE_HOME/config/open-pr-cap" "$GATE_HOME"/state/held-*.meta
+  fm_write_meta "$GATE_HOME/state/held-1.meta" "project=$PROJECT" "kind=ship" "yolo=off" "pr=https://github.com/o/r/pull/1"
+  local labels
+  for labels in '' 1; do
+    python3 -I - "$GHDATA" "$labels" <<'PY2'
+import json, sys
+labelled = {int(n) for n in sys.argv[2].split()}
+json.dump([{'createdAt': '2026-11-01T00:00:00Z', 'isDraft': False, 'url': f'https://github.com/o/r/pull/{n}', 'headRefName': f'fm/b{n}',
+            'labels': [{'name': 'held'}] if n in labelled else []} for n in range(1, 9)], open(sys.argv[1] + '/open.json', 'w'))
+PY2
+    assert_equals "open o/r" "$(gate)" "PR 1, recorded as waiting for the captain (labels: '$labels'), was counted toward the cap of 8"
+  done
+  printf '[]' > "$GHDATA/closed.json"
+  printf '%s\n' 'r 7' > "$GATE_HOME/config/ci-slots"
+  assert_equals "off o/r 7" "$(state_r)" "a labelled PR recorded as waiting for the captain was counted in the CI-slot count"
+  rm -f "$GATE_HOME/state/held-1.meta"
+  printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
+  pass "labelling a PR a task record already shows waiting for the captain changes neither the cap nor the CI-slot count"
+}
+
+test_drain_leaves_label_held_prs_out() {
+  printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
+  rm -f "$GATE_HOME"/state/held-*.meta
+  python3 -I - "$GHDATA" <<'PY2'
+import json, sys, time
+def iso(hours):
+    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - hours * 3600))
+pr = lambda n, labels: {'createdAt': iso(48), 'isDraft': False, 'url': f'https://github.com/o/r/pull/{n}', 'headRefName': f'fm/b{n}',
+                        'labels': [{'name': name} for name in labels]}
+json.dump([pr(n, ['held'] if n <= 22 else ['other']) for n in range(1, 27)], open(sys.argv[1] + '/open.json', 'w'))
+json.dump([], open(sys.argv[1] + '/closed.json', 'w'))
+PY2
+  assert_equals "off o/r 4" "$(state_r)" "22 PRs labelled held among 26 ready kept the drain on with S = 4"
+  python3 -I - "$GHDATA" <<'PY2'
+import json, sys, time
+def iso(hours):
+    return time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(time.time() - hours * 3600))
+json.dump([{'createdAt': iso(400), 'isDraft': False, 'url': f'https://github.com/o/r/pull/{n}', 'headRefName': f'fm/b{n}'} for n in range(1, 16)],
+          open(sys.argv[1] + '/open.json', 'w'))
+json.dump([{'createdAt': iso(48), 'closedAt': iso(24), 'isDraft': False, 'headRefName': 'fm/w', 'labels': [{'name': 'held'}]}] * 10,
+          open(sys.argv[1] + '/closed.json', 'w'))
+PY2
+  assert_contains "$(state_r)" "unknown o/r" "10 labelled PRs closed yesterday pushed the walk-back from 15 to a peak of 24"
+  python3 -I - "$GHDATA" <<'PY2'
+import json, sys
+closed = json.load(open(sys.argv[1] + '/closed.json'))
+json.dump([dict(pr, labels=[]) for pr in closed], open(sys.argv[1] + '/closed.json', 'w'))
+PY2
+  assert_equals "on o/r 15" "$(state_r)" "10 unlabelled PRs closed yesterday did not count in the walk-back"
+  pass "drain leaves PRs labelled held out of its open count and its closed-PR walk-back"
+}
+
 test_drain_with_slots_ends_at_s_not_zero() {
   printf '%s\n' 'r 6' > "$GATE_HOME/config/ci-slots"
   rm -f "$GATE_HOME/config/open-pr-cap"
@@ -568,6 +622,8 @@ fm_test_run \
   test_drain_with_slots_ends_at_s_not_zero \
   test_drain_counts_only_eligible_prs \
   test_drain_walk_back_leaves_held_prs_out \
+  test_label_on_a_recorded_hold_changes_neither_count \
+  test_drain_leaves_label_held_prs_out \
   test_unreadable_s_makes_drain_unknown \
   test_brief_carries_the_ci_slots_gate_only_when_slots_are_declared \
   test_slots_classes_are_the_urgent_and_landing_ones \
