@@ -712,6 +712,7 @@ EOF
       fm_gerrit_publish_block
       cat <<EOF
 Do NOT run /no-mistakes.
+Do not start your own review sub-agents or a separate review pass before you publish; the merge authority is the check.
 EOF
       ;;
     no-mistakes:gerrit)
@@ -771,6 +772,7 @@ EOF
       fi
       cat <<EOF
 Do NOT run /no-mistakes. A human approves and merges the review; firstmate relays the outcome.
+Do not start your own review sub-agents or a separate review pass before you publish; the merge authority is the check.
 
 ## Review tool instructions (home configuration)
 EOF
@@ -790,6 +792,7 @@ Then append \`done [at=<epoch>]: PR {url}\` to the status file and stop.
 That \`done:\` is accepted only when this copy's HEAD - your latest commit - is pushed to your PR branch; the check tests that commit, not merely that a branch moved.
 If you deliberately keep the PR a draft, append \`paused [at=<epoch>]: {why the draft is held}\` instead of done.
 Do NOT run /no-mistakes. The configured merge authority decides whether to merge the PR; firstmate relays the outcome.
+Do not start your own review sub-agents or a separate review pass before you open the PR; the merge authority and CI are the checks.
 EOF
       ;;
     local-only:*)
@@ -803,6 +806,7 @@ A \`done:\` is accepted when the named head is on this project's shared local br
 Keep your branch a clean fast-forward onto the current default branch - if \`main\` has advanced, rebase onto it so the eventual merge stays a fast-forward.
 When it is implemented and committed, append \`done [at=<epoch>]: ready in branch $branch\` to the status file and stop.
 The configured merge authority approves the ready branch, then firstmate merges it into local \`main\` through the guarded fast-forward path.
+Do not start your own review sub-agents or a separate review pass before you stop at the ready branch; the merge authority is the check.
 EOF
       ;;
     no-mistakes:*)
