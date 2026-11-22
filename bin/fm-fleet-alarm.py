@@ -729,6 +729,14 @@ def collect(cfg):
         findings.update(mate_findings(read, cfg, not_collected))
     except (ValueError, KeyError, TypeError, OSError) as error:
         findings['mate-read'] = f'Secondmate work inventory unavailable: {type(error).__name__}: {error}'
+    # bin/fm-office.sh records a remote office feed it could not build as state/office-feed.<id>.error.
+    for record in sorted(STATE.glob('office-feed.*.error')):
+        office = record.name[len('office-feed.'):-len('.error')]
+        try:
+            why = record.read_text().strip()[:300]
+        except OSError:
+            continue
+        findings['office-feed:' + office] = f'Office feed not built for {office}: {why}'
     drain, unread = {}, []
     projects = HOME / 'projects'
     clones = sorted(projects.iterdir()) if projects.is_dir() else []

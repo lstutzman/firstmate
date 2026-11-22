@@ -173,6 +173,8 @@ FM_SNAPSHOT_BUDGET=${FM_SNAPSHOT_BUDGET:-5}
 FM_SNAPSHOT_CACHE_DIR=${FM_SNAPSHOT_CACHE_DIR:-$STATE/secondmate-summary-cache}
 FM_SNAPSHOT_SECONDMATE_MAX_BYTES=${FM_SNAPSHOT_SECONDMATE_MAX_BYTES:-262144}
 FM_SNAPSHOT_SECONDMATE_CHILDREN=${FM_SNAPSHOT_SECONDMATE_CHILDREN:-20}
+FM_SNAPSHOT_SECONDMATE_SHIPS=${FM_SNAPSHOT_SECONDMATE_SHIPS:-50}
+case "$FM_SNAPSHOT_SECONDMATE_SHIPS" in ''|*[!0-9]*) FM_SNAPSHOT_SECONDMATE_SHIPS=50 ;; esac
 FM_SNAPSHOT_SECONDMATE_QUEUED=${FM_SNAPSHOT_SECONDMATE_QUEUED:-20}
 FM_SNAPSHOT_SECONDMATE_DECISIONS=${FM_SNAPSHOT_SECONDMATE_DECISIONS:-20}
 FM_SNAPSHOT_TERMINAL_LINES=${FM_SNAPSHOT_TERMINAL_LINES:-8}
@@ -953,6 +955,7 @@ task_json_row() {  # <captured-meta> <id>
     --arg pr "$pr" \
     --arg pr_source "$pr_source" \
     --arg pr_head "$(meta_value "$meta" pr_head)" \
+    --arg pr_at "$(meta_value "$meta" pr_at)" \
     --arg agent_alive "$agent_alive" \
     --arg observed_at "$SNAPSHOT_NOW" \
     --slurpfile current_state "$current_file" \
@@ -996,7 +999,7 @@ task_json_row() {  # <captured-meta> <id>
                 elif $agent_alive == "alive" or $agent_alive == "dead" then $agent_alive
                 else "unknown" end),
         observed_at:$observed_at,freshness:"fresh"},
-      pr:{url:($pr | if . == "" then null else . end),source:$pr_source,head:($pr_head | if . == "" then null else . end),merge_check_armed:$merge_check_armed,parked_handoff:$parked_handoff},
+      pr:{url:($pr | if . == "" then null else . end),source:$pr_source,head:($pr_head | if . == "" then null else . end),at:(if ($pr_at | test("^[0-9]+$")) then ($pr_at | tonumber) else null end),merge_check_armed:$merge_check_armed,parked_handoff:$parked_handoff},
       hints:{
         pending_decision:$pending_decision,
         blocked_event:$blocked_event,
@@ -1072,6 +1075,7 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
     --argjson queued_n "$FM_SNAPSHOT_SECONDMATE_QUEUED" \
     --argjson decisions_n "$FM_SNAPSHOT_SECONDMATE_DECISIONS" \
     --argjson landed_n "$FM_SNAPSHOT_SECONDMATE_LANDED_PER_HOME" \
+    --argjson ships_n "$FM_SNAPSHOT_SECONDMATE_SHIPS" \
     --slurpfile backlog "$1" \
     --slurpfile tasks "$2" --slurpfile contributions "$CONTRIBUTIONS_JSON_FILE" "$FM_LANDED_JQ_DEFS"'
     ($backlog[0]) as $backlog
@@ -1257,6 +1261,15 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
              + (map(select(.captain_actionable == true)) | newest_filed_first))
           | .[:$queued_n]),
         landed:(if $landed_n == 0 then $landed_all else $landed_all[:$landed_n] end),
+        ships:([ $tasks[] | select(.kind != "secondmate") | . as $t
+          | ([ $backlog.records[]? | select(.structured and .id == $t.id) ][0]) as $row
+          | {id:(.id | trunc(120)),kind,
+             project:((.project // "") | rtrimstr("/") | split("/") | last // ""),
+             yolo:(.yolo // ""),
+             pr:(if .pr.source == "meta" then .pr.url else null end),
+             pr_at:(.pr.at // null),
+             captain_held:($row != null and $row.hold_kind == "captain" and $row.state != "done"),
+             blocked:($row != null and (($row.unresolved_blocker_ids // []) | length) > 0)}][:$ships_n]),
         endpoints:([$tasks[] | {id,kind,state:.current_state.state,source:.current_state.source,
           endpoint:(.endpoint + {target:((.endpoint.target // null) | if . == null then null else trunc(240) end)})}][:$child_n]),
         counts:{

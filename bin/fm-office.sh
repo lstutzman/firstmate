@@ -86,15 +86,18 @@
 # lane officer's digest, its .json and the start requests addressed to that
 # office, which a home on another host cannot read from the parent
 # (bin/fm-office-feed-lib.sh owns the format). It prints the same one line as
-# publish, including the "feed not pushed" line, after which it sends nothing. feed-sweep is the watcher check that keeps the copy current: for each
+# publish, and sends it. A lane over its size limit is omitted and the rest sent,
+# with a "feed coverage gap: lane <officer> omitted, <why>" line, because that lane's remote
+# source check then stays silent; "feed not pushed" remains only for a copy over its limit with every
+# lane dropped, after which it sends nothing. feed-sweep is the watcher check that keeps the copy current: for each
 # remote office it sends the feed when the copy's content changed since the last
 # send, or the last send is over FM_OFFICE_FEED_REFRESH_SECS (default 21600)
 # old, never more often than every FM_OFFICE_FEED_RETRY_SECS (default 120) for one
 # office, within one 25 second bound for the whole sweep. It prints nothing,
-# except one "OFFICE: office <id>: feed not pushed: <why>" line the first time
-# that office's feed or a given lane goes over its size limit (record:
+# except one "OFFICE: office <id>: feed coverage gap: ..." (or "feed not pushed: <why>") line the first time
+# that office's feed gains a given set of omitted lanes (record:
 # state/office-feed.<id>.over, cleared once the feed fits; FM_OFFICE_FEED_SWEEP_REPORT=0
-# neither prints nor records it); the oversized feed is not sent. arm-feed (run once in the main home)
+# neither prints nor records it). arm-feed (run once in the main home)
 # writes state/office-feed.check.sh, a shim that execs "fm-office.sh feed-sweep",
 # and binds it with bin/fm-check-register.sh; running it again rewrites the same
 # bytes. A new digest therefore reaches a remote office within one parent
@@ -153,11 +156,12 @@
 # in rank order, by running this code root's fm-inbox.sh with the request's
 # recorded note arguments (never the program the file names), with FM_HOME set to
 # this home. It delivers nothing from a digest whose generated_at is over 36 hours
-# old, stops at the first request it will not run or that fails, and retries on
+# old, skips a request it will not run or that fails (its reason goes to
+# data/office/lane-<officer>-starts.err) and still delivers the requests after it, and retries on
 # later checks; request-id replay keeps each request one note. The outcome is
 # appended to the line as "; <n> start request(s) delivered to this office's
 # inbox", "; digest older than 36 hours, ...", or "; start request <r> of <n>
-# could not be delivered; ...", once per digest content, recorded in
+# could not be delivered (reason in ...); <m> delivered; ...", once per digest content, recorded in
 # data/office/lane-<officer>-starts.seen.
 # The seen-records are data/office/tick.seen and data/office/lane-<officer>[-high].seen
 # in the office home. An unreadable file, an unregistered
@@ -338,6 +342,7 @@ office_problems() {
       || printf 'it is on a remote route and %s is not registered in %s (run bin/fm-office.sh arm-feed, or publish %s)\n' "$FEED_CHECK_ID" "$STATE" "$id"
     feed_stage "$id"
     [ -z "$FEED_OVER" ] || printf '%s\n' "$FEED_REASON"
+    [ -z "$FEED_GAP" ] || printf '%s\n' "$FEED_GAP"
     return
   fi
   home=${SECONDMATE_REGISTRY_HOME/#\~/$HOME}
@@ -524,21 +529,34 @@ remote_push() {
 }
 
 # feed_stage <id>: sets FEED_FP to the fingerprint of the feed the parent would send now, or empty;
-# when the copy or a lane is over its size limit, FEED_OVER (feed or lane:<officer>) and FEED_REASON
-# ("feed not pushed: ...") say so.
+# when the copy is over its size limit with every lane dropped, FEED_OVER (feed) and FEED_REASON
+# ("feed not pushed: ...") say so. A lane omitted for size still sends the rest and sets FEED_GAP
+# ("feed coverage gap: lane <officer> omitted, ...") and FEED_GAP_KEY ("lanes: <sorted officers>").
 feed_stage() {
   local id=$1 stage rc=0
   FEED_FP=
   FEED_OVER=
   FEED_REASON=
+  FEED_GAP=
+  FEED_GAP_KEY=
   stage=$(mktemp "${TMPDIR:-/tmp}/fm-office-feed.XXXXXX") || return 0
   if secondmate_registry_line_for_id "$DATA/secondmates.md" "$id"; then
     fm_office_feed_payload "$FM_HOME" "$DATA" "$id" "$SECONDMATE_REGISTRY_HOME" "$stage" "$(now_epoch)" || rc=$?
+    if [ "$rc" -eq 1 ] || [ "$rc" -eq 2 ]; then
+      # bin/fm-fleet-alarm.py raises this record, so a feed that cannot be built is not silent.
+      mkdir -p "$STATE" 2>/dev/null && printf '%s\n' "$FM_OFFICE_ERROR" > "$STATE/$FEED_CHECK_ID.$id.error" 2>/dev/null || true
+    else
+      rm -f "$STATE/$FEED_CHECK_ID.$id.error" 2>/dev/null || true
+    fi
     if [ "$rc" -eq 2 ]; then
       FEED_OVER=$FM_OFFICE_FEED_OVER
       FEED_REASON=$FM_OFFICE_ERROR
     elif [ "$rc" -eq 0 ] && [ -f "$stage" ]; then
       FEED_FP=$(fm_office_feed_fingerprint "$stage")
+      if [ -n "$FM_OFFICE_FEED_GAP" ]; then
+        FEED_GAP="feed coverage gap: $FM_OFFICE_FEED_GAP"
+        FEED_GAP_KEY="lanes: $FM_OFFICE_FEED_GAP_LANES"
+      fi
     fi
   fi
   rm -f "$stage"
@@ -562,6 +580,7 @@ cmd_feed() {
   fi
   if remote_push "$id" office-feed; then
     [ -z "$FEED_FP" ] || record_feed_push "$id" "$FEED_FP"
+    [ -z "$FEED_GAP" ] || printf 'office %s: %s\n' "$id" "$FEED_GAP"
     printf 'office %s: %s\n' "$id" "$PUSH_STATUS"
   else
     printf 'office %s: error - %s\n' "$id" "$PUSH_REASON"
@@ -588,7 +607,14 @@ cmd_feed_sweep() {
       fi
       continue
     fi
-    rm -f "$over_rec" 2>/dev/null || true
+    if [ -n "$FEED_GAP" ]; then
+      if [ "${FM_OFFICE_FEED_SWEEP_REPORT:-1}" != 0 ] && [ "$(cat "$over_rec" 2>/dev/null)" != "$FEED_GAP_KEY" ]; then
+        printf 'OFFICE: office %s: %s\n' "$id" "$FEED_GAP"
+        mkdir -p "$STATE" 2>/dev/null && printf '%s\n' "$FEED_GAP_KEY" > "$over_rec" 2>/dev/null || true
+      fi
+    else
+      rm -f "$over_rec" 2>/dev/null || true
+    fi
     [ -n "$fp" ] || continue
     read -r last_fp last_at < "$STATE/$FEED_CHECK_ID.$id.pushed" 2>/dev/null || { last_fp=; last_at=0; }
     case "$last_at" in ''|*[!0-9]*) last_at=0 ;; esac
@@ -645,6 +671,7 @@ cmd_publish() {
       fi
     elif remote_push "$id" "office-authority office-feed"; then
       [ -z "$FEED_FP" ] || record_feed_push "$id" "$FEED_FP"
+      [ -z "$FEED_GAP" ] || printf 'office %s: %s\n' "$id" "$FEED_GAP"
       printf 'office %s: %s\n' "$id" "$PUSH_STATUS"
       return 0
     fi
@@ -932,9 +959,9 @@ check_weight() {
 deliver_starts() {
   mkdir -p "$DATA/office" 2>/dev/null || return 0
   python3 -I - "${LANE_PATH%.md}.json" "$FM_HOME" "$SCRIPT_DIR/fm-inbox.sh" \
-    "$DATA/office/lane-$1-starts.seen" "$LANE_KEY" "$(now_epoch)" <<'PY' 2>/dev/null || true
+    "$DATA/office/lane-$1-starts.seen" "$LANE_KEY" "$(now_epoch)" "$DATA/office/lane-$1-starts.err" <<'PY' 2>/dev/null || true
 import datetime, hashlib, json, os, re, subprocess, sys
-path, home, inbox, seen_path, key, now = sys.argv[1:7]
+path, home, inbox, seen_path, key, now, err_path = sys.argv[1:8]
 try:
     raw = open(path, "rb").read()
     doc = json.loads(raw)
@@ -969,6 +996,7 @@ except (KeyError, AttributeError, ValueError):
 if generated is None or int(now) - generated > 36 * 3600:
     record("stale", "digest older than 36 hours, %d start request(s) for this office not delivered" % len(mine))
     sys.exit()
+failed = []
 for n, execute in enumerate(mine, 1):
     rid, argv = execute.get("request_id"), execute.get("argv")
     # Run this office's own intake with the recorded arguments, never a program named in the file.
@@ -976,13 +1004,31 @@ for n, execute in enumerate(mine, 1):
           and re.fullmatch(r"(?:progress|surgeon|friction|corpus|library|page-check)-(?:\d{4}-\d{2}-\d{2}-)?[0-9a-f]{16}", rid) and isinstance(argv, list)
           and len(argv) == 7 and all(isinstance(a, str) for a in argv)
           and os.path.basename(argv[0]) == "fm-inbox.sh" and argv[1:6] == ["note", "--request-id", rid, "--json", "--"])
-    if ok:
-        ok = subprocess.run([inbox] + argv[1:], env=dict(os.environ, FM_HOME=home),
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
     if not ok:
-        if last != "failed " + stamp:
-            record("failed", "start request %d of %d could not be delivered; the next check retries it" % (n, len(mine)))
-        sys.exit()
+        failed.append((n, "request %d of %d: not a start request this office will run" % (n, len(mine))))
+        continue
+    done = subprocess.run([inbox] + argv[1:], env=dict(os.environ, FM_HOME=home),
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    if done.returncode != 0:
+        detail = (done.stderr or done.stdout).strip()[:500]
+        failed.append((n, "request %d of %d: fm-inbox.sh exited %d: %s" % (n, len(mine), done.returncode, detail)))
+# One bad request never blocks the independent requests after it; its reason goes to a per-lane log.
+if not failed:
+    try:
+        os.remove(err_path)
+    except OSError:
+        pass
+else:
+    try:
+        with open(err_path, "w") as fh:
+            fh.write("".join(reason + "\n" for _, reason in failed))
+    except OSError:
+        pass
+    if last != "failed " + stamp:
+        numbers = ", ".join(str(n) for n, _ in failed)
+        record("failed", "start request%s %s of %d could not be delivered (reason in %s); %d delivered; the next check retries it"
+               % ("s" if len(failed) > 1 else "", numbers, len(mine), os.path.basename(err_path), len(mine) - len(failed)))
+    sys.exit()
 record("delivered", "%d start request(s) delivered to this office's inbox" % len(mine))
 PY
 }

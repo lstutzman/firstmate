@@ -1449,18 +1449,24 @@ test_starts_handled_reads_only_acknowledged_requests() {
   pass 'starts-handled succeeds only once every start request addressed to this office is acknowledged'
 }
 
-test_lane_check_delivers_in_rank_order_and_stops_at_a_bad_request() {
-  local w out
+test_lane_check_delivers_in_rank_order_and_skips_a_bad_request() {
+  local w out log
   w=$(source_world startorder)
+  log="$w/navigator/data/office/lane-progress-starts.err"
   put_starts "$w" $((SRC_NOW - 3600)) 1:navigator:ok 2:navigator:bad 3:navigator:ok
   out=$(nav_check "$w" lane:progress)
-  assert_contains "$out" "start request 2 of 3 could not be delivered; the next check retries it" "the failure is reported"
-  assert_equals "Start item 1 for navigator" "$(notes "$w/navigator")" "rank 1 went first and nothing after the bad request ran"
+  assert_contains "$out" "start request 2 of 3 could not be delivered" "the failure is reported"
+  assert_contains "$out" "2 delivered; the next check retries it" "with the delivered count"
+  assert_contains "$out" "lane-progress-starts.err" "and where the reason is logged"
+  assert_equals "$(printf 'Start item 1 for navigator\nStart item 3 for navigator')" "$(notes "$w/navigator")" "one bad request does not block the requests after it"
+  assert_present "$log" "the failure reason is logged for the lane"
+  assert_contains "$(cat "$log")" "request 2 of 3" "the log names the failed request"
   assert_equals "" "$(nav_check "$w" lane:progress)" "the same failure is reported once"
   put_starts "$w" $((SRC_NOW - 3600)) 1:navigator:ok 2:navigator:ok 3:navigator:ok
   assert_contains "$(nav_check "$w" lane:progress)" "3 start request(s) delivered" "a corrected digest is retried"
-  assert_equals "$(printf 'Start item 1 for navigator\nStart item 2 for navigator\nStart item 3 for navigator')" "$(notes "$w/navigator")" "the retry replays rank 1 and adds the rest"
-  pass 'a lane check delivers in rank order and stops, reporting once, at a request it will not run'
+  assert_equals "$(printf 'Start item 1 for navigator\nStart item 2 for navigator\nStart item 3 for navigator')" "$(notes "$w/navigator")" "the retry replays the delivered requests and adds the rest"
+  assert_absent "$log" "the log is cleared once every request is delivered"
+  pass 'a lane check delivers in rank order, skips a request it will not run, and logs why'
 }
 
 test_lane_check_never_delivers_a_stale_digest() {
@@ -1548,6 +1554,6 @@ test_lane_check_delivers_a_page_check_digests_start_requests
 test_lane_check_delivers_a_corpus_digests_start_requests
 test_lane_check_delivers_its_own_start_requests_once
 test_starts_handled_reads_only_acknowledged_requests
-test_lane_check_delivers_in_rank_order_and_stops_at_a_bad_request
+test_lane_check_delivers_in_rank_order_and_skips_a_bad_request
 test_lane_check_never_delivers_a_stale_digest
 test_quartermaster_tick_wakes_once_a_day_for_heavy_sessions

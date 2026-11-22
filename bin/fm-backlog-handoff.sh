@@ -70,12 +70,13 @@
 # remote receipt, the outbox is released and the handoff succeeds regardless of
 # the best-effort wake outcome; an undelivered remote wake remains separately
 # tracked in wake-pending state and is retried under the same correlation by
-# later resumes and handoffs. If wake-pending state cannot be recorded, the wake
-# is reported as DROPPED and marker removal is attempted while the mate still
-# owns reconciliation from its durable backlog. Any unsafe, invalid, delivered,
-# or undeletable stale marker is reported and ignored by later resumes and
-# handoffs, so wake-state cleanup neither suppresses a new wake nor fails a
-# completed remote handoff.
+# later resumes and handoffs. The one exception is wake-pending state that
+# cannot be recorded: the outbox is kept and the command fails, because a
+# released outbox would leave no wake intent and strand the item; a retry
+# re-sends idempotently and records the intent. A stale marker that cannot be
+# removed is reported as DROPPED and ignored by later resumes and handoffs,
+# so wake-state cleanup neither suppresses a new wake nor fails a completed
+# remote handoff.
 # Usage: fm-backlog-handoff.sh <secondmate-id> <item-key>...
 #        fm-backlog-handoff.sh --resume-pending
 set -eu
@@ -707,10 +708,14 @@ remote_deliver_outbox() { # <secondmate-id> <outbox-path>
     wake_state=dropped
     wake_rc=1
   elif ! receiver_wake_pending_valid "$id" && ! receiver_wake_confirmed_valid "$id"; then
-    receiver_wake_mark_pending "$id" || {
-      wake_state=dropped
-      wake_rc=1
-    }
+    if ! receiver_wake_mark_pending "$id"; then
+      # No wake intent is on record, so releasing the outbox would strand the
+      # durable item with nothing to ever wake the receiver. Keep the outbox:
+      # a retry re-sends idempotently (already-present keys are skipped) and
+      # records the wake intent.
+      echo "error: remote backlog is durable at $id, but its receiver wake state could not be recorded; outbox preserved at $outbox for retry" >&2
+      return 1
+    fi
   fi
   if [ "$wake_rc" -eq 0 ]; then
     wake_pending_secondmate_receiver "$id" 1 || wake_rc=$?

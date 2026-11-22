@@ -1131,6 +1131,53 @@ test_parked_scout_decision_stays_pending() {
   pass "a scout still parked at a decision stays pending (terminal clear does not over-fire)"
 }
 
+# The home summary carries one row per ship or scout so a parent on another host
+# can count this home's ships against a project's CI slots and landing lag
+# (bin/fm-project-capacity-lib.sh reads them from its summary cache).
+test_home_summary_lists_ships_for_cross_host_capacity() {
+  local home fakebin out
+  home=$(make_home summary-ships)
+  mkdir -p "$home/projects/alpha" "$home/projects/beta"
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+- [ ] plain - Ship with no PR yet (repo: alpha) (kind: ship) (since 2026-07-11)
+- [ ] ready - Ship with a ready PR (repo: alpha) (kind: ship) (since 2026-07-11)
+- [ ] held - Ship waiting on the captain (repo: alpha) (kind: ship) (since 2026-07-11)
+- [ ] scouting - A scout (repo: beta) (kind: scout) (since 2026-07-11)
+- [ ] waiting - Ship blocked-by: upstream-fix (repo: alpha) (kind: ship) (since 2026-07-11)
+
+## Queued
+
+## Done
+EOF
+  fm_write_meta "$home/state/plain.meta" "window=firstmate:fm-plain" "worktree=$home/projects/alpha" \
+    "project=$home/projects/alpha" "harness=claude" "kind=ship" "mode=no-mistakes" "yolo=off"
+  fm_write_meta "$home/state/ready.meta" "window=firstmate:fm-ready" "worktree=$home/projects/alpha" \
+    "project=$home/projects/alpha" "harness=claude" "kind=ship" "mode=no-mistakes" "yolo=on" \
+    "pr=https://github.com/o/r/pull/7" "pr_at=1790000000"
+  fm_write_meta "$home/state/held.meta" "window=firstmate:fm-held" "worktree=$home/projects/alpha" \
+    "project=$home/projects/alpha" "harness=claude" "kind=ship" "mode=no-mistakes" "yolo=on" \
+    "pr=https://github.com/o/r/pull/8" "pr_at=1790000100"
+  fm_write_meta "$home/state/scouting.meta" "window=firstmate:fm-scouting" "worktree=$home/projects/beta" \
+    "project=$home/projects/beta" "harness=claude" "kind=scout" "mode=scout"
+  fm_write_meta "$home/state/waiting.meta" "window=firstmate:fm-waiting" "worktree=$home/projects/alpha" \
+    "project=$home/projects/alpha" "harness=claude" "kind=ship" "mode=no-mistakes" "yolo=on" \
+    "pr=https://github.com/o/r/pull/9" "pr_at=1790000200"
+  FM_HOME="$home" bash "$ROOT/bin/fm-captain-hold.sh" hold held --reason "merge word" >/dev/null 2>&1 || true
+  fakebin=$(make_fakebin "$home")
+  out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
+  printf '%s' "$out" | jq -e '
+    (.ships | length) == 5
+    and ([.ships[] | select(.id == "plain")][0] | .project == "alpha" and .kind == "ship" and .pr == null and .yolo == "off")
+    and ([.ships[] | select(.id == "ready")][0] | .pr == "https://github.com/o/r/pull/7" and .pr_at == 1790000000 and .yolo == "on"
+      and .captain_held == false and .blocked == false)
+    and ([.ships[] | select(.id == "held")][0] | .captain_held == true and .blocked == false)
+    and ([.ships[] | select(.id == "waiting")][0] | .captain_held == false and .blocked == true)
+    and ([.ships[] | select(.id == "scouting")][0] | .kind == "scout" and .project == "beta")
+  ' >/dev/null || fail "the home summary must list each ship with its project, PR, ready time, yolo, captain hold and blocker: $out"
+  pass "the home summary lists each ship so another host can count it toward CI slots and landing lag"
+}
+
 # Home-summary validity treats persistent secondmates as registered homes, not
 # in-flight children. They have no backlog rows, so they must not produce
 # unowned_current or terminal_in_flight. Ordinary crew/ship metas still do.
@@ -1680,6 +1727,7 @@ fm_test_run \
   test_snapshot_handles_large_status_fields \
   test_empty_fleet_json \
   test_fixture_snapshot_json \
+  test_home_summary_lists_ships_for_cross_host_capacity \
   test_home_summary_excludes_secondmate_from_child_inventory \
   test_home_summary_done_child_with_pr_is_waiting_on_merge \
   test_home_summary_parked_handoff_is_consistent \
