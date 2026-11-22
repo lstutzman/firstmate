@@ -2597,6 +2597,8 @@ A project whose reviews are created by a review tool that uploads its own snapsh
 
 <a id="merger-home-dataprojectsmd-merger-token"></a>Moved to [Merger home (data/projects.md merger= token)](configuration/projects-and-forges.md#merger-home-dataprojectsmd-merger-token).
 
+<a id="merge-method-dataprojectsmd-merge-token"></a>Moved to [Merge method (data/projects.md merge= token)](configuration/projects-and-forges.md#merge-method-dataprojectsmd-merge-token).
+
 <a id="landing-lag-dataprojectsmd-landing-lag-token"></a>Moved to [Landing lag (data/projects.md landing-lag= token)](configuration/projects-and-forges.md#landing-lag-dataprojectsmd-landing-lag-token).
 
 <a id="pr-drain-open-pr-drain-rule"></a>Moved to [PR drain (open-PR drain rule)](configuration/projects-and-forges.md#pr-drain-open-pr-drain-rule).

@@ -21,6 +21,11 @@
 #
 # Merge method on GitHub defaults to --squash when the caller passes none of
 # --squash, --merge, --rebase, or --method after the optional -- separator.
+# A project whose registry entry carries merge=commit (bin/fm-project-mode.sh
+# owns the token) takes merge commits only: the default becomes a merge commit
+# on GitHub and Forgejo, and a squash or rebase, in any spelling the caller
+# passes (including --stack's --squash or --rebase), is refused before any forge
+# call, naming the project and the token. A malformed binding refuses too.
 # A GitHub pull request whose commits include any merge commit is refused under
 # the default method, because a squash flattens the merge and loses its
 # ancestry, and its parents cannot tell an upstream sync from the base merged in
@@ -296,7 +301,7 @@
 # while the away-posture record exists, like any other asynchronous merge path.
 # --attended-override, --allow-red, and --allow-missing are refused in stack
 # mode, and the only extra argument accepted is one of --squash, --merge, or
-# --rebase (squash by default). Every constituent task's control lock is held,
+# --rebase (squash by default, a merge commit for a merge=commit project). Every constituent task's control lock is held,
 # and its captain hold must be released, exactly as for a single merge. The
 # merge is refused unless every condition holds, each read live:
 #   - the top pull request's live head is the gated head commit;
@@ -374,6 +379,9 @@ STACK_MODE=false
 STACK_GATED_HEAD=
 STACK_MERGE_METHOD=squash
 STACK_METHOD_EXPLICIT=false
+# The merge method the project's registry binding (merge=commit) forces, empty
+# when the project registers none. Set once, before any forge call.
+FM_PR_BOUND_METHOD=
 STACK_IDS=()
 STACK_URLS=()
 STACK_LOCKS=()
@@ -782,6 +790,7 @@ what_changed_section() {
 # text cannot be read, the repository's own squash text stands.
 github_add_squash_summary() {
   local json title body
+  [ -z "$FM_PR_BOUND_METHOD" ] || return 0
   case "$(caller_merge_method "$@")" in
     ''|[sS][qQ][uU][aA][sS][hH]) ;;
     *) return 0 ;;
@@ -989,6 +998,63 @@ if [ -n "$MERGE_PROJECT" ]; then
       echo "error: PR merge refused: $FM_ADMISSION_ERROR" >&2
       exit 1
     fi
+  fi
+fi
+# Merge method binding: a project registered merge=commit takes merge commits
+# only (bin/fm-project-mode.sh owns the token). A squash or rebase the caller
+# names is refused here, before any forge command, and an unnamed method
+# becomes a merge commit. An unreadable binding refuses rather than falling
+# back to the squash default the binding exists to stop.
+# Prints the first extra argument that asks for a method other than a merge
+# commit, deny by default: any spelling of --squash or --rebase (with or
+# without =value, so --squash=false is refused too), --method with a missing,
+# empty or non-merge value, and any short-flag cluster carrying s or r.
+# Nothing is printed for a bare --merge or no method.
+caller_non_merge_method() {
+  local arg pending=false
+  for arg in "$@"; do
+    if [ "$pending" = true ]; then
+      [ "$arg" = merge ] || { printf '%s' "--method $arg"; return 0; }
+      pending=false
+      continue
+    fi
+    case "$arg" in
+      --squash|--squash=*|--rebase|--rebase=*) printf '%s' "$arg"; return 0 ;;
+      --method) pending=true ;;
+      --method=merge) ;;
+      --method=*) printf '%s' "$arg"; return 0 ;;
+    esac
+    case "$arg" in
+      --*) ;;
+      -?*)
+        case "${arg%%=*}" in
+          *[sr]*) printf '%s' "$arg"; return 0 ;;
+        esac
+        ;;
+    esac
+  done
+  [ "$pending" = false ] || printf '%s' '--method (no value)'
+  return 0
+}
+if [ -n "$MERGE_PROJECT" ]; then
+  MERGE_BINDING_NAME=$(basename "$MERGE_PROJECT")
+  if ! MERGE_BINDING=$("$SCRIPT_DIR/fm-project-mode.sh" --merge-method "$MERGE_BINDING_NAME" 2>/dev/null); then
+    echo "error: PR merge refused: the merge binding for $MERGE_BINDING_NAME cannot be read (run bin/fm-project-mode.sh --merge-method $MERGE_BINDING_NAME for the refusal)" >&2
+    exit 1
+  fi
+  if [ "$MERGE_BINDING" = commit ]; then
+    if [ "$STACK_MODE" = true ]; then
+      asked=$STACK_MERGE_METHOD
+      [ "$STACK_METHOD_EXPLICIT" = true ] && [ "$asked" != merge ] || asked=
+    else
+      asked=$(caller_non_merge_method "$@")
+    fi
+    if [ -n "$asked" ]; then
+      echo "error: PR merge refused: $MERGE_BINDING_NAME is registered merge=commit and takes merge commits only, so the requested $asked merge of $URL is refused; merge it with -- --merge (or pass no method), because a squash or rebase destroys the merge commit that promotion reads" >&2
+      exit 1
+    fi
+    FM_PR_BOUND_METHOD=merge
+    [ "$STACK_MODE" != true ] || STACK_MERGE_METHOD=merge
   fi
 fi
 # An office merges only a project its own reserved-class classifier judges,
@@ -2881,15 +2947,16 @@ case "$PROVIDER" in
   github)
     merge_output=
     merge_args=()
+    github_default_method=${FM_PR_BOUND_METHOD:-squash}
     if ! caller_has_merge_method "$@"; then
-      merge_args=(--squash)
+      merge_args=("--$github_default_method")
     fi
     github_add_squash_summary "$@"
     FM_PR_GITHUB_CALLER_METHOD=$(caller_merge_method "$@")
     github_verify_mergeable_with_retry || exit 1
     github_merge_explicit=false
     [ -z "$FM_PR_GITHUB_CALLER_METHOD" ] || github_merge_explicit=true
-    github_guard_merge_commits "${FM_PR_GITHUB_CALLER_METHOD:-squash}" "$github_merge_explicit" || exit 1
+    github_guard_merge_commits "${FM_PR_GITHUB_CALLER_METHOD:-$github_default_method}" "$github_merge_explicit" || exit 1
     require_admission_answers "$FM_PR_MERGE_HEAD" || exit 1
     # The away record is locked first, so this last presence and authority read
     # and the forge command below share one live-owner critical section.
@@ -2983,6 +3050,7 @@ case "$PROVIDER" in
   forgejo)
     forgejo_reject_unsupported_args "$@" || exit 1
     forgejo_method=$(caller_merge_method "$@")
+    [ -n "$forgejo_method" ] || forgejo_method=$FM_PR_BOUND_METHOD
     [ -n "$forgejo_method" ] || forgejo_method=$(forgejo_default_merge_style) || exit 1
     forgejo_verify_mergeable || exit 1
     # The away record is locked first, so this last presence and authority

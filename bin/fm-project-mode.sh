@@ -27,6 +27,9 @@
 # same way, or nothing.
 # With --pr it prints one word: the project's registered PR-text posture,
 # auto|manual, "auto" when the project registers none.
+# With --merge-method it prints the project's registered merge method, `commit`,
+# or nothing when the project registers none, is unregistered, or the registry
+# is absent.
 #
 # MECHANICAL CONSUMERS ONLY. This answers "what posture did the captain register
 # for this project", never "how does this task ship". A task's delivery mode,
@@ -39,7 +42,8 @@
 # and --forge for bin/fm-spawn.sh's forge agreement and yolo refusal and for
 # bin/fm-promote.sh, which takes the forge binding from here because it is a
 # project fact rather than a task choice, --merger and --admission for
-# bin/fm-pr-merge.sh's merger-home and admission refusals, --landing-lag for
+# bin/fm-pr-merge.sh's merger-home and admission refusals, --merge-method for
+# its merge-commit-only refusal of a squash or rebase, --landing-lag for
 # bin/fm-spawn.sh's landing-lag admission, --ci-slots for its CI-slots admission
 # and bin/fm-fleet-alarm.py's open-PR alarm, --ready-evidence for
 # bin/fm-dod-lib.sh's ready gate, and --pr for bin/fm-spawn.sh's PR-text
@@ -59,10 +63,11 @@
 #   - <name> [<mode> ready-evidence=<n>] - <desc> (added <date>)     -> <mode> off, --ready-evidence <n>
 #   - <name> [no-mistakes pr=manual] - <desc> (added <date>)         -> no-mistakes off, --pr manual
 #   - <name> [<mode> hooks=<path>] - <desc> (added <date>)           -> <mode> off, --hooks <path>
+#   - <name> [<mode> merge=commit] - <desc> (added <date>)           -> <mode> off, --merge-method commit
 #   <name> may contain spaces; it ends at the literal " [" or " - " that follows it.
 #   Bracket tokens are order-independent: +yolo, branch=<prefix>, forge=<value>,
 #   merger=<home>, landing-lag=<hours>, admission=<config>, ready-evidence=<n>,
-#   hooks=<path>, and pr=<value> are recognized by
+#   hooks=<path>, merge=<method>, and pr=<value> are recognized by
 #   their own shape wherever they appear, and whichever token is
 #   left over is the mode. <prefix> must not contain a space; an empty override
 #   ("branch=") resolves to "" for a bare "<task-id>" ship branch instead of the
@@ -118,6 +123,16 @@
 #   (outside [A-Za-z0-9._-]) is refused with exit status 3, because reading it
 #   as "no merger" would hand every home the merge the binding exists to stop;
 #   the other output forms ignore the token.
+# merge=commit (orthogonal) = the project takes merge commits only, because
+#   something downstream reads the merge commit's parents and a squash or rebase
+#   destroys them. bin/fm-pr-merge.sh then merges with a merge commit by default
+#   and refuses a squash or rebase, single or --stack, before any forge call. A
+#   project with no merge token merges exactly as before. `commit` is the only
+#   value: under --merge-method an empty or other value is refused with exit
+#   status 3, because reading it as "no binding" would let the squash the
+#   binding exists to stop go through; the other output forms ignore the token.
+#   Like merger=, the token is read from the merging home's own registry, which
+#   is not inherited.
 # landing-lag=<hours> (orthogonal) = how many hours this project's oldest ready
 #   PR may wait to land before bin/fm-spawn.sh defers a fresh ship
 #   (bin/fm-project-capacity-lib.sh owns the admission). A project with no
@@ -195,7 +210,7 @@
 # to the forge binding, so it prints even when the forge token is malformed;
 # every path that reads the forge binding (default, --forge, and spawn's
 # forge-agreement check) still refuses.
-# Usage: fm-project-mode.sh [--raw|--branch-prefix|--forge|--pr|--merger|--landing-lag|--ci-slots|--open-pr-cap|--admission|--ready-evidence|--hooks] <project-name>
+# Usage: fm-project-mode.sh [--raw|--branch-prefix|--forge|--pr|--merger|--merge-method|--landing-lag|--ci-slots|--open-pr-cap|--admission|--ready-evidence|--hooks] <project-name>
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -207,6 +222,7 @@ RAW=0
 BRANCH_PREFIX_QUERY=0
 WANT_FORGE=0
 WANT_MERGER=0
+WANT_MERGE_METHOD=0
 WANT_LANDING_LAG=0
 WANT_CI_SLOTS=0
 WANT_OPEN_PR_CAP=0
@@ -219,6 +235,7 @@ case "${1:-}" in
   --branch-prefix) BRANCH_PREFIX_QUERY=1; shift ;;
   --forge) WANT_FORGE=1; shift ;;
   --merger) WANT_MERGER=1; shift ;;
+  --merge-method) WANT_MERGE_METHOD=1; shift ;;
   --landing-lag) WANT_LANDING_LAG=1; shift ;;
   --ci-slots) WANT_CI_SLOTS=1; shift ;;
   --open-pr-cap) WANT_OPEN_PR_CAP=1; shift ;;
@@ -227,7 +244,7 @@ case "${1:-}" in
   --pr) WANT_PR=1; shift ;;
   --hooks) WANT_HOOKS=1; shift ;;
 esac
-NAME=${1:?usage: fm-project-mode.sh [--raw|--branch-prefix|--forge|--pr|--merger|--landing-lag|--ci-slots|--open-pr-cap|--admission|--ready-evidence|--hooks] <project-name>}
+NAME=${1:?usage: fm-project-mode.sh [--raw|--branch-prefix|--forge|--pr|--merger|--merge-method|--landing-lag|--ci-slots|--open-pr-cap|--admission|--ready-evidence|--hooks] <project-name>}
 
 if [ "$WANT_CI_SLOTS" -eq 1 ]; then
   # shellcheck source=bin/fm-project-capacity-lib.sh
@@ -253,7 +270,7 @@ fi
 
 if [ ! -f "$REG" ]; then
   echo "warn: no registry at $REG; defaulting $NAME to no-mistakes off" >&2
-  [ "$WANT_MERGER" -eq 0 ] && [ "$WANT_LANDING_LAG" -eq 0 ] && [ "$WANT_ADMISSION" -eq 0 ] && [ "$WANT_EVIDENCE" -eq 0 ] && [ "$WANT_HOOKS" -eq 0 ] || exit 0
+  [ "$WANT_MERGER" -eq 0 ] && [ "$WANT_MERGE_METHOD" -eq 0 ] && [ "$WANT_LANDING_LAG" -eq 0 ] && [ "$WANT_ADMISSION" -eq 0 ] && [ "$WANT_EVIDENCE" -eq 0 ] && [ "$WANT_HOOKS" -eq 0 ] || exit 0
   if [ "$BRANCH_PREFIX_QUERY" -eq 1 ]; then
     echo "fm/"
   elif [ "$WANT_FORGE" -eq 1 ]; then echo none
@@ -263,8 +280,8 @@ fi
 
 # awk emits one "near <token>" line per keyed token whose key is a near miss of
 # `forge`, then
-# "posture <mode> <yolo> <forge> <merger> <landing-lag> <admission> <evidence> <pr> <hooks> <branch-prefix>" (branch-prefix is
-# the raw prefix, defaulting to "fm/"; forge, merger, landing-lag, admission, and evidence are `none` or the whole
+# "posture <mode> <yolo> <forge> <merger> <merge> <landing-lag> <admission> <evidence> <pr> <hooks> <branch-prefix>" (branch-prefix is
+# the raw prefix, defaulting to "fm/"; forge, merger, merge, landing-lag, admission, and evidence are `none` or the whole
 # `<key>=<value>` token and pr is `auto` or the whole `pr=<value>` token, so an empty value survives the split),
 # or nothing if the project is
 # absent. Every other token beside the mode is ignored, exactly as before either
@@ -293,7 +310,7 @@ parsed=$(awk -v n="$NAME" '
     if (substr($0, 1, plen) != prefix) next
     after = substr($0, plen + 1);
     if (after != "" && substr(after, 1, 2) != " [" && substr(after, 1, 3) != " - ") next
-    mode="no-mistakes"; yolo="off"; branch="fm/"; forge="none"; merger="none"; lag="none"; admission="none"; evidence="none"; pr="auto"; hooks="none";
+    mode="no-mistakes"; yolo="off"; branch="fm/"; forge="none"; merger="none"; merge="none"; lag="none"; admission="none"; evidence="none"; pr="auto"; hooks="none";
     if (substr(after, 1, 2) == " [") {
       s="";
       nk = split(after, rest, " ");
@@ -310,6 +327,7 @@ parsed=$(awk -v n="$NAME" '
         if (a[j] ~ /^branch=/) { branch = substr(a[j], 8); continue }
         if (a[j] ~ /^forge=/) { forge = a[j]; continue }
         if (a[j] ~ /^merger=/) { merger = a[j]; continue }
+        if (a[j] ~ /^merge=/) { merge = a[j]; continue }
         if (a[j] ~ /^landing-lag=/) { lag = a[j]; continue }
         if (a[j] ~ /^admission=/) { admission = a[j]; continue }
         if (a[j] ~ /^ready-evidence=/) { evidence = a[j]; continue }
@@ -327,13 +345,13 @@ parsed=$(awk -v n="$NAME" '
     }
     # branch is printed LAST: an empty branch= override must survive as an
     # empty final field, which only holds when nothing follows it.
-    print "posture", mode, yolo, forge, merger, lag, admission, evidence, pr, hooks, branch; exit
+    print "posture", mode, yolo, forge, merger, merge, lag, admission, evidence, pr, hooks, branch; exit
   }
 ' "$REG")
 
 if [ -z "$parsed" ]; then
   echo "warn: project \"$NAME\" not in registry; defaulting to no-mistakes off" >&2
-  [ "$WANT_MERGER" -eq 0 ] && [ "$WANT_LANDING_LAG" -eq 0 ] && [ "$WANT_ADMISSION" -eq 0 ] && [ "$WANT_EVIDENCE" -eq 0 ] && [ "$WANT_HOOKS" -eq 0 ] || exit 0
+  [ "$WANT_MERGER" -eq 0 ] && [ "$WANT_MERGE_METHOD" -eq 0 ] && [ "$WANT_LANDING_LAG" -eq 0 ] && [ "$WANT_ADMISSION" -eq 0 ] && [ "$WANT_EVIDENCE" -eq 0 ] && [ "$WANT_HOOKS" -eq 0 ] || exit 0
   if [ "$BRANCH_PREFIX_QUERY" -eq 1 ]; then
     echo "fm/"
   elif [ "$WANT_FORGE" -eq 1 ]; then echo none
@@ -350,8 +368,8 @@ while IFS=' ' read -r kind rest; do
 done <<EOF
 $parsed
 EOF
-while IFS=' ' read -r m y f r l a e p h b; do
-  mode=$m; yolo=$y; rest_forge=$f; merger=$r; lag=$l; admission=$a; evidence=$e; rest_pr=$p; hooks=$h; branch=$b
+while IFS=' ' read -r m y f r g l a e p h b; do
+  mode=$m; yolo=$y; rest_forge=$f; merger=$r; merge=$g; lag=$l; admission=$a; evidence=$e; rest_pr=$p; hooks=$h; branch=$b
 done <<EOF
 $posture
 EOF
@@ -373,6 +391,16 @@ if [ "$WANT_MERGER" -eq 1 ]; then
       echo "refused: merger binding \"$merger\" registered for $NAME in $REG is not a home id; name the merging home's secondmate id, or main for the primary home, or drop the token" >&2
       exit 3 ;;
     *) echo "${merger#merger=}" ;;
+  esac
+  exit 0
+fi
+if [ "$WANT_MERGE_METHOD" -eq 1 ]; then
+  case "$merge" in
+    none) ;;
+    merge=commit) echo commit ;;
+    *)
+      echo "refused: merge binding \"$merge\" registered for $NAME in $REG is not merge=commit, the only accepted value; write merge=commit for a project that takes merge commits only, or drop the token" >&2
+      exit 3 ;;
   esac
   exit 0
 fi

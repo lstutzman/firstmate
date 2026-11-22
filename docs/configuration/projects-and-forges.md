@@ -31,6 +31,18 @@ The binding is read from the merging home's own `data/projects.md`, which is not
 A project with no `merger=` token keeps every home's merge authority exactly as before, and `yolo` still decides whether the merger home merges without the captain's word.
 `bin/fm-project-mode.sh --merger <name>` reads the binding back, and its header owns the grammar and refusals.
 
+## Merge method (data/projects.md merge= token)
+
+A project entry may declare that it takes merge commits only with `merge=commit`, for example `- PropertyCompass2 [no-mistakes +yolo merger=slarti merge=commit] - ...`.
+Use it when something downstream reads the merge commit's parents, because a squash or rebase destroys them.
+`bin/fm-pr-merge.sh` then merges with a merge commit when the caller names no method, on GitHub and Forgejo, and for a `--stack` merge.
+It refuses a squash or rebase before any forge call, naming the project and the token, in any spelling the caller passes: `--squash` or `--rebase` with or without a value, `--method` with a missing or non-merge value, and any single-dash short-flag cluster carrying `s` or `r` (`-s`, `-r`, `-sb text`, `-s=true`).
+A merge commit adds no squash summary, even with `config/pr-squash-summary` present.
+A project with no `merge=` token keeps today's defaults exactly: squash on GitHub, and the repository's own style on Forgejo.
+`merge=commit` is the only value, and a malformed value refuses the merge rather than falling back to the default it exists to stop.
+Like `merger=`, the token is read from the merging home's own `data/projects.md`, which is not inherited, so every home that could merge the project must carry it on its own registry line.
+`bin/fm-project-mode.sh --merge-method <name>` reads the binding back, and its header owns the grammar and refusals.
+
 ## Landing lag (data/projects.md landing-lag= token)
 
 A project entry may limit how long its oldest ready PR may wait to land with `landing-lag=<hours>`, a positive whole number of hours, for example `- PropertyCompass2 [no-mistakes +yolo merger=slarti landing-lag=48] - ...`.
