@@ -633,6 +633,57 @@ test_a_pile_and_its_members_count_once_in_every_subcommand() {
   pass "a landing pile with three members counts once in open, state and gate, and the three agree on a mixed list"
 }
 
+test_piles_free_until_leaves_ready_piles_out_of_the_cap_count() {
+  local file="$GATE_HOME/config/open-pr-cap-piles-free-until"
+  printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
+  printf '%s\n' 'r 8' > "$GATE_HOME/config/open-pr-cap"
+  rm -f "$file" "$GATE_HOME"/state/held-*.meta
+  printf '[]' > "$GHDATA/closed.json"
+  python3 -I - "$GHDATA" 4 6 <<'PY2'
+import json, sys
+piles, plain = int(sys.argv[2]), int(sys.argv[3])
+pr = lambda n, head: {'number': n, 'createdAt': '2026-11-01T00:00:00Z', 'isDraft': False, 'url': f'https://github.com/o/r/pull/{n}',
+                      'headRefName': head, 'labels': [], 'body': ''}
+json.dump([pr(n, f'landing/pile-{n}') for n in range(1, piles + 1)] + [pr(n, f'fm/b{n}') for n in range(100, 100 + plain)],
+          open(sys.argv[1] + '/open.json', 'w'))
+PY2
+  export FM_PR_DRAIN_NOW=2026-11-23T12:00:00Z
+  assert_contains "$(gate)" "hold o/r open-PR cap reached: 10 eligible open PR(s) against the open-PR cap of 8" "with no file the 4 piles and 6 PRs did not hold"
+  printf '%s\n' '2026-11-24T22:00:00Z' > "$file"
+  assert_equals "open o/r (4 landing pile(s) not counted until 2026-11-24T22:00:00Z)" "$(gate)" "a future expiry did not leave the 4 piles out (6 < 8) and name them"
+  assert_equals "open o/r 10" "$(FM_HOME="$GATE_HOME" "$DRAIN" open "$PROJECT")" "the file changed the CI-slot count"
+  export FM_PR_DRAIN_NOW=2026-11-24T21:59:59Z
+  assert_contains "$(gate)" "not counted until 2026-11-24T22:00:00Z" "the piles were counted again before the expiry"
+  export FM_PR_DRAIN_NOW=2026-11-24T22:00:00Z
+  assert_contains "$(gate)" "hold o/r open-PR cap reached: 10 eligible" "the piles stayed out at the expiry"
+  export FM_PR_DRAIN_NOW=2026-11-25T00:00:00Z
+  assert_contains "$(gate)" "hold o/r open-PR cap reached: 10 eligible" "a past expiry did not return to normal"
+  printf '%s\n' 'next Tuesday' > "$file"
+  assert_contains "$(gate)" "hold o/r open-PR cap reached: 10 eligible" "a malformed file was not ignored"
+  assert_contains "$(gate)" "config/open-pr-cap-piles-free-until is not one ISO UTC timestamp" "a malformed file was not named"
+  printf '%s\n' '2026-11-24T22:00:00Z' > "$file"
+  export FM_PR_DRAIN_NOW=2026-11-23T12:00:00Z
+  # A held pile is not counted while the file is in force: 4 piles (1 recorded held carrying PR 100, 1 labelled held) and
+  # 8 PRs = 4 + 7 = 11 after the expiry, 7 < 8 before it.
+  python3 -I - "$GHDATA" <<'PY2'
+import json, sys
+pr = lambda n, head, labels=(), body='': {'number': n, 'createdAt': '2026-11-01T00:00:00Z', 'isDraft': False,
+                                          'url': f'https://github.com/o/r/pull/{n}', 'headRefName': head,
+                                          'labels': [{'name': name} for name in labels], 'body': body}
+json.dump([pr(1, 'landing/pile-1', body='Member: PR 100'), pr(2, 'landing/pile-2', labels=['held']),
+           pr(3, 'landing/pile-3'), pr(4, 'landing/pile-4')] + [pr(n, f'fm/b{n}') for n in range(100, 108)],
+          open(sys.argv[1] + '/open.json', 'w'))
+PY2
+  fm_write_meta "$GATE_HOME/state/held-1.meta" "project=$PROJECT" "kind=ship" "yolo=off" "pr=https://github.com/o/r/pull/1"
+  assert_equals "open o/r (4 landing pile(s) not counted until 2026-11-24T22:00:00Z)" "$(gate)" "a held pile or its member was counted while the file is in force"
+  export FM_PR_DRAIN_NOW=2026-11-25T00:00:00Z
+  assert_contains "$(gate)" "hold o/r open-PR cap reached: 11 eligible open PR(s) against the open-PR cap of 8" "held piles did not count as before after the expiry"
+  assert_contains "$(gate)" "1 PR(s) waiting for the captain's merge word and 1 PR(s) labelled" "the held piles were not counted as held after the expiry"
+  unset FM_PR_DRAIN_NOW
+  rm -f "$file" "$GATE_HOME"/state/held-*.meta "$GATE_HOME/config/open-pr-cap"
+  pass "config/open-pr-cap-piles-free-until leaves ready piles out of the cap count until its expiry, held ones included"
+}
+
 test_a_pile_folds_only_the_members_it_names() {
   printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
   printf '[]' > "$GHDATA/closed.json"
@@ -746,6 +797,7 @@ fm_test_run \
   test_drain_walk_back_leaves_held_prs_out \
   test_a_recorded_hold_counts_toward_the_cap_but_uses_no_slot \
   test_a_pile_and_its_members_count_once_in_every_subcommand \
+  test_piles_free_until_leaves_ready_piles_out_of_the_cap_count \
   test_a_pile_folds_only_the_members_it_names \
   test_drain_walk_back_counts_a_closed_pile_once \
   test_drain_walk_back_counts_pile_members_before_their_pile \

@@ -114,6 +114,7 @@ The gate reads the label from the open-PR list it already makes, with no extra G
 An unreadable declaration or GitHub reads as `unknown`, and the worker opens the pull request as usual.
 An unreadable task record leaves no PR out as held, so every ready PR counts and the gate can hold.
 `config/open-pr-cap` holds one `<project> <cap>` line per project in the same format and is inherited the same way; a project that declares S and no cap line gets `min(2 x S, 16)`, and a project with no S has none.
+`config/open-pr-cap-piles-free-until` holds one ISO UTC timestamp; absent means off. Until that instant the gate leaves every ready landing pile (each with its members, held by a record or the `held` label or not) out of the cap count and says so (`N landing pile(s) not counted until <timestamp>`); after it the gate counts as usual, and a malformed file is ignored and named in the line. `state`, `open` and the CI-slot count never change, so piles still take CI slots (Lee, 2026-11-22T21:15:41.554Z: "Count unbatched PRs only").
 The cap counts ready open PRs with each landing unit once, leaving out drafts and promotion PRs, and the gate reports it as `open-PR cap reached`.
 A landing pile (a ready PR whose head branch starts `landing/pile-`) and the member PRs its body names in one `Member: PR n` or `Members in order: PR n and PR m` clause are one landing unit, counted as the pile.
 The pile is counted because it is the PR that takes the CI slot: one exact-head gate runs on its merged tree, and its members wait unmerged inside it.
