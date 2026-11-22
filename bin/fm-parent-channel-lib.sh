@@ -190,6 +190,26 @@ fm_merge_handoff_line() {  # <home> <pr-url>
     "${2##*/}" "$1" "$2"
 }
 
+# Deliver merge handoff <line> straight into merger <merger>'s durable inbox,
+# through <send-script> (bin/fm-send.sh) run in <parent-home>, where the merger
+# must be a recorded secondmate (local or remote, as that home's fm-send routes
+# it). The delivery id is a hash of <seed>, so a retry with the same seed is
+# idempotent, and --fire-and-forget arms no reply expectation. Each send is
+# bounded by <budget> seconds. Non-zero means the delivery was not confirmed:
+# the caller keeps the waking keyed line. The two callers are the worker home
+# that registers the PR (bin/fm-pr-check.sh, seed "<url> <head>") and the parent
+# home that ingests a remote worker home's line (bin/fm-procevent-remote-reply.sh,
+# seed the line itself, because the remote line carries no head).
+fm_merge_handoff_deliver() {  # <parent-home> <merger> <line> <seed> <budget> <send-script>
+  local parent=$1 merger=$2 line=$3 seed=$4 budget=$5 send=$6 id
+  _fm_parent_channel_id_valid "$merger" || return 1
+  grep -qx 'kind=secondmate' "$parent/state/$merger.meta" 2>/dev/null || return 1
+  id=$(printf '%s' "$seed" | LC_ALL=C sha256sum | cut -c1-16) || return 1
+  [ -n "$id" ] || return 1
+  env -u FM_STATE_OVERRIDE -u FM_CONFIG_OVERRIDE FM_HOME="$parent" FM_SEND_REMOTE_BUDGET="$budget" \
+    "$send" "fm-$merger" --fire-and-forget "$id" "$line" >/dev/null 2>&1
+}
+
 # The untimed last line of <path> that states decision key <key>, into
 # <out-var>; empty when none does. The fold reads a key's latest line as its
 # state, so this is the line a keyed append compares against.

@@ -1482,4 +1482,91 @@ assert_absent "$PARENT/state/remote-replies/ios.cursor" \
   || fail "a retirement that stopped after removal changed the count"
 pass "a retirement that stops after removing the cursor leaves the old count"
 
+# A remote worker home has no route back, so it can only write the keyed merge
+# handoff on its channel. The parent's adapter delivers it into the merger's
+# inbox with no model turn: a delivered line becomes a silent working line and
+# never opens a decision, while an undelivered one stays as written and wakes
+# the parent. fm-send is stubbed in a private copy of bin/, so no SSH is made.
+HANDOFF_ROOT="$TMP_ROOT/handoff-root"
+mkdir -p "$HANDOFF_ROOT"
+cp -R "$ROOT/bin" "$HANDOFF_ROOT/bin"
+cat > "$HANDOFF_ROOT/bin/fm-send.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$#" "${FM_HOME:-}" "$@" >> "$FM_TEST_SEND_LOG"
+exit "${FM_TEST_SEND_RC:-0}"
+SH
+chmod +x "$HANDOFF_ROOT/bin/fm-send.sh"
+HANDOFF_URL=https://github.com/o/r/pull/77
+handoff_line() { # <epoch> [merger]
+  printf 'needs-decision [key=merge-handoff-77] [cause=external] [at=%s]: [handoff=%s] %s is ready to merge\n' \
+    "$1" "${2:-slarti}" "$HANDOFF_URL"
+}
+# Builds a fresh parent home (recording slarti as a secondmate unless told not
+# to), a delta result carrying the payload file, and prints the home path.
+handoff_case() { # <name> <payload-file> [no-merger-record]
+  local dir=$TMP_ROOT/handoff-$1 empty bytes
+  mkdir -p "$dir/data" "$dir/state"
+  printf -- '- ios - iOS delivery (host: remote-mac; root: %s; home: %s; scope: iOS work; projects: alpha; added 2026-08-02)\n' \
+    "$ROOT" "$REMOTE" > "$dir/data/secondmates.md"
+  [ -n "${3:-}" ] || printf 'kind=secondmate\n' > "$dir/state/slarti.meta"
+  empty=$(sha256_file /dev/null)
+  bytes=$(LC_ALL=C wc -c < "$2" | tr -d ' ')
+  {
+    printf 'schema=fm-remote-delta.v1\nstatus=delta\npath=state/parent-replies.status\n'
+    printf 'from_offset=0\nto_offset=%s\nfrom_prefix_sha256=%s\nto_prefix_sha256=%s\n' "$bytes" "$empty" "$(sha256_file "$2")"
+    printf 'payload_sha256=%s\npayload_bytes=%s\nreason=handoff\n\n' "$(sha256_file "$2")" "$bytes"
+    cat "$2"
+  } > "$dir/delta.result"
+  printf '%s\n' "$dir"
+}
+handoff_ingest() { # <dir> [send-rc]
+  FM_TEST_SEND_RC=${2:-0} FM_TEST_SEND_LOG="$1/send.log" FM_HOME="$1" FM_ROOT_OVERRIDE="$HANDOFF_ROOT" \
+    "$HANDOFF_ROOT/bin/fm-procevent-remote-reply.sh" ingest ios "$1/delta.result" > "$1/ingest.out" 2>&1
+}
+handoff_sends() { grep -c '^fm-slarti$' "$1/send.log" 2>/dev/null || true; }
+handoff_open() { status_open_decisions "$1/state/ios.status" | grep -c 'merge-handoff-77' || true; }
+
+{ handoff_line 1700000000; handoff_line 1700000500; printf 'working: unrelated mate progress\n'; } > "$TMP_ROOT/handoff-payload"
+HD=$(handoff_case delivered "$TMP_ROOT/handoff-payload")
+handoff_ingest "$HD" || fail "handoff ingest failed: $(cat "$HD/ingest.out")"
+[ "$(handoff_sends "$HD")" -eq 2 ] || fail "each handoff line was not delivered once: $(cat "$HD/send.log" 2>/dev/null)"
+[ "$(sed -n 1p "$HD/send.log")" = 4 ] || fail "wrong send argument count: $(cat "$HD/send.log")"
+[ "$(sed -n 2p "$HD/send.log")" = "$HD" ] || fail "the send did not resolve the merger in the parent home: $(cat "$HD/send.log")"
+[ "$(sed -n 4p "$HD/send.log")" = --fire-and-forget ] || fail "the send armed a reply expectation: $(cat "$HD/send.log")"
+HID1=$(sed -n 5p "$HD/send.log")
+HID2=$(sed -n 11p "$HD/send.log")
+printf '%s' "$HID1" | grep -Eq '^[a-f0-9]{16}$' || fail "delivery id is not 16 hex: $HID1"
+[ "$HID1" != "$HID2" ] || fail "two distinct announcements shared one delivery id"
+[ "$(sed -n 6p "$HD/send.log")" = "$(handoff_line 1700000000)" ] \
+  || fail "the merger was not sent the handoff line as written: $(cat "$HD/send.log")"
+assert_no_grep 'needs-decision' "$HD/state/ios.status" "a delivered handoff still reached the parent as a decision"
+[ "$(handoff_open "$HD")" -eq 0 ] || fail "a delivered handoff stands open on the parent"
+[ "$(grep -c "working .*merge handoff delivered to home slarti inbox: $HANDOFF_URL" "$HD/state/ios.status")" -eq 2 ] \
+  || fail "the silent ledger lines were not recorded: $(cat "$HD/state/ios.status")"
+assert_grep 'working: unrelated mate progress' "$HD/state/ios.status" "an ordinary line in the same delta was lost"
+handoff_ingest "$HD" || fail "replaying the handoff ingest failed: $(cat "$HD/ingest.out")"
+[ "$(handoff_sends "$HD")" -eq 2 ] || fail "replaying the same delta delivered a handoff twice"
+pass "a remote home's merge handoff is delivered to the merger inbox, once per line, with no decision on the parent"
+
+HD=$(handoff_case failed "$TMP_ROOT/handoff-payload")
+handoff_ingest "$HD" 3 || fail "a failed delivery stopped the ingest: $(cat "$HD/ingest.out")"
+[ "$(handoff_open "$HD")" -eq 1 ] || fail "a failed delivery did not leave the keyed decision open for the parent"
+assert_grep "needs-decision [key=merge-handoff-77] [cause=external] [at=1700000500]: [handoff=slarti] $HANDOFF_URL is ready to merge" \
+  "$HD/state/ios.status" "a failed delivery changed the keyed handoff line"
+assert_no_grep 'merge handoff delivered' "$HD/state/ios.status" "an unconfirmed delivery was reported as delivered"
+pass "a failed or unconfirmed delivery leaves the keyed handoff line to wake the parent"
+
+HD=$(handoff_case unrecorded "$TMP_ROOT/handoff-payload" no-merger-record)
+handoff_ingest "$HD" || fail "an unrecorded merger stopped the ingest: $(cat "$HD/ingest.out")"
+[ ! -e "$HD/send.log" ] || fail "a merger with no secondmate record was sent a handoff: $(cat "$HD/send.log")"
+[ "$(handoff_open "$HD")" -eq 1 ] || fail "a handoff for a merger this home does not hold did not reach the parent"
+pass "a handoff for a merger this home does not hold, such as the main home, still wakes the parent"
+
+{ handoff_line 1700000000 ios; printf 'needs-decision [key=merge-handoff-77] [cause=external] [at=1700000100]: [handoff=slarti] not-a-url is ready to merge\n'; } > "$TMP_ROOT/handoff-payload-bad"
+HD=$(handoff_case refused "$TMP_ROOT/handoff-payload-bad")
+printf 'kind=secondmate\n' > "$HD/state/ios.meta"
+handoff_ingest "$HD" || fail "refused handoffs stopped the ingest: $(cat "$HD/ingest.out")"
+[ ! -e "$HD/send.log" ] || fail "a handoff naming the sending mate or a non-URL was delivered: $(cat "$HD/send.log")"
+pass "a handoff naming the sending mate, or carrying no PR URL, is never delivered"
+
 echo "ALL TESTS PASSED"

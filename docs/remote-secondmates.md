@@ -550,6 +550,9 @@ The [`fm-remote-delta-read.sh` header](../bin/fm-remote-delta-read.sh) owns snap
 It stops when that registration is retired, the registered command changes, or the home's owner lease lapses.
 `bin/fm-procevent.sh` owns the generic relisten rule, and `bin/fm-procevent-remote-reply.sh` owns this adapter's answer.
 
+A mirrored merge-handoff line (`[handoff=<home>]`, from `fm_merge_handoff_line`) is delivered into that merger's inbox with `bin/fm-send.sh --fire-and-forget` before it is appended, because the remote home has no route back to do it.
+A delivered line becomes a silent `working` line; a merger this home does not record as a secondmate, or an unconfirmed delivery, leaves the line as written so it wakes the parent.
+
 Only a structured `report=data/....md` pointer offers a document.
 A bare path inside prose is a mention.
 So writing about a document, including one the mate has not created yet, never asks this channel to fetch it.
