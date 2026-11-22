@@ -180,13 +180,15 @@
 # the boundary), FM_SUPERVISION_HOST_TURN_TIMEOUT (1200), FM_SUPERVISION_HOST_ROTATE_TURNS (20:
 # a new engine conversation after this many turns; every main session start
 # also opens a new one), FM_SUPERVISION_HOST_READY_TIMEOUT (25: how long a
-# successor cycle may take to verify), FM_SUPERVISION_HOST_POLL (1).
+# successor cycle may take to verify), FM_SUPERVISION_HOST_POLL (1),
+# FM_SUPERVISION_HOST_EXIT_LOCK_WAIT (10: seconds the exit path waits on a wake-queue
+# lock another live process holds before it gives up releasing its grant).
 # Park duration uses Bash's process-relative SECONDS counter (including Bash
 # 3.2), while durable timestamps still use epoch time. This is not a portable
 # monotonic-clock guarantee. Arm exit probes use ordinary 0.5-second child
 # sleeps within the unchanged POLL-cadence maintenance and boundary checks;
 # close observation and a shell-only caught signal may wait that interval plus
-# work/scheduling time. No stop-signal disposition or cleanup bound changes.
+# work/scheduling time. No stop-signal disposition changes.
 # FM_TEST_SUPERVISION_HOST_CLOCK names a file holding the park's elapsed
 # seconds, which the park and turn boundary checks read in place of SECONDS
 # only when FM_TEST_SEAM=1; tests/lib.sh arms the marker for isolated suites.
@@ -455,8 +457,12 @@ cleanup() {
   retire_arm "$SUCCESSOR_PID" "$SUCCESSOR_OUT"
   retire_arm "$ARM_PID" "$ARM_OUT"
   if [ "$GRANT_ACTIVE" -eq 1 ]; then
-    "$SCRIPT_DIR/fm-wake-grant.sh" release "$GEN" >/dev/null 2>&1 || true
-    "$SCRIPT_DIR/fm-wake-grant.sh" deactivate "$HOST_PID" "$GEN" >/dev/null 2>&1 || true
+    # Bounded: a queue lock another live process holds must not keep a TERMed
+    # host alive (the stranded stop in tests/fm-supervision-host-park.test.sh).
+    FM_WAKE_GRANT_LOCK_WAIT=${FM_SUPERVISION_HOST_EXIT_LOCK_WAIT:-10} \
+      "$SCRIPT_DIR/fm-wake-grant.sh" release "$GEN" >/dev/null 2>&1 || true
+    FM_WAKE_GRANT_LOCK_WAIT=${FM_SUPERVISION_HOST_EXIT_LOCK_WAIT:-10} \
+      "$SCRIPT_DIR/fm-wake-grant.sh" deactivate "$HOST_PID" "$GEN" >/dev/null 2>&1 || true
   fi
   release_branch_leases
   rm -f "$TURN_FILE" "$ENGINE_PID_FILE" 2>/dev/null || true
