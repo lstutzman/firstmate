@@ -1370,13 +1370,14 @@ EOF
 # before any read - a cheap builtin, unlike fm_wake_latest_event's O_NOFOLLOW
 # subprocess read, which exists for that function's much narrower payload-driven
 # path resolution rather than this directory-local glob.
-status_open_decisions() {  # <status-file> [<kind>]
+status_open_decisions() {  # <status-file> [<kind>] [timed]
   local f=$1 kind=${2:-}
   [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 0
   kind=$(_fm_status_kind "$f" "$kind")
   # Environment transport preserves literal backslashes in configured vocabulary;
   # awk -v assignments would interpret them as escapes.
   FM_FOLD_KIND="$kind" \
+  FM_FOLD_TIMED="${3:-}" \
   FM_FOLD_RESOLVE="${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}" \
   FM_FOLD_HELD="${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}" \
   FM_FOLD_CUTOVER="${FM_CLASSIFY_UNKEYED_CUTOVER:-$FM_CLASSIFY_UNKEYED_CUTOVER_DEFAULT}" \
@@ -1537,6 +1538,17 @@ status_open_decisions() {  # <status-file> [<kind>]
       }
       member_count[corr] = 0
     }
+    # The deferral column of the timed view, as _fm_status_until_date reads it.
+    function until_date(s,    rest, finish, value) {
+      if (!index(s, ":")) return "-"
+      s = head(s)
+      if (!index(s, "[until=")) return "-"
+      rest = substr(s, index(s, "[until=") + 7)
+      if (!(finish = index(rest, "]"))) return "?"
+      value = substr(rest, 1, finish - 1)
+      if (index(substr(rest, finish + 1), "[until=")) return "?"
+      return value ~ /^[0-9][0-9][0-9][0-9]-[0-1][0-9]-[0-3][0-9]$/ ? value : "?"
+    }
     function allowed(key, note,    i, prefix) {
       for (i = 1; i <= reserved_count; i++) {
         prefix = reserved[i]
@@ -1549,6 +1561,7 @@ status_open_decisions() {  # <status-file> [<kind>]
       kind = ENVIRON["FM_FOLD_KIND"]
       resolve = ENVIRON["FM_FOLD_RESOLVE"]
       held = ENVIRON["FM_FOLD_HELD"]
+      timed = ENVIRON["FM_FOLD_TIMED"] == "timed"
       cutover = ENVIRON["FM_FOLD_CUTOVER"]
       prefixes = trim_left(ENVIRON["FM_FOLD_RESERVED"])
       sub(/[[:space:]]+$/, "", prefixes)
@@ -1597,7 +1610,22 @@ status_open_decisions() {  # <status-file> [<kind>]
       if (!allowed(key, note)) next
       if (!unkeyed) noted_drop(key)
       if (v == "needs-decision" || v == "blocked") {
-        open_record(key, ++serial, key "\t" v "\t" note, note)
+        row = note
+        if (timed) {
+          # A republish of a still-open key with the same verb and note keeps
+          # the earlier time of the open row; the per-line fold reads that note
+          # back through a TAB-split read, which drops its trailing TABs.
+          at = unkeyed ? "" : epoch($0)
+          if (at == "") at = "unknown"
+          old_note = notes[key]
+          sub(/\t+$/, "", old_note)
+          if ((key in records) && opened[key] ~ /^[0-9]+$/ && verbs[key] == v && old_note == note)
+            at = opened[key]
+          opened[key] = at
+          verbs[key] = v
+          row = at "\t" until_date(s) "\t" note
+        }
+        open_record(key, ++serial, key "\t" v "\t" row, note)
       } else {
         if (unkeyed && !(key in records) && ((corr = correlation(s)) == "" || v != resolve)) {
           if (corr != "") {
@@ -1931,8 +1959,8 @@ EOF
 # prefix. Any signal falls back to a full re-fold of the whole current file from
 # byte 0 - byte for byte what status_open_decisions itself would compute, run as
 # one awk pass over FM_OPEN_DECISIONS_REBUILD_BUDGET_BYTES_DEFAULT-sized slices
-# rather than the per-line fold - and rewrites the cursor from that clean
-# baseline. The timed view has no awk fold and rebuilds per line. A same-inode, same-size,
+# rather than the per-line fold, for the timed view too - and rewrites the
+# cursor from that clean baseline. A same-inode, same-size,
 # in-place byte edit is NOT detected; that is a deliberately accepted gap
 # because no code path in this repo ever does that to a status file.
 #
@@ -1940,7 +1968,7 @@ EOF
 # error), not a malformed writer: every such read here is checked, and on
 # failure this reports the already-trusted persisted set unchanged rather than
 # risking a silent invalidation that would wipe it - never a bare "empty" as if
-# nothing were open.
+# nothing were open. A rebuild has no trusted set, so its read failure returns 1.
 #
 # Not a pure status-file read: this writes/rewrites the sibling cursor file as a
 # side effect (state/.<task>.open-decisions-cursor), the library's second
@@ -2180,12 +2208,17 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [
 
   if [ "$offset" -lt "$size" ]; then
     chunk_file="$cf.read.$$"
+    # A call killed mid-fold leaves its chunk behind; sweep those of dead shells.
+    for line in "$cf".read.*; do
+      [ -f "$line" ] && [ "$line" != "$chunk_file" ] || continue
+      kill -0 "${line##*.}" 2>/dev/null || rm -f "$line"
+    done
     want=$((size - offset))
     # A rebuild from byte 0 folds with one awk pass, which costs no process per
     # line, so it takes a far larger slice than the per-line fold does; an
     # explicit FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES still bounds both.
     budget=${FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES:-}
-    if [ "$rebuild" -eq 1 ] && [ "$timed" != timed ]; then
+    if [ "$rebuild" -eq 1 ]; then
       awk_fold=1
       [ -n "$budget" ] || budget=$FM_OPEN_DECISIONS_REBUILD_BUDGET_BYTES_DEFAULT
     else
@@ -2194,25 +2227,25 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [
     case "$budget" in ''|*[!0-9]*|0*) budget=$FM_OPEN_DECISIONS_FOLD_BUDGET_BYTES_DEFAULT ;; esac
     [ "$want" -le "$budget" ] || want=$budget
     _fm_status_read_span "$f" "$offset" "$want" > "$chunk_file" 2>/dev/null \
-      || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0; }
+      || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return "$rebuild"; }
     if [ "$want" -lt "$((size - offset))" ]; then
       # Budget cut: end the fold on a line boundary. A budget slice holding no
       # newline (one line longer than the budget) reads through to its end.
       cut=$(LC_ALL=C perl -0777 -ne 'my $i = rindex($_, "\n"); print $i < 0 ? "" : $i + 1' "$chunk_file" 2>/dev/null) \
-        || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0; }
+        || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return "$rebuild"; }
       if [ -n "$cut" ]; then
         LC_ALL=C perl -e 'truncate($ARGV[0], $ARGV[1]) or exit 1' "$chunk_file" "$cut" 2>/dev/null \
-          || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0; }
+          || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return "$rebuild"; }
       else
         _fm_status_read_span "$f" "$offset" "$((size - offset))" > "$chunk_file" 2>/dev/null \
-          || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0; }
+          || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return "$rebuild"; }
       fi
     fi
     chunk_size=$(LC_ALL=C wc -c < "$chunk_file" 2>/dev/null) \
-      || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0; }
+      || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return "$rebuild"; }
     chunk_size=${chunk_size//[[:space:]]/}
     case "$chunk_size" in
-      ''|*[!0-9]*) rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0 ;;
+      ''|*[!0-9]*) rm -f "$chunk_file"; printf '%s' "$trusted_open"; return "$rebuild" ;;
     esac
     # Test-only observability seam (off by default, no production behavior
     # change): when set, records exactly how many bytes THIS call folded, so a
@@ -2225,9 +2258,10 @@ status_open_decisions_incremental() {  # <status-file> [<captured-end-offset>] [
     if [ "$awk_fold" -eq 1 ]; then
       # The rebuild starts from an empty set, so the whole-file awk fold over
       # the slice is the per-line fold's answer, which the corpus tests pin. An
-      # awk failure leaves the cursor unwritten and the next call tries again.
-      open=$(status_open_decisions "$chunk_file" "$kind") \
-        || { rm -f "$chunk_file"; printf '%s' "$trusted_open"; return 0; }
+      # awk failure leaves the cursor unwritten and fails the call, because a
+      # rebuild has no trusted set to report instead.
+      open=$(status_open_decisions "$chunk_file" "$kind" "$timed") \
+        || { rm -f "$chunk_file"; return 1; }
     else
       while IFS= read -r line || [ -n "$line" ]; do
         open=$(_fm_decision_fold_line "$open" "$line" "$resolve" "$held" "$kind" "$timed")

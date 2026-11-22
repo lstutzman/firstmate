@@ -518,7 +518,7 @@ test_snapshot_fold_stops_at_its_endpoint_under_a_small_budget() {
 # files keep their cursors, the third keeps none (the cursor write is atomic, so
 # it is never torn), and the next run re-reads only the files left unfinished.
 test_killed_rebuild_scan_keeps_progress_and_converges() {
-  local dir state probe n f want got off size scan_pid
+  local dir state probe n f want got off size scan_pid leftover
   dir=$(make_case cursor-killed-scan); state="$dir/state"; probe="$dir/probe.tsv"
   for n in 1 2 3 4; do make_big_log "$state/t$n.status" 800; done
   want=$(for n in 1 2 3 4; do
@@ -551,9 +551,13 @@ test_killed_rebuild_scan_keeps_progress_and_converges() {
     [ "$off" = "$size" ] || fail "t$n: the killed scan did not keep its finished rebuild (offset '$off', size $size)"
   done
   [ ! -e "$state/.t3.open-decisions-cursor" ] || fail "t3: the file killed mid-rebuild left a cursor: $(ls -a "$state" | tr "\n" " ") calls=$(wc -l < "$dir/awk-calls")"
+  leftover=$(find "$state" -maxdepth 1 -name '.t3.open-decisions-cursor.read.*' | wc -l | tr -d ' ')
+  [ "$leftover" = 1 ] || fail "t3: the kill should leave the rebuild's chunk copy behind, found $leftover"
   : > "$probe"
   got=$(FM_OPEN_DECISIONS_READ_PROBE="$probe" bash -c '. "$1"; scan_open_decisions_incremental "$2"' _ "$ROOT/bin/fm-classify-lib.sh" "$state") \
     || fail "the rerun after the kill failed"
+  leftover=$(find "$state" -maxdepth 1 -name '.*.open-decisions-cursor*.read.*')
+  [ -z "$leftover" ] || fail "the rerun left a killed scan's chunk copy behind: $leftover"
   [ "$got" = "$want" ] || fail "the rerun after the kill differs from the whole-file folds: $(diff <(printf %s "$want") <(printf %s "$got") | head -6)"
   [ "$(cut -f1 "$probe" | sort | tr '\n' ' ')" = "$state/t3.status $state/t4.status " ] \
     || fail "the rerun re-read finished files or skipped unfinished ones: $(cut -f1 "$probe" | tr '\n' ' ')"
