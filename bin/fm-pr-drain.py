@@ -12,7 +12,7 @@ Usage: fm-pr-drain.py state <project-dir> [<project-name>]
 A repository enters drain at 24 or more eligible open PRs and leaves it when its eligible count is at or below S (its
 config/ci-slots line; 0 when it declares none). An eligible PR is a ready (non-draft) open PR that is not a promotion PR
 (head branch `staging`) and, where a local task record shows it, not waiting for the captain's merge word; a PR held
-for a release day (Wednesday) has no signal yet, so it counts.
+for a release day (Wednesday) or another home's wait is left out when its holding home labels it `held`.
 state prints one line and exits 0:
   on <owner/repo> <open>       in drain
   off <owner/repo> <open>      not in drain
@@ -21,18 +21,19 @@ state prints one line and exits 0:
 The state is derived from GitHub itself, so every home on every machine reads the same answer with no
 shared marker: the open list gives the eligible count now, and when it is above S and below 24 the PRs closed in the
 last 14 days are walked back from now (a close adds one PR, a creation removes one; closed PRs count as eligible unless
-they were drafts or promotion PRs) until the count was 24 or more (on) or S or fewer (off). Read-only: one `gh pr list`
+they were drafts, promotion PRs or labelled `held`) until the count was 24 or more (on) or S or fewer (off). Read-only: one `gh pr list`
 of open PRs, plus one of recently closed PRs only in that band. FM_PR_DRAIN_TIMEOUT (default 20) bounds each read in seconds.
-open prints one line, the ready open PR count (P, drafts left out) that bin/fm-fleet-alarm.py compares with a project's
+open prints one line, the ready open PR count (P, drafts and PRs labelled `held` left out) that bin/fm-fleet-alarm.py compares with a project's
 CI slots (config/ci-slots; bin/fm-project-capacity-lib.sh owns it), from one `gh pr list` read:
-  open <owner/repo> <n>        the repository has n ready (non-draft) open PRs
+  open <owner/repo> <n>        the repository has n ready (non-draft, not labelled `held`) open PRs
   unknown <owner/repo> <why>   GitHub could not be read
   none                         the clone's origin is not on github.com
 gate is the worker's CI slots check, run just before it opens a pull request (bin/fm-dod-lib.sh writes the step into
 a brief). It prints one line: `hold <owner/repo> <why>` when the opening must wait, `open <owner/repo>` when it may
 go ahead (also for a project with no CI slots), `unknown <owner/repo> <why>` when a declaration or GitHub cannot be
 read, or `none` off github.com. It holds when the ready open PRs, less drafts and the PRs waiting for the captain's
-merge word (bin/fm-ci-slots-held.sh) and promotion PRs, reach the open-PR cap (config/open-pr-cap, default
+merge word (bin/fm-ci-slots-held.sh) and promotion PRs, plus the PRs labelled `held` that no record shows waiting for
+the captain (they use no CI slot but still count toward the cap), reach the open-PR cap (config/open-pr-cap, default
 min(2 x S, 16)). <project-name> is the registered name that
 names the project in those files; it defaults to the directory's name. FM_HOME picks the home whose config is read.
 class exits 0 when <value> is a recognised drain declaration: an exemption class (production-outage,
@@ -66,6 +67,9 @@ import urllib.request
 BIN = os.path.dirname(os.path.abspath(__file__))
 THRESHOLD = 24
 PROMOTION_HEAD = 'staging'
+# The one label a holding home sets on a PR it holds (Wednesday pile, waiting for the captain's word) and removes when the
+# hold ends: the PR uses no CI slot, so it leaves the slot counts, but it still counts toward the open-PR cap.
+HELD_LABEL = 'held'
 WINDOW_DAYS = 14
 CLOSED_LIMIT = 1000
 EXEMPT = ('production-outage', 'cve', 'security', 'wolverine', 'lee-research', 'lee-explicit', 'officer', 'scheduled')
@@ -112,9 +116,11 @@ def open_prs(project):
     if not repo:
         return 'none'
     try:
-        prs = gh(repo, '--state', 'open', '--limit', '1000', '--json', 'createdAt,isDraft,url,headRefName')
+        prs = gh(repo, '--state', 'open', '--limit', '1000', '--json', 'createdAt,isDraft,url,headRefName,labels')
         return repo, [{'createdAt': pr.get('createdAt'), 'isDraft': bool(pr.get('isDraft')), 'url': pr.get('url') or '',
-                       'promotion': pr.get('headRefName') == PROMOTION_HEAD} for pr in prs]
+                       'promotion': pr.get('headRefName') == PROMOTION_HEAD,
+                       'labelHeld': any(label.get('name') == HELD_LABEL for label in pr.get('labels') or [])}
+                      for pr in prs]
     except (ValueError, KeyError, TypeError, OSError, subprocess.TimeoutExpired, AttributeError) as error:
         return f'unknown {repo} GitHub unreadable: {error}'.replace('\n', ' ')
 
@@ -125,7 +131,7 @@ def open_count(project):
     if isinstance(found, str):
         return found
     repo, prs = found
-    return f"open {repo} {sum(1 for pr in prs if not pr['isDraft'])}"
+    return f"open {repo} {sum(1 for pr in prs if not pr['isDraft'] and not pr['labelHeld'])}"
 
 
 def project_mode(flag, name):
@@ -150,11 +156,13 @@ def held_urls(project, urls):
 
 
 def eligible(project, prs):
-    """(eligible PRs, drafts, held, promotion) of the open PRs: ready, not a promotion PR, not waiting for the captain."""
+    """(eligible PRs, drafts, held, promotion, labelled) of the open PRs: ready, not a promotion PR, not labelled held,
+    not waiting for the captain. labelled counts the PRs labelled held that no record shows waiting for the captain."""
     ready = [pr for pr in prs if not pr['isDraft'] and not pr['promotion']]
     held = held_urls(project, [pr['url'] for pr in ready]) if ready else set()
-    return ([pr for pr in ready if pr['url'] not in held], sum(1 for pr in prs if pr['isDraft']), len(held),
-            sum(1 for pr in prs if pr['promotion'] and not pr['isDraft']))
+    return ([pr for pr in ready if pr['url'] not in held and not pr['labelHeld']], sum(1 for pr in prs if pr['isDraft']),
+            len(held), sum(1 for pr in prs if pr['promotion'] and not pr['isDraft']),
+            sum(1 for pr in ready if pr['labelHeld'] and pr['url'] not in held))
 
 
 def gate(project, name):
@@ -170,12 +178,14 @@ def gate(project, name):
         return f'unknown {repo} the CI slots declaration for {name} is unreadable: {error}'.replace('\n', ' ')
     if not slots:
         return f'open {repo}'
-    counted, drafts, held, promotion = eligible(project, prs)
-    counted = len(counted)
+    counted, drafts, held, promotion, labelled = eligible(project, prs)
+    # Held-by-label PRs use no CI slot but still count toward the cap (the fleet rule's rebase-debt bound).
+    counted = len(counted) + labelled
     if counted >= int(cap):
         return (f'hold {repo} open-PR cap reached: {counted} eligible open PR(s) against the open-PR cap of {cap} '
                 f"(config/open-pr-cap; min(2 x {slots} CI slots, 16) unless declared; {drafts} draft PR(s), {held} PR(s) waiting for "
-                f"the captain's merge word and {promotion} promotion PR(s) are not counted); open no pull request until one merges or closes")
+                f"the captain's merge word and {promotion} promotion PR(s) are not counted; "
+                f"{labelled} PR(s) labelled `{HELD_LABEL}` use no CI slot but are counted); open no pull request until one merges or closes")
     return f'open {repo}'
 
 
@@ -201,10 +211,11 @@ def state(project, name=None):
             return f"{'on' if count > floor else 'off'} {repo} {count}"
         since = datetime.now(timezone.utc) - timedelta(days=WINDOW_DAYS)
         closed = [pr for pr in gh(repo, '--state', 'closed', '--search', f"closed:>={since:%Y-%m-%dT%H:%M:%SZ}",
-                                  '--limit', str(CLOSED_LIMIT), '--json', 'createdAt,closedAt,isDraft,headRefName')]
+                                  '--limit', str(CLOSED_LIMIT), '--json', 'createdAt,closedAt,isDraft,headRefName,labels')]
         if len(closed) >= CLOSED_LIMIT:
             return f'unknown {repo} {CLOSED_LIMIT} or more PRs closed in {WINDOW_DAYS} days (the GitHub search cap)'
-        closed = [pr for pr in closed if not pr.get('isDraft') and pr.get('headRefName') != PROMOTION_HEAD]
+        closed = [pr for pr in closed if not pr.get('isDraft') and pr.get('headRefName') != PROMOTION_HEAD
+                  and not any(label.get('name') == HELD_LABEL for label in pr.get('labels') or [])]
         steps = {}
         for pr in opened + closed:
             if when(pr['createdAt']) >= since:

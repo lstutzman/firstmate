@@ -68,13 +68,13 @@ A ship spawned with `--landing-exempt` is never held, and that flag is how a fix
 When a ready PR's wait is unknown, because it was recorded before ready times existed or its home's backlog cannot be read, the spawn goes ahead with one `warning:` line, unless another ready PR is already known to exceed the limit.
 A value that is not a whole number of hours refuses every fresh ship spawn for the project until it is corrected.
 A project with no `landing-lag=` token is never held, and the token is read from the spawning home's own `data/projects.md`, so each home that dispatches the project carries it on its own line.
-Two parts of the admission rule are known limits, by the captain's decision, until firstmate has a signal for them: a paused landing is not read, and a ready PR held for a release day counts like any other. A merged PR also counts until its task is cleaned up, so choose a limit with those in mind.
+One part of the admission rule is a known limit, by the captain's decision, until firstmate has a signal for it: a paused landing is not read. A PR another home holds counts unless it carries the `held` label (see below). A merged PR also counts until its task is cleaned up, so choose a limit with those in mind.
 [`bin/fm-project-capacity-lib.sh`](../../bin/fm-project-capacity-lib.sh) owns which records count and how an unreadable signal is handled, and `bin/fm-project-mode.sh --landing-lag <name>` reads the limit back.
 
 ## PR drain (open-PR drain rule)
 
 A project whose clone's origin is on github.com is in PR drain from the moment its repository has 24 or more eligible open PRs until its eligible count is at or below its CI slots S (0 when it declares none; Lee, 2026-11-21).
-An eligible PR is a ready (non-draft) open PR that is not a promotion PR (head branch `staging`) and is not waiting for the captain's merge word on positive local evidence ([CI slots](#ci-slots-configci-slots) owns that signal); a PR held for a release day (Wednesday) has no signal yet, so it counts.
+An eligible PR is a ready (non-draft) open PR that is not a promotion PR (head branch `staging`) and is not waiting for the captain's merge word on positive local evidence ([CI slots](#ci-slots-configci-slots) owns that signal), and does not carry the `held` label (`HELD_LABEL` in `bin/fm-pr-drain.py`).
 The state is derived from GitHub on every read, so every home on every machine sees the same answer with no shared marker: between S and 24, the PRs closed in the last 14 days (closed drafts and promotion PRs left out) are walked back from now to whichever of 24 or S came last, and no write ever reaches the repository.
 A drain holds PR openings only, never ship starts (Lee, 2026-11-21): `bin/fm-spawn.sh` launches a ship for a drained repository as usual, with or without a class, so work for the next release keeps building while the drain lasts.
 A class declared with `bin/fm-brief.sh --pr-drain <class>` exempts the ship's PR opening from the hold: an exemption class (`production-outage`, `cve`, `security`, `wolverine`, `lee-research`, `lee-explicit`, `officer`, `scheduled`) or a landing job (`restack`, `red-gate-fix`, `returned-pr-fix`, `review`).
@@ -104,8 +104,10 @@ A draft PR is left out because GitHub says so (`isDraft`), and a promotion PR be
 A PR waiting for the captain's merge word is left out only on positive evidence from a task record in a local home: the task recorded `yolo` that is not on, which waits for the captain's merge word by definition, or its backlog row is held for the captain and not done.
 A PR of a ship in a remote home is read the same way from that home's cached summary, when it is less than two hours old; a missing or older copy is skipped with one `warning:` line and never changes the gate.
 A PR no record shows to be waiting counts.
-A PR held for a release day (Wednesday) counts too: firstmate has no signal for it, so the gate leaves out only the classes it can detect.
-That Wednesday-hold signal is tracked as a follow-up under Linear FLEET-145 (backlog item `wednesday-hold-signal`).
+A PR another home holds (Slarti's Wednesday pile, a Navigator PR waiting for the captain's merge word) carries the GitHub label `held` (`HELD_LABEL` in `bin/fm-pr-drain.py`, the one definition).
+The home that holds the PR sets the label at hold time and the same home removes it when the hold ends; firstmate sets and removes nothing.
+The label leaves the PR out of the CI-slot count only: the drain's eligible count, `open` (P) and so the S comparison; it never frees a place under the open-PR cap, so labelled PRs still count toward the gate's cap (a labelled PR that a task record also shows waiting for the captain stays out of the cap, as it did before it was labelled), and the gate reports them as `N PR(s) labelled held use no CI slot but are counted`.
+The gate reads the label from the open-PR list it already makes, with no extra GitHub call per PR.
 An unreadable declaration or GitHub reads as `unknown`, and the worker opens the pull request as usual.
 An unreadable task record leaves no PR out as held, so every ready PR counts and the gate can hold.
 `config/open-pr-cap` holds one `<project> <cap>` line per project in the same format and is inherited the same way; a project that declares S and no cap line gets `min(2 x S, 16)`, and a project with no S has none.
