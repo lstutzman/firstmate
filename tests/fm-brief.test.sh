@@ -2149,3 +2149,24 @@ test_linear_required_projects_gate_briefs
 test_ship_brief_carries_the_fix_forward_rule
 test_ship_brief_carries_the_ui_hill_climb_rule
 test_briefs_end_with_the_complaint_step
+
+# Direct-PR and local-only workers add no review pass of their own (AGENTS.md
+# section 7: the faster path adds no independent reviewer); no-mistakes owns its review.
+test_fast_path_briefs_forbid_self_review() {
+  local home mode brief
+  home="$TMP_ROOT/no-self-review-home"
+  mkdir -p "$home/data"
+  for mode in direct-PR local-only no-mistakes; do
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "brief-nsr-$mode" some-proj --mode "$mode" >/dev/null 2>&1 \
+      || fail "fm-brief.sh $mode scaffold exited non-zero"
+  done
+  assert_grep "Do not start your own review sub-agents or a separate review pass before you open the PR; the merge authority and CI are the checks." \
+    "$home/data/brief-nsr-direct-PR/brief.md" "the direct-PR brief lost the no-self-review sentence"
+  assert_grep "Do not start your own review sub-agents or a separate review pass before you stop at the ready branch; the merge authority is the check." \
+    "$home/data/brief-nsr-local-only/brief.md" "the local-only brief lost the no-self-review sentence"
+  assert_no_grep "Do not start your own review sub-agents" "$home/data/brief-nsr-no-mistakes/brief.md" \
+    "the no-mistakes brief must not carry the no-self-review sentence"
+  pass "fm-brief.sh: direct-PR and local-only briefs forbid a self-review pass, no-mistakes does not"
+}
+
+test_fast_path_briefs_forbid_self_review
