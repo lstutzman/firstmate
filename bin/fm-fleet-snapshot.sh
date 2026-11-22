@@ -288,6 +288,9 @@ a declared wait too: it is listed in waiting_on_merge with hold_kind "external"
 and counted in counts.waiting_on_merge, so a PR held for another item's landing
 is not handed to its merger early. An expired hold_until or a failed child does
 not exempt; captain holds are unchanged.
+A done ship that finished as a parked ready branch (ready_branch= and no pr=, fm_office_task_ready_branch_waiting,
+shown as pr.ready_branch_waiting) is waiting for a PR place by design: it is not terminal_in_flight, is listed in
+waiting_on_merge with pr null and ready_branch true, and its endpoints row carries ready_branch_waiting.
 A held in-flight item with the same external hold and no child at all is counted in
 counts.external_wait_in_flight, which the silent-mate alarm treats as waiting rather than silent work.
 A failed child, or any other done child without both a
@@ -825,7 +828,7 @@ task_json_row() {  # <captured-meta> <id>
   local meta=$1 id=$2 original_meta kind harness mode yolo project worktree home projects spawn_gen branch backend target status_log report_path
   local remote_host remote_root current_file endpoint_file observation_line
   local pr pr_source endpoint_exists agent_alive meta_json report_json worktree_json home_json
-  local event_file decisions_file merge_check_armed parked_handoff
+  local event_file decisions_file merge_check_armed parked_handoff ready_branch_waiting
   local current_state current_source pending_decision blocked_event report_present=0 pr_from_status
   local open_decisions_tsv open_decisions_json
 
@@ -872,6 +875,11 @@ task_json_row() {  # <captured-meta> <id>
   parked_handoff=0
   if [ "$kind" = ship ] && fm_office_task_landing "$STATE" "$id" "$SNAPSHOT_OFFICE_ID"; then
     parked_handoff=1
+  fi
+
+  ready_branch_waiting=0
+  if fm_office_task_ready_branch_waiting "$STATE" "$id"; then
+    ready_branch_waiting=1
   fi
 
   current_file="$SNAPSHOT_TASK_DIR/$id.json"
@@ -971,6 +979,7 @@ task_json_row() {  # <captured-meta> <id>
     --argjson report_present "$(bool_json "$report_present")" \
     --argjson merge_check_armed "$(bool_json "$merge_check_armed")" \
     --argjson parked_handoff "$(bool_json "$parked_handoff")" \
+    --argjson ready_branch_waiting "$(bool_json "$ready_branch_waiting")" \
     '($current_state[0]) as $current_state
      | ($status_log[0]) as $status_log
      | ($open_decisions[0]) as $open_decisions
@@ -999,7 +1008,7 @@ task_json_row() {  # <captured-meta> <id>
                 elif $agent_alive == "alive" or $agent_alive == "dead" then $agent_alive
                 else "unknown" end),
         observed_at:$observed_at,freshness:"fresh"},
-      pr:{url:($pr | if . == "" then null else . end),source:$pr_source,head:($pr_head | if . == "" then null else . end),at:(if ($pr_at | test("^[0-9]+$")) then ($pr_at | tonumber) else null end),merge_check_armed:$merge_check_armed,parked_handoff:$parked_handoff},
+      pr:{url:($pr | if . == "" then null else . end),source:$pr_source,head:($pr_head | if . == "" then null else . end),at:(if ($pr_at | test("^[0-9]+$")) then ($pr_at | tonumber) else null end),merge_check_armed:$merge_check_armed,parked_handoff:$parked_handoff,ready_branch_waiting:$ready_branch_waiting},
       hints:{
         pending_decision:$pending_decision,
         blocked_event:$blocked_event,
@@ -1138,6 +1147,7 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
          | select((.current_state.state == "done" and ($external_held_ids | index($work.id) != null)) | not)
          | select((.current_state.state == "done" and .pr.source == "meta" and .pr.merge_check_armed == true) | not)
          | select((.current_state.state == "done" and .pr.parked_handoff == true) | not)
+         | select((.current_state.state == "done" and .pr.ready_branch_waiting == true) | not)
          | select((.current_state.state == "done" and .current_state.source == "status-log"
              and ((.current_state.detail // "") | . == "pipeline handoff: validation run not finished"
                or startswith("pipeline handoff: validation run not finished · ")
@@ -1153,10 +1163,13 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
          | select(.kind != "secondmate")
          | select(.id == $work.id and .current_state.state == "done"
              and (($external_held_ids | index($work.id) != null)
-               or (.pr.source == "meta" and .pr.merge_check_armed == true) or .pr.parked_handoff == true))
+               or (.pr.source == "meta" and .pr.merge_check_armed == true) or .pr.parked_handoff == true
+               or .pr.ready_branch_waiting == true))
          | if ($external_held_ids | index($work.id) != null)
-              and (((.pr.source == "meta" and .pr.merge_check_armed == true) or .pr.parked_handoff == true) | not)
+              and (((.pr.source == "meta" and .pr.merge_check_armed == true) or .pr.parked_handoff == true
+                    or .pr.ready_branch_waiting == true) | not)
            then {id,pr:((.pr.url // null) | if . == null then null else trunc(500) end),hold_kind:"external"}
+           elif .pr.ready_branch_waiting == true and .pr.url == null then {id,pr:null,ready_branch:true}
            else {id,pr:(.pr.url | trunc(500))} end ]) as $waiting_on_merge
     | ([if $backlog.present != true then
           {kind:"missing_backlog",ids:[],reason:"missing structured backlog"}
@@ -1272,6 +1285,7 @@ secondmate_home_summary_json() {  # <backlog-json-file> <tasks-json-file>
              blocked:($row != null and (($row.unresolved_blocker_ids // []) | length) > 0)}][:$ships_n]),
         endpoints:([$tasks[] | {id,kind,state:.current_state.state,source:.current_state.source,
           age_seconds:(if .current_state.state == "done" and .current_state.source == "status-log" and .paths.status_log.last_event.state == "done" then (.paths.status_log.last_event.age_seconds // null) else null end),
+          ready_branch_waiting:(.pr.ready_branch_waiting == true),
           endpoint:(.endpoint + {target:((.endpoint.target // null) | if . == null then null else trunc(240) end)})}][:$child_n]),
         counts:{
           in_flight:($owned_in_flight | length),

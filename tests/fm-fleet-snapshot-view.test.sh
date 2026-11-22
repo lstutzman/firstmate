@@ -1424,6 +1424,46 @@ EOF
   pass "home-summary treats a parked handed-off item as consistent"
 }
 
+# FLEET-153: a done ship parked as a ready branch (ready_branch= and no pr=) stays terminal_in_flight, but its
+# endpoints row carries ready_branch_waiting and the child counts as waiting; a done child with a PR or neither still flags.
+test_home_summary_ready_branch_waiting_is_marked() {
+  local home fakebin out
+  home=$(make_home summary-ready-branch)
+  mkdir -p "$home/projects/ready"
+  fakebin=$(make_fakebin "$home")
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+- [ ] ready-ship - Parked ready branch (repo: alpha) (kind: ship) (since 2026-07-11)
+
+## Queued
+
+## Done
+EOF
+  write_ready_meta() {
+    fm_write_meta "$home/state/ready-ship.meta" \
+      "window=firstmate:fm-ready-ship" "worktree=$home/projects/ready" \
+      "project=alpha" "harness=claude" "kind=ship" "mode=no-mistakes" "$@"
+  }
+  assert_ready() {
+    out=$(PATH="$fakebin:$PATH" FM_HOME="$home" "$SNAPSHOT" --secondmate-home-summary)
+    printf '%s' "$out" | jq -e "$1" >/dev/null || fail "$2: $out"
+  }
+  record_claude_idle "$home/state" ready-ship
+  printf 'done [at=1000]: branch fm/ready-ship pushed, no PR\n' > "$home/state/ready-ship.status"
+  write_ready_meta "ready_branch=fm/ready-ship"
+  assert_ready '.endpoints[0].ready_branch_waiting == true and .valid == true and .invalidity.kind == null
+    and .waiting_on_merge == [{id:"ready-ship",pr:null,ready_branch:true}]' \
+    "a ready branch with no PR must be waiting, not terminal_in_flight"
+  write_ready_meta "ready_branch=fm/ready-ship" "pr=https://github.com/example/alpha/pull/4621"
+  assert_ready '.endpoints[0].ready_branch_waiting == false and .invalidity.kind == "terminal_in_flight"' \
+    "a ready branch with a PR must still flag"
+  write_ready_meta
+  assert_ready '.endpoints[0].ready_branch_waiting == false and .invalidity.kind == "terminal_in_flight"' \
+    "a done child with neither must still flag"
+  unset -f write_ready_meta assert_ready
+  pass "home-summary marks a parked ready branch as waiting"
+}
+
 # A done lane whose own backlog row carries a current external dispatch hold is a
 # declared wait (listed in waiting_on_merge), not terminal_in_flight.
 test_home_summary_external_hold_done_is_declared_wait() {
@@ -1763,6 +1803,7 @@ fm_test_run \
   test_home_summary_excludes_secondmate_from_child_inventory \
   test_home_summary_done_child_with_pr_is_waiting_on_merge \
   test_home_summary_parked_handoff_is_consistent \
+  test_home_summary_ready_branch_waiting_is_marked \
   test_home_summary_external_hold_done_is_declared_wait \
   test_home_summary_external_wait_in_flight_is_counted \
   test_home_summary_child_holds_count_survives_truncation \
