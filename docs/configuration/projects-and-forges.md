@@ -110,7 +110,7 @@ An unreadable declaration or GitHub reads as `unknown`, and the worker opens the
 An unreadable task record leaves no PR out as held, so every ready PR counts and the gate can hold.
 `config/open-pr-cap` holds one `<project> <cap>` line per project in the same format and is inherited the same way; a project that declares S and no cap line gets `min(2 x S, 16)`, and a project with no S has none.
 The cap counts eligible open PRs only, and the gate reports it as `open-PR cap reached`.
-A brief declaring one of these `bin/fm-brief.sh --pr-drain` classes carries no CI slots check: `production-outage`, `cve`, `security`, `lee-explicit`, and the landing jobs `restack`, `red-gate-fix`, `returned-pr-fix` and `review`, which open no new PR.
+A brief declaring one of these `bin/fm-brief.sh --pr-drain` classes carries no CI slots check: `production-outage`, `cve`, `security` (unless its Linear item loses the exemption, above), `lee-explicit`, and the landing jobs `restack`, `red-gate-fix`, `returned-pr-fix` and `review`, which open no new PR.
 The other drain classes (`wolverine`, `lee-research`, `officer`, `scheduled`) carry it, and a scout never does.
 A promoted scout's instructions carry it too.
 A malformed file makes the gate read `unknown`; it never refuses a spawn.
