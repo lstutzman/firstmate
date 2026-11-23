@@ -2239,6 +2239,61 @@ test_park_deadline_follows_the_registered_hook_timeout() {
   pass "auto-arm: the default park deadline is derived from the Stop hook timeout in .claude/settings.json"
 }
 
+# Warm-cache compaction from the host-off park (config/warm-compact with
+# no-host=1; bin/fm-warm-compact-lib.sh owns the guards). The fixture's backend
+# is a stub that records every submit, so a guard is proven by the absence of a
+# /compact; <config> is the warm-compact file's body, empty for no file.
+warm_compact_park() {  # <name> <config> <transcript age> <input+cache tokens> <composer>
+  local dir out status
+  dir=$(make_primary_dir "$TMP_ROOT/warm-$1")
+  : > "$dir/state/task.meta"
+  write_arm_fixture "$dir" park
+  cp "$ROOT/bin/fm-warm-compact-lib.sh" "$ROOT/bin/fm-supervisor-target-lib.sh" "$dir/bin/"
+  cat > "$dir/bin/fm-backend.sh" <<'SH'
+fm_backend_busy_state() { printf idle; }
+fm_backend_composer_state() { printf '%s' "${FM_TEST_COMPOSER:-empty}"; }
+fm_backend_send_text_submit() { printf 'submit %s %s %s\n' "$1" "$2" "$3" >> "$FM_HOME/state/compact-calls"; printf empty; }
+SH
+  [ -z "$2" ] || printf '%s\n' "$2" > "$dir/config/warm-compact"
+  printf '{"type":"assistant","message":{"usage":{"input_tokens":1,"cache_read_input_tokens":%s,"cache_creation_input_tokens":1}}}\n' "$4" > "$dir/transcript.jsonl"
+  touch -d "@$(($(date +%s) - $3))" "$dir/transcript.jsonl"
+  out=$(FM_TEST_COMPOSER=$5 FM_SUPERVISOR_TARGET=pane-1 FM_SUPERVISOR_BACKEND=herdr FM_WARM_COMPACT_TICK=1 FM_CLAUDE_AUTOARM_PARK_SECONDS=4 \
+    run_autoarm "$dir" "{\"session_id\":\"sess-autoarm\",\"transcript_path\":\"$dir/transcript.jsonl\"}" 2>&1); status=$?
+  expect_code 2 "$status" "the park still ends in its renewal rewake: $out"
+  assert_contains "$out" "park renewal" "the park ran to its deadline"
+  printf '%s\n' "$dir"
+}
+
+warm_compact_calls() { grep -c . "$1/state/compact-calls" 2>/dev/null || printf 0; }
+
+test_host_off_park_compacts_an_idle_primary_once() {
+  local dir
+  dir=$(warm_compact_park once 'no-host=1' 3000 90000 empty)
+  [ "$(warm_compact_calls "$dir")" = 1 ] || fail "a due idle primary is compacted once per park: $(cat "$dir/state/compact-calls" 2>&1)"
+  assert_equals 'submit herdr pane-1 /compact' "$(cat "$dir/state/compact-calls")" "/compact goes through the backend submit primitive"
+  pass "auto-arm: a host-off park compacts a due idle primary once through the backend submit primitive"
+}
+
+test_host_off_park_compaction_needs_the_no_host_opt_in() {
+  local dir
+  dir=$(warm_compact_park plain 'idle-seconds=60' 3000 90000 empty)
+  [ "$(warm_compact_calls "$dir")" = 0 ] || fail "the plain warm-compact file leaves the host-off park alone"
+  dir=$(warm_compact_park nofile '' 3000 90000 empty)
+  [ "$(warm_compact_calls "$dir")" = 0 ] || fail "no file, no compaction"
+  pass "auto-arm: without no-host=1 the host-off park never compacts"
+}
+
+test_host_off_park_compaction_keeps_every_guard() {
+  local dir
+  dir=$(warm_compact_park young 'no-host=1' 100 90000 empty)
+  [ "$(warm_compact_calls "$dir")" = 0 ] || fail "a transcript younger than the idle window is not compacted"
+  dir=$(warm_compact_park small 'no-host=1' 3000 1000 empty)
+  [ "$(warm_compact_calls "$dir")" = 0 ] || fail "a small context is not compacted"
+  dir=$(warm_compact_park composer 'no-host=1' 3000 90000 pending)
+  [ "$(warm_compact_calls "$dir")" = 0 ] || fail "a non-empty composer is never typed into"
+  pass "auto-arm: the host-off park holds back a young transcript, a small context and a non-empty composer"
+}
+
 test_wake_before_the_park_deadline_behaves_as_before() {
   local dir out status
   dir=$(make_primary_dir "$TMP_ROOT/park-wake-first")
@@ -2613,6 +2668,9 @@ test_host_off_flag_keeps_the_arm
 test_host_off_park_deadline_renews_with_a_clean_rewake
 test_park_deadline_follows_the_registered_hook_timeout
 test_wake_before_the_park_deadline_behaves_as_before
+test_host_off_park_compacts_an_idle_primary_once
+test_host_off_park_compaction_needs_the_no_host_opt_in
+test_host_off_park_compaction_keeps_every_guard
 test_quiet_ack_rearms_count_against_the_park_deadline
 test_host_on_ignores_the_park_deadline
 test_host_absent_flag_runs_the_host

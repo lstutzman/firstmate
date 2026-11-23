@@ -597,6 +597,37 @@ esac
 PARK_SECONDS=$((10#$PARK_SECONDS))
 PARK_DEADLINE=$(( $(date +%s) + PARK_SECONDS ))
 PARK_EXPIRED=0
+# Warm-cache compaction on a home with no supervision host (config/warm-compact
+# with no-host=1; bin/fm-warm-compact-lib.sh owns the guards and
+# docs/configuration/supervision.md "Warm-cache compaction" the gate). The park
+# is the primary's idle episode; at most once per hook process, checked every
+# WARM_COMPACT_TICK seconds, and only while this process still owns the claim.
+WARM_COMPACT_DONE=0
+WARM_COMPACT_NEXT=0
+WARM_COMPACT_TICK=${FM_WARM_COMPACT_TICK:-60}
+case "$WARM_COMPACT_TICK" in ''|0*|*[!0-9]*) WARM_COMPACT_TICK=60 ;; esac
+warm_compact_tick() {
+  local transcript verdict
+  [ "$WARM_COMPACT_DONE" -eq 0 ] && [ -f "$CONFIG/warm-compact" ] || return 0
+  [ "$SECONDS" -ge "$WARM_COMPACT_NEXT" ] || return 0
+  WARM_COMPACT_NEXT=$((SECONDS + WARM_COMPACT_TICK))
+  [ ! -e "$STATE/.afk" ] || return 0
+  fm_autoarm_still_owner "$STATE" "$MY_GEN" || return 0
+  transcript=$(printf '%s' "$PAYLOAD" | jq -r '.transcript_path // empty' 2>/dev/null || true)
+  [ -n "$transcript" ] || return 0
+  # The libraries load in a subshell so the backend's globals never reach this hook.
+  verdict=$(
+    # shellcheck source=bin/fm-warm-compact-lib.sh
+    . "$SCRIPT_DIR/fm-warm-compact-lib.sh"
+    fm_warm_compact_config "$CONFIG" && [ "$FM_WARM_COMPACT_NO_HOST" = 1 ] || { printf 'off\n'; exit 0; }
+    # shellcheck source=bin/fm-backend.sh
+    . "$SCRIPT_DIR/fm-backend.sh"
+    # shellcheck source=bin/fm-supervisor-target-lib.sh
+    . "$SCRIPT_DIR/fm-supervisor-target-lib.sh"
+    fm_warm_compact_stop_hook "$CONFIG" "$transcript"
+  ) || verdict=off
+  case "$verdict" in sent | failed) WARM_COMPACT_DONE=1 ;; esac
+}
 run_arm() {  # <output file, or empty for none>
   # The deadline spans every arm this process starts, so a quiet-ack re-arm
   # after it starts no arm at all.
@@ -616,6 +647,7 @@ run_arm() {  # <output file, or empty for none>
       kill -TERM "$ARM_PID" 2>/dev/null || true
       break
     fi
+    warm_compact_tick
     sleep 1
   done
   wait "$ARM_PID" || true

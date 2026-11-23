@@ -312,12 +312,14 @@ Compacting while the cache is still warm reads the old context at the read price
 The feature is off when the file is absent.
 The file is local to each home and is not inherited.
 The host reads it at every check, so creating or removing it needs no restart.
-It acts only on a home that runs the [supervision host](#supervision-host-configsupervision-host) beside a Claude primary, because the host's park is the primary's idle episode.
+By default it acts only on a home that runs the [supervision host](#supervision-host-configsupervision-host) beside a Claude primary, because the host's park is the primary's idle episode.
+A home with the host switched off (`config/supervision-host-off`) opts in to the same compaction with `no-host=1`: the Claude Stop hook's park then does what the host does for the primary, and the engine conversation does not exist there.
 
 The file may be empty or hold these lines, each optional:
 
 - `idle-seconds=<n>` is the idle time before a session is due (default 2700).
 - `min-context-tokens=<n>` is the context size below which a session is never due (default 80000).
+- `no-host=1` lets the Stop hook's park compact the primary on a home that runs no supervision host (default: off, so the plain file changes nothing there).
 
 Blank lines and lines that start with `#` are ignored, and an unusable value keeps its default.
 Context size is the last request's `input + cache_read + cache_creation` usage in the session's transcript.
@@ -325,19 +327,23 @@ Context size is the last request's `input + cache_read + cache_creation` usage i
 A session is compacted when all of these hold:
 
 - The home opted in.
-- The session has been idle for `idle-seconds`: the primary since its turn ended, the engine conversation since its last handled turn.
+- The session has been idle for `idle-seconds`: the primary since its turn ended (on the `no-host=1` path, since its transcript last changed, because one park can span several captain turns), the engine conversation since its last handled turn.
 - Its context is at least `min-context-tokens`.
 - It was not already compacted in this idle episode.
   The host remembers a primary compaction for one park.
+  On the `no-host=1` path the Stop hook process remembers it for its park.
   It records an engine compaction in the engine record, so a later host does not repeat it.
 - For the engine conversation, the next turn would resume it: the same engine, model, and prompt key, and below the rotation limit.
   An abandoned compaction is not recorded, so a later check retries it.
 - For the primary, the agent reads idle and the composer reads provably empty.
   A busy agent, a non-empty composer, or an unproven state defers the compaction; nothing is typed.
 
+The `no-host=1` path checks every minute while the hook's park runs, and only while that hook process still owns the watcher claim and no away record exists.
+A home with no work under way has no park, so it is never compacted by this path.
+
 The primary receives `/compact` through the backend's verified submit primitive (`fm_backend_send_text_submit`), the one the away-mode daemon injects through.
 The engine conversation receives `/compact` as one resumed, bounded headless turn.
-A compaction is housekeeping: it adds no wake, outcome, or close line, and it is recorded only in the host's log.
+A compaction is housekeeping: it adds no wake, outcome, or close line, and it is recorded only in the host's log (the `no-host=1` path records nothing).
 A compacted primary still picks up pending wakes and decisions from disk, because a wake is a record the next drain reads, not conversation state.
 
 This feature does not set `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` or any other autocompact setting.
