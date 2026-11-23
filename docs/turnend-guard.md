@@ -430,6 +430,7 @@ Claude drops that exit 2 when it terminated the hook at the configured timeout i
 A home that opts out of the supervision host therefore bounds the auto-arm's whole park, the first arm and every quiet-ack re-arm, by `FM_CLAUDE_AUTOARM_PARK_SECONDS`, which defaults to 1800 seconds under the `Stop` timeout in `.claude/settings.json`.
 At that deadline the hook ends the arm and exits 2 with a one-line park renewal that leads the model to drain and end its turn, and the next `Stop` re-arms.
 This is a routine renewal: it records a clean outcome and raises no failure notice, attended alarm or interruption.
+While it parks, a home that opts in with `no-host=1` also compacts an idle primary once ([warm-cache compaction](configuration/supervision.md#warm-cache-compaction-configwarm-compact) owns the gate and guards).
 
 The first fresh exhausted-failure epoch preserves its handoff without consuming a blocked-stop count.
 Later fresh failed epochs advance the same monotonic progression instead of resetting it.

@@ -87,6 +87,11 @@
 #     retried instead of being judged by the healthy-watcher predicate
 #     (docs/supervision-host.md). On a home that opted out nothing below
 #     changes.
+#   - Warm-cache compaction: a home with no supervision host that opts in with
+#     no-host=1 in config/warm-compact has this park type /compact into an idle
+#     primary once, through the backend submit primitive and the guards in
+#     bin/fm-warm-compact-lib.sh (docs/configuration/supervision.md "Warm-cache
+#     compaction" owns the gate). Idle is the transcript's age.
 #   - No-wake path: on a home that does not run the supervision host and keeps
 #     config/wake-auto-ack, an actionable close first runs
 #     `bin/fm-wake-drain.sh --quiet-ack`. When it acknowledged a batch of only

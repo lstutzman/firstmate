@@ -2256,7 +2256,7 @@ fm_backend_send_text_submit() { printf 'submit %s %s %s\n' "$1" "$2" "$3" >> "$F
 SH
   [ -z "$2" ] || printf '%s\n' "$2" > "$dir/config/warm-compact"
   printf '{"type":"assistant","message":{"usage":{"input_tokens":1,"cache_read_input_tokens":%s,"cache_creation_input_tokens":1}}}\n' "$4" > "$dir/transcript.jsonl"
-  touch -d "@$(($(date +%s) - $3))" "$dir/transcript.jsonl"
+  fm_touch_epoch "$(($(date +%s) - $3))" "$dir/transcript.jsonl"
   out=$(FM_TEST_COMPOSER=$5 FM_SUPERVISOR_TARGET=pane-1 FM_SUPERVISOR_BACKEND=herdr FM_WARM_COMPACT_TICK=1 FM_CLAUDE_AUTOARM_PARK_SECONDS=4 \
     run_autoarm "$dir" "{\"session_id\":\"sess-autoarm\",\"transcript_path\":\"$dir/transcript.jsonl\"}" 2>&1); status=$?
   expect_code 2 "$status" "the park still ends in its renewal rewake: $out"

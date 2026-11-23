@@ -141,7 +141,7 @@ test_config_tunables() {
 }
 
 stop_hook() {  # <transcript age in seconds>
-  touch -d "@$(($(date +%s) - $1))" "$TMP_ROOT/t.jsonl"
+  fm_touch_epoch "$(($(date +%s) - $1))" "$TMP_ROOT/t.jsonl"
   FM_SUPERVISOR_TARGET=sess:pane FM_SUPERVISOR_BACKEND=herdr fm_warm_compact_stop_hook "$CONFIG" "$TMP_ROOT/t.jsonl"
 }
 
@@ -188,7 +188,7 @@ test_stop_hook_guards_still_apply() {
 
 test_transcript_idle_is_the_file_age() {
   no_host_reset
-  touch -d "@$(($(date +%s) - 120))" "$TMP_ROOT/t.jsonl"
+  fm_touch_epoch "$(($(date +%s) - 120))" "$TMP_ROOT/t.jsonl"
   idle=$(fm_warm_compact_transcript_idle "$TMP_ROOT/t.jsonl")
   [ "$idle" -ge 120 ] && [ "$idle" -le 125 ] || fail "idle $idle is not the transcript age (about 120)"
   pass 'transcript idle is the file age'
