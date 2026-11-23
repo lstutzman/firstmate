@@ -342,6 +342,7 @@ The `no-host=1` path checks every minute while the hook's park runs, and only wh
 A home with no work under way has no park, so it is never compacted by this path.
 A live lab run on 2026-11-23 proved both properties of the `no-host=1` path on Claude Code 2.1.330: the Stop hook survives the `/compact` it types into its own primary and ends its park in the ordinary clean renewal, and the transcript does not change while the hook parks.
 The [verification record](../verification/supervision.md#claude-warm-cache-compaction-from-the-host-off-park-2026-11-23) holds the evidence and what it did not check.
+That proof is one live lab run on Claude Code 2.1.330 and no repeatable test re-proves it, so after a Claude Code version bump rerun the [record's lab steps](../verification/supervision.md#claude-warm-cache-compaction-from-the-host-off-park-2026-11-23); the sign of a regression is a false `auto-arm INTERRUPTED` notice from a home that has opted in.
 
 The primary receives `/compact` through the backend's verified submit primitive (`fm_backend_send_text_submit`), the one the away-mode daemon injects through.
 The engine conversation receives `/compact` as one resumed, bounded headless turn.
