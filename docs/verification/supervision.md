@@ -1103,3 +1103,96 @@ Not checked, so not claimed:
 - A full recovery against a live stalled crew.
 
 The rendered prompt the signature was first written from is nikzorz/firstmate commit 100698b12's capture of an older build (2026-07-29), which has the long stop label and no time-bearing row.
+
+## Claude warm-cache compaction from the host-off park (2026-11-23)
+
+This record supports the `no-host=1` path of [warm-cache compaction](../configuration/supervision.md#warm-cache-compaction-configwarm-compact): the Claude Stop hook (`bin/fm-claude-stop-autoarm.sh`) types `/compact` into its own primary while it parks on a home with `config/supervision-host-off`.
+Two properties had to hold on a real session.
+The running async Stop hook must survive the `/compact` it triggers, because a TERM during compaction would run `handle_autoarm_signal` and raise a false `auto-arm INTERRUPTED` failure notice.
+The primary's transcript must not change while the hook parks, because the idle signal is the transcript's age.
+`bin/fm-warm-compact-lib.sh` owns the guards.
+
+The run used Claude Code 2.1.330, Herdr 0.9.5 and the model `haiku`, on Linux, with the machine's normal login.
+It ran in a disposable lab home (`bin/fm-lab-home.sh create`) holding a copy of this checkout, inside the named Herdr lab session `fm-lab-idle-compact-liv-2112272-20325` that `bin/fm-herdr-lab.sh` provisioned and tore down.
+The lab home carried these local files:
+
+```sh
+: > config/supervision-host-off
+printf 'idle-seconds=45\nmin-context-tokens=5000\nno-host=1\n' > config/warm-compact
+printf 'project=demo\nwindow=fm-demo\nharness=claude\n' > state/demo.meta   # work under way, so the hook parks
+: > state/demo.status
+```
+
+The pane's shell exported `FM_WARM_COMPACT_TICK=5`, `FM_CLAUDE_AUTOARM_PARK_SECONDS=300` and the lab's `HERDR_SESSION`, wrote its own pid to `state/.lock`, and ran `exec claude --model haiku --effort low --dangerously-skip-permissions`.
+The thresholds are short so the run takes minutes; the guards are the ones the shipped path uses.
+No away record existed.
+A one-line prompt told the primary to reply `READY`, and later to drain and acknowledge each `Stop hook feedback` wake with `bin/fm-wake-drain.sh` and reply `ACKED`.
+
+A background loop sampled, twice a second and with timestamps, the processes whose command line holds the lab's `bin/` path (`ps -eo pid=,ppid=,stat=,etimes=,args=`), the transcript's mtime and size (`stat -c '%.3Y' %s`), the transcript's `compact_boundary` count (`jq`), and the `state/.claude-autoarm-*` files.
+All times below are UTC on 2026-11-23.
+
+### Observed
+
+The first Stop hook (pid 2133533, epoch 1) closed after 2 seconds with `outcome=rewake` on a `signal:` wake for the lab's `state/demo.status`, which is unrelated to compaction.
+The primary drained, replied `ACKED` at 13:59:09.320, and its next Stop started the park under test:
+
+```text
+13:59:09.506  first sighting of pid 2149250 (fm-claude-stop-autoarm.sh, ppid=2113483, the primary)
+13:59:10.417  its fm-watch-arm.sh child, pid 2149850
+13:59:10.582  .claude-autoarm-epoch: epoch=2 owner_pid=2149250 outcome=arming
+```
+
+Compaction happened inside that park:
+
+```text
+13:59:09.426  transcript mtime (last write before the park's idle)
+13:59:54.778Z transcript record: user <command-name>/compact</command-name>
+13:59:54.991  transcript mtime changes (size 736275 -> 736511): the typed /compact
+14:00:06.252Z transcript record: system compact_boundary "Conversation compacted"
+14:00:06.351Z transcript record: <local-command-stdout>Compacted (ctrl+o to see full summary)... PostCompact [~/.claude/hooks/post-compact.sh] completed successfully
+```
+
+Case 1, the hook survives its `/compact`: pid 2149250 was sampled alive from 13:59:09 through 14:04:06, across the compaction at 13:59:54 to 14:00:06.
+It was never replaced and never exited early.
+The screen log (a visible-pane read every 5 seconds) and the transcript hold no text `INTERRUPTED` (`grep -c INTERRUPTED` on both: 0), and `state/.claude-autoarm-failure-notified` did not exist during the park.
+The hook ended at the park deadline, 300 seconds after it started:
+
+```text
+14:04:10.134  .claude-autoarm-epoch: epoch=2 owner_pid=2149250 outcome=clean updated_at=1795442650
+14:04:10.104Z transcript record: Stop hook feedback "firstmate watcher park renewal - the Stop-owned park reached its 300s limit, under the Stop hook timeout. Run bin/fm-wake-drain.sh --summary, ..."
+14:04:14.875Z assistant: ACKED
+14:04:14.943  new hook pid 2817704 (epoch 3, outcome=arming at 14:04:15.502)
+```
+
+So the park ended in its ordinary clean renewal: outcome `clean`, one renewal line, no failure notice, and the next Stop armed the next park.
+The compaction itself raised no wake, outcome or close line.
+
+A second park (pid 2817704) typed `/compact` again at 14:05:01.426Z and compacted at 14:05:14.916Z, and the pid stayed alive until the run's own teardown at 14:09:07.
+That repeat is expected here: the compacted context stays at about 81,800 tokens because the lab's fixed startup context (instructions and rules) alone exceeds the lab's `min-context-tokens=5000`, and a new hook process starts a new idle episode.
+Context before the first compaction was 80,240 tokens at the first park and 81,482 at the last request before the compaction; after it, the next request read 81,819.
+
+Case 2, nothing writes to the transcript while the hook parks:
+
+| Park | Park start (transcript mtime) | Next transcript write | Quiet interval |
+|---|---|---|---|
+| 1 | 13:59:09.426 | 13:59:54.991 (the hook's `/compact`) | 45.6 s |
+| 1, after compaction | 14:00:06.374 | 14:04:10.334 (the renewal wake) | 243.96 s |
+| 2 | 14:04:15.063 | 14:05:01.523 (the hook's `/compact`) | 46.5 s |
+
+In each park the first write after the quiet interval is the hook's own `/compact`, or the renewal wake the hook delivered.
+Nothing else wrote, so the transcript-age idle signal read the park's true idle time, and each `/compact` fired on the first 5-second tick after the 45-second idle window.
+
+### Teardown artifact
+
+The run's driver script had a bug in its own wait on the compaction boundary, so it gave up after 10 minutes and tore the lab down at 14:09:10.
+Killing the lab watcher then made the second hook raise `state/.claude-autoarm-failure-notified` at 14:09:11.217, nine minutes after the compaction.
+That file is an effect of the teardown and not of `/compact`; the compactions at 14:00 and 14:05 left no such file, as the `state/.claude-autoarm-*` samples show.
+Afterward `herdr session list --json` showed the lab session gone and the `default` and `fm-remote` fleet sessions still running.
+
+### Not checked, so not claimed
+
+- Other Claude Code versions, other models, and other platforms than this Linux run.
+- A park that spans several captain turns in a real home, and a real primary with background work that could write to its transcript while parked.
+  The lab primary had none, and the shipped path reads the transcript's age at every tick, so such a write only postpones a compaction.
+- Whether Claude sends TERM to async hooks at some other point of a compaction, such as a compaction that fails or runs longer than the 12 seconds observed.
+- The default thresholds (`idle-seconds=2700`, `min-context-tokens=80000`); the run used 45 seconds and 5000 tokens.
