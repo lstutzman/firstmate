@@ -340,6 +340,9 @@ A session is compacted when all of these hold:
 
 The `no-host=1` path checks every minute while the hook's park runs, and only while that hook process still owns the watcher claim and no away record exists.
 A home with no work under way has no park, so it is never compacted by this path.
+The `no-host=1` path is unproven on a live Claude session.
+Two cases are still open: whether the Stop hook survives the `/compact` it types into its own primary, and whether the transcript stays unchanged while the hook parks.
+No home should opt in to `no-host=1` until a live lab run proves both cases.
 
 The primary receives `/compact` through the backend's verified submit primitive (`fm_backend_send_text_submit`), the one the away-mode daemon injects through.
 The engine conversation receives `/compact` as one resumed, bounded headless turn.

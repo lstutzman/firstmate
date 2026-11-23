@@ -2242,12 +2242,19 @@ test_park_deadline_follows_the_registered_hook_timeout() {
 # Warm-cache compaction from the host-off park (config/warm-compact with
 # no-host=1; bin/fm-warm-compact-lib.sh owns the guards). The fixture's backend
 # is a stub that records every submit, so a guard is proven by the absence of a
-# /compact; <config> is the warm-compact file's body, empty for no file.
-warm_compact_park() {  # <name> <config> <transcript age> <input+cache tokens> <composer>
+# /compact; <config> is the warm-compact file's body, empty for no file. An
+# optional <arm step> runs inside the arm as it starts, after the hook's own
+# start-up checks; the park's exit is then not asserted.
+warm_compact_park() {  # <name> <config> <transcript age> <input+cache tokens> <composer> [arm step]
   local dir out status
   dir=$(make_primary_dir "$TMP_ROOT/warm-$1")
   : > "$dir/state/task.meta"
   write_arm_fixture "$dir" park
+  if [ -n "${6:-}" ]; then
+    { sed '$d' "$dir/bin/fm-watch-arm.sh"; printf '%s\nexec sleep 60\n' "$6"; } > "$dir/bin/fm-watch-arm.sh.new"
+    mv "$dir/bin/fm-watch-arm.sh.new" "$dir/bin/fm-watch-arm.sh"
+    chmod +x "$dir/bin/fm-watch-arm.sh"
+  fi
   cp "$ROOT/bin/fm-warm-compact-lib.sh" "$ROOT/bin/fm-supervisor-target-lib.sh" "$dir/bin/"
   cat > "$dir/bin/fm-backend.sh" <<'SH'
 fm_backend_busy_state() { printf idle; }
@@ -2259,8 +2266,10 @@ SH
   fm_touch_epoch "$(($(date +%s) - $3))" "$dir/transcript.jsonl"
   out=$(FM_TEST_COMPOSER=$5 FM_SUPERVISOR_TARGET=pane-1 FM_SUPERVISOR_BACKEND=herdr FM_WARM_COMPACT_TICK=1 FM_CLAUDE_AUTOARM_PARK_SECONDS=4 \
     run_autoarm "$dir" "{\"session_id\":\"sess-autoarm\",\"transcript_path\":\"$dir/transcript.jsonl\"}" 2>&1); status=$?
-  expect_code 2 "$status" "the park still ends in its renewal rewake: $out"
-  assert_contains "$out" "park renewal" "the park ran to its deadline"
+  if [ -z "${6:-}" ]; then
+    expect_code 2 "$status" "the park still ends in its renewal rewake: $out"
+    assert_contains "$out" "park renewal" "the park ran to its deadline"
+  fi
   printf '%s\n' "$dir"
 }
 
@@ -2292,6 +2301,22 @@ test_host_off_park_compaction_keeps_every_guard() {
   dir=$(warm_compact_park composer 'no-host=1' 3000 90000 pending)
   [ "$(warm_compact_calls "$dir")" = 0 ] || fail "a non-empty composer is never typed into"
   pass "auto-arm: the host-off park holds back a young transcript, a small context and a non-empty composer"
+}
+
+# The transcript turns due two seconds into the park, after the arm's step has
+# run, so the control case proves the same park would otherwise compact.
+test_host_off_park_compaction_stops_for_away_mode_and_a_lost_claim() {
+  local dir cfg
+  cfg=$(printf 'no-host=1\nidle-seconds=2')
+  dir=$(warm_compact_park late-control "$cfg" 0 90000 empty ':')
+  [ "$(warm_compact_calls "$dir")" = 1 ] || fail "a park whose transcript turns due mid-park is compacted"
+  dir=$(warm_compact_park afk "$cfg" 0 90000 empty ': > "$FM_HOME/state/.afk"')
+  [ "$(warm_compact_calls "$dir")" = 0 ] || fail "an away record that appears mid-park stops the compaction"
+  dir=$(warm_compact_park takeover "$cfg" 0 90000 empty \
+    'sed -i "1s/\(^\| \)epoch=[0-9]*/\1epoch=999999/" "$FM_HOME/state/.claude-autoarm-epoch"')
+  [ "$(epoch_field "$dir" epoch)" = 999999 ] || fail "the takeover step did not rewrite the ledger generation"
+  [ "$(warm_compact_calls "$dir")" = 0 ] || fail "a hook that lost the claim never types /compact"
+  pass "auto-arm: the host-off park does not compact once an away record exists or another generation owns the claim"
 }
 
 test_wake_before_the_park_deadline_behaves_as_before() {
@@ -2671,6 +2696,7 @@ test_wake_before_the_park_deadline_behaves_as_before
 test_host_off_park_compacts_an_idle_primary_once
 test_host_off_park_compaction_needs_the_no_host_opt_in
 test_host_off_park_compaction_keeps_every_guard
+test_host_off_park_compaction_stops_for_away_mode_and_a_lost_claim
 test_quiet_ack_rearms_count_against_the_park_deadline
 test_host_on_ignores_the_park_deadline
 test_host_absent_flag_runs_the_host
