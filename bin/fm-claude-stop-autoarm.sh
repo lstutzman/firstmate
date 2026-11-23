@@ -620,17 +620,15 @@ warm_compact_tick() {
   fm_autoarm_still_owner "$STATE" "$MY_GEN" || return 0
   transcript=$(printf '%s' "$PAYLOAD" | jq -r '.transcript_path // empty' 2>/dev/null || true)
   [ -n "$transcript" ] || return 0
-  # The libraries load in a subshell so the backend's globals never reach this hook.
-  verdict=$(
-    # shellcheck source=bin/fm-warm-compact-lib.sh
-    . "$SCRIPT_DIR/fm-warm-compact-lib.sh"
-    fm_warm_compact_config "$CONFIG" && [ "$FM_WARM_COMPACT_NO_HOST" = 1 ] || { printf 'off\n'; exit 0; }
-    # shellcheck source=bin/fm-backend.sh
-    . "$SCRIPT_DIR/fm-backend.sh"
-    # shellcheck source=bin/fm-supervisor-target-lib.sh
-    . "$SCRIPT_DIR/fm-supervisor-target-lib.sh"
-    fm_warm_compact_stop_hook "$CONFIG" "$transcript"
-  ) || verdict=off
+  # A child bash loads the libraries so the backend's globals never reach this hook.
+  verdict=$(bash -c '
+    d=$1 cfg=$2 tr=$3
+    . "$d/fm-warm-compact-lib.sh"
+    fm_warm_compact_config "$cfg" && [ "$FM_WARM_COMPACT_NO_HOST" = 1 ] || { printf "off\n"; exit 0; }
+    . "$d/fm-backend.sh"
+    . "$d/fm-supervisor-target-lib.sh"
+    fm_warm_compact_stop_hook "$cfg" "$tr"
+  ' warm-compact "$SCRIPT_DIR" "$CONFIG" "$transcript") || verdict=off
   case "$verdict" in sent | failed) WARM_COMPACT_DONE=1 ;; esac
 }
 run_arm() {  # <output file, or empty for none>
