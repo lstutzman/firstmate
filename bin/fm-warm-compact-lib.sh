@@ -4,6 +4,9 @@
 #
 # Sourced, never executed. The supervision host (bin/fm-supervision-host.sh)
 # calls it while it is parked, so the trigger lives on the Claude adapter path.
+# A home with the host switched off calls fm_warm_compact_stop_hook from the
+# Claude Stop hook's park instead (bin/fm-claude-stop-autoarm.sh), when it opts
+# in with no-host=1.
 # docs/configuration/supervision.md "Warm-cache compaction" owns the home gate and its
 # tunables.
 #
@@ -16,6 +19,8 @@
 # its optional lines are
 #   idle-seconds=<n>          idle time before a session is due (default 2700)
 #   min-context-tokens=<n>    context size below which no session is due (80000)
+#   no-host=1                 also act from the Stop hook's park on a home that
+#                             runs no supervision host (default: only the host acts)
 # Blank lines and lines starting with # are ignored; an unusable value keeps
 # its default.
 #
@@ -40,13 +45,15 @@ FM_WARM_COMPACT_IDLE_DEFAULT=2700
 FM_WARM_COMPACT_MIN_DEFAULT=80000
 FM_WARM_COMPACT_ENGINE_TIMEOUT_DEFAULT=300
 
-# fm_warm_compact_config <config-dir>: succeed and set FM_WARM_COMPACT_IDLE and
-# FM_WARM_COMPACT_MIN when the home opted in; fail when it did not.
+# fm_warm_compact_config <config-dir>: succeed and set FM_WARM_COMPACT_IDLE,
+# FM_WARM_COMPACT_MIN and FM_WARM_COMPACT_NO_HOST when the home opted in; fail
+# when it did not.
 fm_warm_compact_config() {
   local file=$1/warm-compact line key value
   [ -f "$file" ] || return 1
   FM_WARM_COMPACT_IDLE=$FM_WARM_COMPACT_IDLE_DEFAULT
   FM_WARM_COMPACT_MIN=$FM_WARM_COMPACT_MIN_DEFAULT
+  FM_WARM_COMPACT_NO_HOST=0
   while IFS= read -r line || [ -n "$line" ]; do
     key=${line%%=*}
     value=${line#*=}
@@ -54,6 +61,7 @@ fm_warm_compact_config() {
     case "$key" in
       idle-seconds) FM_WARM_COMPACT_IDLE=$value ;;
       min-context-tokens) FM_WARM_COMPACT_MIN=$value ;;
+      no-host) [ "$value" != 1 ] || FM_WARM_COMPACT_NO_HOST=1 ;;
     esac
   done < "$file"
   return 0
@@ -104,6 +112,35 @@ fm_warm_compact_primary() {
   else
     printf 'failed\n'
   fi
+}
+
+# fm_warm_compact_transcript_idle <transcript>: print the seconds since the
+# transcript last changed (the session's last message), or nothing when it
+# cannot be read.
+fm_warm_compact_transcript_idle() {
+  local transcript=$1 mtime
+  [ -r "$transcript" ] || return 1
+  mtime=$(stat -c %Y "$transcript" 2>/dev/null || stat -f %m "$transcript" 2>/dev/null) || return 1
+  case "$mtime" in '' | *[!0-9]*) return 1 ;; esac
+  printf '%s\n' $(($(date +%s) - mtime))
+}
+
+# fm_warm_compact_stop_hook <config-dir> <transcript>
+# prints the verdict words of fm_warm_compact_primary, plus off when the home
+# did not opt in to no-host=1. The Stop hook's park of a home with no
+# supervision host calls it; it needs fm-backend.sh and
+# fm-supervisor-target-lib.sh sourced. Idle is the transcript's age, not the
+# park's, because one park outlives the turns a captain adds. The caller marks
+# the episode on "sent" and "failed" and skips the call after that.
+fm_warm_compact_stop_hook() {
+  local config=$1 transcript=$2 idle target backend
+  fm_warm_compact_config "$config" && [ "$FM_WARM_COMPACT_NO_HOST" = 1 ] || { printf 'off\n'; return 0; }
+  idle=$(fm_warm_compact_transcript_idle "$transcript")
+  if ! target=$(discover_supervisor_target) || ! backend=$(discover_supervisor_backend); then
+    printf 'off\n'
+    return 0
+  fi
+  fm_warm_compact_primary "$config" "$backend" "$target" "$idle" "$transcript" 0
 }
 
 # fm_warm_compact_engine_transcript <session-id>: print the engine

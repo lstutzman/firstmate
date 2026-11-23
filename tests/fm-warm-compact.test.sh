@@ -19,6 +19,8 @@ command -v jq >/dev/null 2>&1 || { printf 'skip: jq absent\n'; exit 0; }
 . "$ROOT/bin/fm-supervision-engine-lib.sh"
 # shellcheck source=bin/fm-warm-compact-lib.sh
 . "$ROOT/bin/fm-warm-compact-lib.sh"
+# shellcheck source=bin/fm-supervisor-target-lib.sh
+. "$ROOT/bin/fm-supervisor-target-lib.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-warm-compact)
 CONFIG="$TMP_ROOT/config"
@@ -138,6 +140,60 @@ test_config_tunables() {
   pass 'config tunables'
 }
 
+stop_hook() {  # <transcript age in seconds>
+  fm_touch_epoch "$(($(date +%s) - $1))" "$TMP_ROOT/t.jsonl"
+  FM_SUPERVISOR_TARGET=sess:pane FM_SUPERVISOR_BACKEND=herdr fm_warm_compact_stop_hook "$CONFIG" "$TMP_ROOT/t.jsonl"
+}
+
+no_host_reset() {
+  reset
+  printf 'no-host=1\n' > "$CONFIG/warm-compact"
+}
+
+test_stop_hook_compacts_an_idle_primary_when_the_home_opted_in() {
+  no_host_reset
+  assert_equals sent "$(stop_hook 2701)" 'an idle primary on a home with no-host=1 is compacted'
+  assert_equals 'submit herdr sess:pane /compact' "$(cat "$CALLS")" 'one /compact through the backend submit primitive'
+  pass 'stop-hook path compacts once opted in'
+}
+
+test_stop_hook_path_is_off_without_the_no_host_line() {
+  reset
+  assert_equals off "$(stop_hook 99999)" 'the plain warm-compact file leaves the host-off path alone'
+  printf 'no-host=0\nno-host=abc\n' > "$CONFIG/warm-compact"
+  assert_equals off "$(stop_hook 99999)" 'an unusable no-host value keeps it off'
+  rm -f "$CONFIG/warm-compact"
+  assert_equals off "$(stop_hook 99999)" 'no file keeps it off'
+  assert_equals 0 "$(submits)" 'nothing typed without no-host=1'
+  pass 'stop-hook path default off'
+}
+
+test_stop_hook_guards_still_apply() {
+  no_host_reset
+  assert_equals young "$(stop_hook 2699)" 'a transcript younger than the idle window is held back'
+  assert_equals young "$(FM_SUPERVISOR_TARGET=sess:pane FM_SUPERVISOR_BACKEND=herdr fm_warm_compact_stop_hook "$CONFIG" "$TMP_ROOT/missing.jsonl")" 'an unreadable transcript is never idle'
+  transcript "$TMP_ROOT/t.jsonl" 10 40000 5000
+  assert_equals small "$(stop_hook 99999)" 'a small context is held back'
+  transcript "$TMP_ROOT/t.jsonl" 10 90000 5000
+  COMPOSER=pending
+  assert_equals composer "$(stop_hook 99999)" 'a non-empty composer is held back'
+  COMPOSER=empty
+  BUSY=busy
+  assert_equals busy "$(stop_hook 99999)" 'a busy agent is held back'
+  BUSY=idle
+  assert_equals episode "$(fm_warm_compact_primary "$CONFIG" herdr sess:pane 99999 "$TMP_ROOT/t.jsonl" 1)" 'an already compacted episode is held back'
+  assert_equals 0 "$(submits)" 'no guard let a /compact through'
+  pass 'stop-hook path guards'
+}
+
+test_transcript_idle_is_the_file_age() {
+  no_host_reset
+  fm_touch_epoch "$(($(date +%s) - 120))" "$TMP_ROOT/t.jsonl"
+  idle=$(fm_warm_compact_transcript_idle "$TMP_ROOT/t.jsonl")
+  [ "$idle" -ge 120 ] && [ "$idle" -le 125 ] || fail "idle $idle is not the transcript age (about 120)"
+  pass 'transcript idle is the file age'
+}
+
 STUB="$TMP_ROOT/claude-stub"
 cat > "$STUB" <<'SH'
 #!/usr/bin/env bash
@@ -183,3 +239,7 @@ test_one_compaction_per_idle_episode
 test_failed_submit_is_reported
 test_config_tunables
 test_engine_conversation_is_compacted_by_resume
+test_stop_hook_compacts_an_idle_primary_when_the_home_opted_in
+test_stop_hook_path_is_off_without_the_no_host_line
+test_stop_hook_guards_still_apply
+test_transcript_idle_is_the_file_age

@@ -87,6 +87,11 @@
 #     retried instead of being judged by the healthy-watcher predicate
 #     (docs/supervision-host.md). On a home that opted out nothing below
 #     changes.
+#   - Warm-cache compaction: a home with no supervision host that opts in with
+#     no-host=1 in config/warm-compact has this park type /compact into an idle
+#     primary once, through the backend submit primitive and the guards in
+#     bin/fm-warm-compact-lib.sh (docs/configuration/supervision.md "Warm-cache
+#     compaction" owns the gate). Idle is the transcript's age.
 #   - No-wake path: on a home that does not run the supervision host and keeps
 #     config/wake-auto-ack, an actionable close first runs
 #     `bin/fm-wake-drain.sh --quiet-ack`. When it acknowledged a batch of only
@@ -597,6 +602,35 @@ esac
 PARK_SECONDS=$((10#$PARK_SECONDS))
 PARK_DEADLINE=$(( $(date +%s) + PARK_SECONDS ))
 PARK_EXPIRED=0
+# Warm-cache compaction on a home with no supervision host (config/warm-compact
+# with no-host=1; bin/fm-warm-compact-lib.sh owns the guards and
+# docs/configuration/supervision.md "Warm-cache compaction" the gate). The park
+# is the primary's idle episode; at most once per hook process, checked every
+# WARM_COMPACT_TICK seconds, and only while this process still owns the claim.
+WARM_COMPACT_DONE=0
+WARM_COMPACT_NEXT=0
+WARM_COMPACT_TICK=${FM_WARM_COMPACT_TICK:-60}
+case "$WARM_COMPACT_TICK" in ''|0*|*[!0-9]*) WARM_COMPACT_TICK=60 ;; esac
+warm_compact_tick() {
+  local transcript verdict
+  [ "$WARM_COMPACT_DONE" -eq 0 ] && [ -f "$CONFIG/warm-compact" ] || return 0
+  [ "$SECONDS" -ge "$WARM_COMPACT_NEXT" ] || return 0
+  WARM_COMPACT_NEXT=$((SECONDS + WARM_COMPACT_TICK))
+  [ ! -e "$STATE/.afk" ] || return 0
+  fm_autoarm_still_owner "$STATE" "$MY_GEN" || return 0
+  transcript=$(printf '%s' "$PAYLOAD" | jq -r '.transcript_path // empty' 2>/dev/null || true)
+  [ -n "$transcript" ] || return 0
+  # A child bash loads the libraries so the backend's globals never reach this hook.
+  verdict=$(bash -c '
+    d=$1 cfg=$2 tr=$3
+    . "$d/fm-warm-compact-lib.sh"
+    fm_warm_compact_config "$cfg" && [ "$FM_WARM_COMPACT_NO_HOST" = 1 ] || { printf "off\n"; exit 0; }
+    . "$d/fm-backend.sh"
+    . "$d/fm-supervisor-target-lib.sh"
+    fm_warm_compact_stop_hook "$cfg" "$tr"
+  ' warm-compact "$SCRIPT_DIR" "$CONFIG" "$transcript") || verdict=off
+  case "$verdict" in sent | failed) WARM_COMPACT_DONE=1 ;; esac
+}
 run_arm() {  # <output file, or empty for none>
   # The deadline spans every arm this process starts, so a quiet-ack re-arm
   # after it starts no arm at all.
@@ -616,6 +650,7 @@ run_arm() {  # <output file, or empty for none>
       kill -TERM "$ARM_PID" 2>/dev/null || true
       break
     fi
+    warm_compact_tick
     sleep 1
   done
   wait "$ARM_PID" || true
