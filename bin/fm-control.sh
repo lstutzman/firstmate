@@ -1477,7 +1477,7 @@ pending_match_doorbell() {  # <content>
     [ "$n" -le "$PENDING_INLINE_RECORDS" ] || break
     if [ "$held" = "$(pending_squash "$candidate")" ]; then
       PENDING_LINE=$candidate
-      PENDING_KIND=inline-steer
+      PENDING_KIND='inline-steer'
       PENDING_RECORD=$rec
       return 0
     fi
