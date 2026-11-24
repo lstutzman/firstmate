@@ -1245,6 +1245,147 @@ test_wedge_threshold_skips_a_parked_ready_branch() {
   pass "a parked ready branch's wedge alarm is skipped, and a held or steered one still alarms"
 }
 
+# Point a task record's pr= line at <url>, keeping it the record's last line.
+set_recorded_pr() {  # <meta> <url>
+  { grep -v '^pr=' "$1"; printf 'pr=%s\n' "$2"; } > "$1.new" && mv "$1.new" "$1"
+}
+
+# A merge-watched fixture: the landing fixture's finished ship and recorded PR,
+# with no handoff (this home is its own merger, as Slarti is for PropertyCompass2)
+# and, unless <poll> is "none", the merge poll that bin/fm-pr-check.sh publishes
+# for it, written through the same library calls so its registration is genuine.
+# <poll> "other" arms the poll for a different PR than the one the record names.
+merge_watched_fixture() {  # <name> [poll]
+  local dir state url="https://github.com/o/fleet-app/pull/148" polled
+  dir=$(landing_fixture "$1" none)
+  state="$dir/state"
+  case "${2:-armed}" in
+    none) ;;
+    other) polled=https://github.com/o/fleet-app/pull/149 ;;
+    *) polled=$url ;;
+  esac
+  if [ "${2:-armed}" != none ]; then
+    # The library refuses a poll that disagrees with the record, so a poll for
+    # another PR is published while the record names it, then the record is
+    # put back, as a re-recorded PR would leave it.
+    [ "${2:-armed}" != other ] || set_recorded_pr "$state/wedge.meta" "$polled"
+    (
+      # shellcheck source=/dev/null
+      . "$ROOT/bin/fm-pr-lib.sh"
+      fm_pr_poll_prepare "$state" wedge github "$polled" github.com o/fleet-app "${polled##*/}" "$ROOT/bin/fm-pr-poll.sh" \
+        && fm_pr_poll_publish_prepared
+    ) || return 1
+    [ "${2:-armed}" != other ] || set_recorded_pr "$state/wedge.meta" "$url"
+  fi
+  printf '%s\n' "$dir"
+}
+
+test_wedge_skips_a_finished_lane_whose_merge_poll_is_armed() {
+  local dir state fakebin out capture window key idle n
+  local working='state: working · source: run-step · ci running'
+  idle='state: done · source: status-log'
+  window="test:fm-wedge"; key=$(watch_window_key "$window")
+
+  # The repeated wake: a finished, unhandled-by-anyone ready PR with its merge poll armed.
+  dir=$(merge_watched_fixture merge-watched) || fail "could not arm a merge poll fixture"
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  n=1
+  while [ "$n" -le 3 ]; do
+    wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" absorb \
+      || fail "a merge-watched lane woke the watcher at threshold $n: $(cat "$out")"
+    n=$((n + 1))
+  done
+  [ "$(wedge_stale_wakes "$state" "$window")" -eq 0 ] \
+    || fail "a merge-watched lane queued a stale wake: $(cat "$state/.wake-queue")"
+  [ ! -e "$state/.wedge-escalations-$key" ] \
+    || fail "a merge-watched lane counted a wedge escalation"
+
+  # First sight of a repaint, on the daemon-owned away path too.
+  dir=$(merge_watched_fixture merge-watched-first) || fail "could not arm a merge poll fixture"
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  printf '%s' "older-hash" > "$state/.stale-$key"
+  rm -f "$state/.stale-since-$key"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$idle" absorb \
+    || fail "a merge-watched lane's repaint woke the watcher on first sight: $(cat "$out")"
+  [ "$(wedge_stale_wakes "$state" "$window")" -eq 0 ] \
+    || fail "a merge-watched lane's repaint queued a stale wake: $(cat "$state/.wake-queue")"
+  dir=$(merge_watched_fixture merge-watched-away) || fail "could not arm a merge poll fixture"
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  printf '%s' "older-hash" > "$state/.stale-$key"
+  rm -f "$state/.stale-since-$key"
+  date +%s > "$state/.afk"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$idle" absorb \
+    || fail "a merge-watched lane's repaint woke the away watcher: $(cat "$out")"
+  [ "$(wedge_stale_wakes "$state" "$window")" -eq 0 ] \
+    || fail "a merge-watched lane's repaint queued an away stale wake: $(cat "$state/.wake-queue")"
+
+  # No armed poll: nothing wakes this home when the PR changes, so the ladder stays.
+  dir=$(merge_watched_fixture merge-unarmed none) || fail "could not build an unarmed fixture"
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" exit \
+    || fail "a finished PR with no merge poll stopped alarming"
+  grep -F 'possible wedge, escalation 1' "$out" >/dev/null \
+    || fail "a finished PR with no merge poll lost its wedge alarm: $(cat "$out")"
+
+  # A poll armed for a different PR does not watch this one.
+  dir=$(merge_watched_fixture merge-other-pr other) || fail "could not build an other-PR poll fixture"
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" exit \
+    || fail "a poll for another PR silenced this PR's alarm"
+
+  # Steered back into fix work after the done line: alarms although the poll is armed.
+  dir=$(merge_watched_fixture merge-steered) || fail "could not arm a merge poll fixture"
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  mkdir -p "$state/wedge.inbox"
+  printf 'schema=fm-task-inbox.v1\nat=%s\n--\nfix the review comment\n' \
+    "$(iso_utc_at "$(( $(date +%s) - 60 ))")" > "$state/wedge.inbox/001.msg"
+  wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" exit \
+    || fail "a merge-watched lane with an unhandled steer stopped alarming"
+  grep -F 'possible wedge, escalation 1' "$out" >/dev/null \
+    || fail "a merge-watched lane with an unhandled steer lost its wedge alarm: $(cat "$out")"
+  pass "a finished lane with an armed merge poll raises no stale wake; no poll, another PR's poll or a steer still alarms"
+}
+
+# The predicate itself, for the cases the watcher reaches by another route (an
+# open keyed decision is a declared wait there, so only the predicate shows it
+# is not merge-watched).
+test_merge_watched_predicate_refuses_every_doubt() {
+  local dir state url="https://github.com/o/fleet-app/pull/148" at
+  at=$(( $(date +%s) - 600 ))
+  dir=$(merge_watched_fixture predicate-armed) || fail "could not arm a merge poll fixture"
+  state="$dir/state"
+  # shellcheck source=/dev/null
+  . "$ROOT/bin/fm-office-authority-lib.sh"
+  fm_office_task_merge_watched "$state" wedge \
+    || fail "a finished ship with its PR recorded and its merge poll armed was not merge-watched"
+
+  printf 'done [at=%s]: PR %s checks green\nneeds-decision [at=%s] [key=ask-1]: which way?\n' "$at" "$url" "$(( at + 5 ))" > "$state/wedge.status"
+  ! fm_office_task_merge_watched "$state" wedge \
+    || fail "a lane with an open keyed decision was merge-watched"
+
+  printf 'done [at=%s]: PR %s checks green\nworking [at=%s]: fixing a review comment\n' "$at" "$url" "$(( at + 5 ))" > "$state/wedge.status"
+  ! fm_office_task_merge_watched "$state" wedge \
+    || fail "a lane resumed after its done line was merge-watched"
+
+  printf 'done: PR %s checks green\n' "$url" > "$state/wedge.status"
+  ! fm_office_task_merge_watched "$state" wedge \
+    || fail "a done line with no [at=] stamp was merge-watched"
+
+  dir=$(merge_watched_fixture predicate-no-poll none) || fail "could not build an unarmed fixture"
+  ! fm_office_task_merge_watched "$dir/state" wedge \
+    || fail "a lane with no merge poll was merge-watched"
+
+  dir=$(merge_watched_fixture predicate-other-poll other) || fail "could not build an other-PR poll fixture"
+  ! fm_office_task_merge_watched "$dir/state" wedge \
+    || fail "a lane whose poll watches another PR was merge-watched"
+
+  dir=$(merge_watched_fixture predicate-no-pr) || fail "could not arm a merge poll fixture"
+  grep -v '^pr=' "$dir/state/wedge.meta" > "$dir/state/wedge.meta.new" && mv "$dir/state/wedge.meta.new" "$dir/state/wedge.meta"
+  ! fm_office_task_merge_watched "$dir/state" wedge \
+    || fail "a lane with no recorded PR was merge-watched"
+  pass "a lane is merge-watched only for a finished ship with its PR recorded, no decision or steer, and its own armed poll"
+}
+
 fm_test_run \
   test_wedge_threshold_defers_to_a_declared_wait_under_a_working_verdict \
   test_wedge_threshold_keeps_a_wait_past_a_default_key_answer \
@@ -1262,4 +1403,6 @@ fm_test_run \
   test_wedge_threshold_skips_a_landing_task \
   test_first_sight_skips_a_landing_task \
   test_wedge_threshold_skips_a_parked_ready_branch \
-  test_admit_hold_and_merger_handoff_raise_no_stale_wake
+  test_admit_hold_and_merger_handoff_raise_no_stale_wake \
+  test_wedge_skips_a_finished_lane_whose_merge_poll_is_armed \
+  test_merge_watched_predicate_refuses_every_doubt

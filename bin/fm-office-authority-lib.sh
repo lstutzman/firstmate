@@ -125,6 +125,10 @@
 #       0 when task <id> is a finished ship whose PR waits on an open
 #       <id>-admit-<pr>-<class> captain call (bin/fm-watch.sh skips its stale
 #       wakes; the definition sits above the function).
+#   fm_office_task_merge_watched <state-dir> <id>
+#       0 when task <id> is a finished ship whose PR this home itself merges or
+#       a pile slot holds, with its merge poll armed (bin/fm-watch.sh skips its
+#       stale wakes; the definition sits above the function).
 #   fm_office_task_landing <state-dir> <id> <office-id>
 #       0 when task <id> is landing, as defined below. bin/fm-watch.sh reads it
 #       too, to skip wedge alarms for a landing task (wedge_skip_landing), with
@@ -625,6 +629,38 @@ fm_office_task_admit_held() {  # <state-dir> <id>
   fm_office_inbox_quiet_since "$state" "$id" "$done_at" || return 1
   FM_STATE_OVERRIDE="$state" "$(dirname "${BASH_SOURCE[0]}")/fm-captain-hold.sh" open-prefix "$id-admit-$n-" >/dev/null 2>&1 || rc=$?
   [ "$rc" -eq 0 ]
+}
+
+# 0 when task <id> is a ship whose finished PR waits on something this home's
+# merge poll already watches, and nobody has touched it since: pr= in its record,
+# no open decision, a stamped done line as its latest event (merge-handoff lines
+# apart), no steer since that line, and a merge poll whose published artifacts
+# authenticate against the same PR (fm_pr_poll_artifacts_valid in bin/fm-pr-lib.sh;
+# bin/fm-pr-check.sh publishes them). It covers what fm_office_task_landing
+# cannot: a home that is its own merger, where no handoff record exists and a
+# finished lane waits for a pile slot. Its worker has stopped, nothing this home
+# does lands the PR, and the poll wakes on merge, close or a failing check.
+# bin/fm-watch.sh reads it through wedge_skip_landing; it is deliberately not
+# fm_office_task_landing, so an office still counts the task under wip= and
+# bin/fm-tree-park.sh still parks only a handed PR. Any doubt keeps the ladder.
+fm_office_task_merge_watched() {  # <state-dir> <id>
+  local state=$1 id=$2 meta=$1/$2.meta status=$1/$2.status url last verb done_at
+  [ "$(fm_office_meta_value "$meta" kind)" = ship ] || return 1
+  url=$(fm_office_meta_value "$meta" pr)
+  [ -n "$url" ] || return 1
+  [ -f "$status" ] && [ ! -L "$status" ] && [ -r "$status" ] || return 1
+  [ -z "$(status_open_decisions "$status" ship)" ] || return 1
+  last=$(_fm_status_latest_event "$status" merge-handoff-)
+  status_line_verb "$last" verb
+  [ "$verb" = "done" ] || return 1
+  done_at=$(status_line_at_epoch "$last") || return 1
+  fm_office_inbox_quiet_since "$state" "$id" "$done_at" || return 1
+  if ! declare -F fm_pr_poll_artifacts_valid >/dev/null; then
+    # shellcheck source=bin/fm-pr-lib.sh
+    . "$(dirname "${BASH_SOURCE[0]}")/fm-pr-lib.sh" || return 1
+  fi
+  fm_pr_poll_artifacts_valid "$state" "$id" "$(dirname "${BASH_SOURCE[0]}")/fm-pr-poll.sh" || return 1
+  [ "$FM_PR_DATA_URL" = "$url" ]
 }
 
 fm_office_live_tasks() {  # <state-dir> <own-id> <office-id>

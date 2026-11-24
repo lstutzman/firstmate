@@ -1643,7 +1643,9 @@ wedge_defer_writing() {  # <window> <since-file> <triage-label> <idle-age>
 # Skip ONE wedge escalation, with no wake at all, for a landing task: a ship
 # whose finished PR waits only on another home's merger, or on the captain's
 # word for an admission class (fm_office_task_admit_held; the open
-# <task>-admit-<pr>-<class> call). Its worker has
+# <task>-admit-<pr>-<class> call), or on a merge poll this home armed with
+# nobody to answer in the meantime (fm_office_task_merge_watched; a home that
+# is its own merger, whose finished lanes wait for a pile slot). Its worker has
 # stopped, nothing this home does lands it, and the merge-landed poll wakes this
 # home when it merges, so every alarm on that lane would change nothing. A ship
 # parked as a pushed ready branch with no PR (bin/fm-tree-park.sh) is skipped
@@ -1668,6 +1670,8 @@ wedge_skip_landing() {  # <window> <since-file> <triage-label> <idle-age> <task>
     why="its pushed branch waits for a CI slot and its copy was returned to the pool"
   elif fm_office_task_admit_held "$STATE" "$task"; then
     why="its finished PR waits on the captain's admission word"
+  elif fm_office_task_merge_watched "$STATE" "$task"; then
+    why="its finished PR waits on a merge poll this home already armed"
   else
     return 1
   fi
