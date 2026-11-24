@@ -643,18 +643,39 @@ fm_office_task_admit_held() {  # <state-dir> <id>
 # bin/fm-watch.sh reads it through wedge_skip_landing; it is deliberately not
 # fm_office_task_landing, so an office still counts the task under wip= and
 # bin/fm-tree-park.sh still parks only a handed PR. Any doubt keeps the ladder.
-fm_office_task_merge_watched() {  # <state-dir> <id>
-  local state=$1 id=$2 meta=$1/$2.meta status=$1/$2.status url last verb done_at
+#
+# With a third argument "handed" the PR is one this home handed to its merger, and
+# the lane has been steered since its done line (bin/fm-tree-park.sh passes it
+# once the handoff record names the PR). The worker stopped again and the poll
+# still watches the PR, so a steer it already read no longer counts, nor does an
+# open merge-handoff-<pr> decision; a steer still waiting in the inbox does.
+fm_office_task_merge_watched() {  # <state-dir> <id> [handed]
+  local state=$1 id=$2 handed=${3-} meta=$1/$2.meta status=$1/$2.status url last verb done_at open key msg
   [ "$(fm_office_meta_value "$meta" kind)" = ship ] || return 1
   url=$(fm_office_meta_value "$meta" pr)
   [ -n "$url" ] || return 1
   [ -f "$status" ] && [ ! -L "$status" ] && [ -r "$status" ] || return 1
-  [ -z "$(status_open_decisions "$status" ship)" ] || return 1
+  open=$(status_open_decisions "$status" ship)
+  if [ "$handed" = handed ]; then
+    while IFS=$'\t' read -r key _; do
+      [ -z "$key" ] || [ "$key" = "merge-handoff-${url##*/}" ] || return 1
+    done <<EOF
+$open
+EOF
+  else
+    [ -z "$open" ] || return 1
+  fi
   last=$(_fm_status_latest_event "$status" merge-handoff-)
   status_line_verb "$last" verb
   [ "$verb" = "done" ] || return 1
   done_at=$(status_line_at_epoch "$last") || return 1
-  fm_office_inbox_quiet_since "$state" "$id" "$done_at" || return 1
+  if [ "$handed" = handed ]; then
+    for msg in "$state/$id.inbox"/*.msg; do
+      [ ! -e "$msg" ] || return 1
+    done
+  else
+    fm_office_inbox_quiet_since "$state" "$id" "$done_at" || return 1
+  fi
   if ! declare -F fm_pr_poll_artifacts_valid >/dev/null; then
     # shellcheck source=bin/fm-pr-lib.sh
     . "$(dirname "${BASH_SOURCE[0]}")/fm-pr-lib.sh" || return 1
