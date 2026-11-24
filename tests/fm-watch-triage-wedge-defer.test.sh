@@ -1343,7 +1343,51 @@ test_wedge_skips_a_finished_lane_whose_merge_poll_is_armed() {
     || fail "a merge-watched lane with an unhandled steer stopped alarming"
   grep -F 'possible wedge, escalation 1' "$out" >/dev/null \
     || fail "a merge-watched lane with an unhandled steer lost its wedge alarm: $(cat "$out")"
-  pass "a finished lane with an armed merge poll raises no stale wake; no poll, another PR's poll or a steer still alarms"
+  pass "a finished lane with an armed merge poll raises no stale wake; no poll, another PR's poll or an unhandled steer still alarms"
+}
+
+# FLEET-204: a steer the worker has already handled (filed into handled/) after
+# the done line must not end merge-watched status, or the stale alarm returns
+# for a lane whose PR, poll and status are unchanged. An unhandled steer, a newer
+# working line or a newer done line still do.
+test_merge_watched_survives_a_handled_steer_after_the_done_line() {
+  local dir state fakebin out capture window working n url="https://github.com/o/fleet-app/pull/148" at
+  working='state: working · source: run-step · ci running'
+  window="test:fm-wedge"
+  dir=$(merge_watched_fixture merge-handled-steer) || fail "could not arm a merge poll fixture"
+  state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"; capture="$dir/pane.txt"
+  mkdir -p "$state/wedge.inbox/handled"
+  printf 'schema=fm-task-inbox.v1\nat=%s\n--\nacknowledge and stand by\n' \
+    "$(iso_utc_at "$(( $(date +%s) - 60 ))")" > "$state/wedge.inbox/handled/001.msg"
+  # shellcheck source=/dev/null
+  . "$ROOT/bin/fm-office-authority-lib.sh"
+  fm_office_task_merge_watched "$state" wedge \
+    || fail "a handled steer after the done line ended merge-watched status"
+  n=1
+  while [ "$n" -le 3 ]; do
+    wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" absorb \
+      || fail "a merge-watched lane re-alarmed after a handled steer at threshold $n: $(cat "$out")"
+    n=$((n + 1))
+  done
+  [ "$(wedge_stale_wakes "$state" "$window")" -eq 0 ] \
+    || fail "a handled steer made a merge-watched lane queue a stale wake: $(cat "$state/.wake-queue")"
+
+  # Still refused: an unhandled steer beside the handled one, and a newer done or
+  # working line after it.
+  printf 'schema=fm-task-inbox.v1\nat=%s\n--\nfix the review comment\n' \
+    "$(iso_utc_at "$(( $(date +%s) - 30 ))")" > "$state/wedge.inbox/002.msg"
+  ! fm_office_task_merge_watched "$state" wedge \
+    || fail "an unhandled steer beside a handled one was merge-watched"
+  rm -f "$state/wedge.inbox/002.msg"
+  fm_office_task_merge_watched "$state" wedge || fail "the fixture did not return to merge-watched"
+  at=$(( $(date +%s) - 10 ))
+  printf 'working [at=%s]: fixing a review comment\n' "$at" >> "$state/wedge.status"
+  ! fm_office_task_merge_watched "$state" wedge \
+    || fail "a lane resumed after the handled steer was merge-watched"
+  printf 'done [at=%s]: PR %s checks green\n' "$(( at + 5 ))" "$url" >> "$state/wedge.status"
+  fm_office_task_merge_watched "$state" wedge \
+    || fail "a newer done line with the poll still armed was not merge-watched"
+  pass "a handled steer after the done line keeps a lane merge-watched; an unhandled steer, a resumed lane or an open decision ends it"
 }
 
 # The predicate itself, for the cases the watcher reaches by another route (an
@@ -1405,4 +1449,5 @@ fm_test_run \
   test_wedge_threshold_skips_a_parked_ready_branch \
   test_admit_hold_and_merger_handoff_raise_no_stale_wake \
   test_wedge_skips_a_finished_lane_whose_merge_poll_is_armed \
+  test_merge_watched_survives_a_handled_steer_after_the_done_line \
   test_merge_watched_predicate_refuses_every_doubt

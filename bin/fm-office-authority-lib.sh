@@ -540,6 +540,16 @@ fm_office_inbox_quiet_since() {  # <state-dir> <id> <epoch>
   done
 }
 
+# 0 when task <id>'s steering inbox holds no unhandled message: no steer is
+# waiting for the worker. A handled one is not read, so it says nothing about
+# the PR (fm_office_task_merge_watched relies on that).
+fm_office_inbox_no_unhandled() {  # <state-dir> <id>
+  local msg
+  for msg in "$1/$2.inbox"/*.msg; do
+    [ ! -e "$msg" ] || return 1
+  done
+}
+
 # 0 when task <id> is a ship that finished as a pushed ready branch with no PR
 # (bin/fm-ready-branch.sh) and has been left alone since: ready_branch= and no
 # pr= in its record, no open decision, a stamped done line as its latest event,
@@ -634,7 +644,7 @@ fm_office_task_admit_held() {  # <state-dir> <id>
 # 0 when task <id> is a ship whose finished PR waits on something this home's
 # merge poll already watches, and nobody has touched it since: pr= in its record,
 # no open decision, a stamped done line as its latest event (merge-handoff lines
-# apart), no steer since that line, and a merge poll whose published artifacts
+# apart), no unhandled steer (a handled one is not read, FLEET-204), and a merge poll whose published artifacts
 # authenticate against the same PR (fm_pr_poll_artifacts_valid in bin/fm-pr-lib.sh;
 # bin/fm-pr-check.sh publishes them). It covers what fm_office_task_landing
 # cannot: a home that is its own merger, where no handoff record exists and a
@@ -674,7 +684,12 @@ EOF
       [ ! -e "$msg" ] || return 1
     done
   else
-    fm_office_inbox_quiet_since "$state" "$id" "$done_at" || return 1
+    # A steer already handled after the done line does not end the wait: the
+    # worker took it without a newer event, so the PR, its head and the poll are
+    # as the done line left them. Work that did change them is a later working,
+    # done or decision line (refused above), and the armed poll wakes on a head
+    # or check change. An unhandled steer still counts: its worker may yet act.
+    fm_office_inbox_no_unhandled "$state" "$id" || return 1
   fi
   if ! declare -F fm_pr_poll_artifacts_valid >/dev/null; then
     # shellcheck source=bin/fm-pr-lib.sh
