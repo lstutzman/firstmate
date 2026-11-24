@@ -1608,7 +1608,7 @@ inline_steer_line() {
     # shellcheck source=/dev/null
     . "$ROOT/bin/fm-task-inbox-lib.sh"
     fm_task_inbox_write "$1/home/state" "$2" "$3" "" inline >/dev/null || exit 1
-    fm_task_inbox_doorbell_line "$(ls -1 "$1/home/state/$2.inbox/handled"/*.msg | sort | tail -n 1)"
+    fm_task_inbox_doorbell_line "$(find "$1/home/state/$2.inbox/handled" -maxdepth 1 -name '*.msg' | sort | tail -n 1)"
   )
 }
 
