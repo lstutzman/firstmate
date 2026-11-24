@@ -123,7 +123,10 @@
 #   submit-pending
 #              Submit text that sits unsubmitted in the agent's composer, but
 #              only when that text is exactly one of firstmate's own doorbells
-#              for this task: the task's constant steering-inbox doorbell, or a
+#              for this task: the task's constant steering-inbox doorbell, an
+#              inline steer line (one of the task's last 50 inline records in
+#              handled/, born taken, so submitting delivers its body once and
+#              re-rings nothing), or a
 #              Firstmate operational-input doorbell naming a record that exists
 #              in this home's state/operational-inbox (for a secondmate, also
 #              its own home's). Any other pending text - a captain's or the
@@ -1418,6 +1421,7 @@ do_relaunch() {
 
 PENDING_LINE=
 PENDING_KIND=
+PENDING_INLINE_RECORDS=50
 
 # The composer's selected content, wrapped rows joined, from the same capture
 # fm_task_inbox_composer_holds reads.
@@ -1454,6 +1458,26 @@ pending_match_doorbell() {  # <content>
     PENDING_LINE=$candidate
     PENDING_KIND=steering-doorbell
     return 0
+  fi
+  # An inline steer that never submitted: its record is born taken, in this
+  # task's handled/, so only a bounded, newest-first window is checked.
+  local handled n=0
+  handled=$(fm_task_inbox_dir "$STATE" "$ID")/handled
+  if [ -d "$handled" ]; then
+    while IFS= read -r rec; do
+      [ -f "$rec" ] || continue
+      n=$((n + 1))
+      [ "$n" -le "$PENDING_INLINE_RECORDS" ] || break
+      fm_task_inbox_is_inline "$rec" || continue
+      candidate=$(fm_task_inbox_doorbell_line "$rec") || continue
+      if [ "$held" = "$(pending_squash "$candidate")" ]; then
+        PENDING_LINE=$candidate
+        PENDING_KIND=inline-steer
+        return 0
+      fi
+    done <<EOF
+$(ls -1 "$handled"/*.msg 2>/dev/null | sort -r)
+EOF
   fi
   while IFS= read -r dir; do
     abs=$(cd -P "$dir" 2>/dev/null && pwd -P) || continue
