@@ -249,16 +249,17 @@ jq_lib() { # jq options/program via final argument
 }
 
 read_saved() {
-  local file dir task oversized
+  local file dir task oversized root=$DATA
   local -a files=() tasks=()
   ERRORS=0
-  if [ -L "$DATA" ]; then
+  while [ "$root" != / ] && [ "${root%/}" != "$root" ]; do root=${root%/}; done
+  if [ -L "$root" ]; then
     ERRORS=1; printf '[]\n' > "$TMP/saved.json"; return 0
   fi
   # One find names every record past the 1 MiB cap. A size probe per file is a
   # process per record, and under host load each process start costs seconds.
-  oversized=$'\n'$(find "$DATA" -mindepth 2 -maxdepth 2 -name contributions.json -type f -size +1048576c 2>/dev/null)$'\n'
-  for file in "$DATA"/*/contributions.json; do
+  oversized=$'\n'$(find "$root" -mindepth 2 -maxdepth 2 -name contributions.json -type f -size +1048576c 2>/dev/null)$'\n'
+  for file in "$root"/*/contributions.json; do
     [ -e "$file" ] || [ -L "$file" ] || continue
     fm_dirname_to dir "$file"
     fm_basename_to task "$dir"
