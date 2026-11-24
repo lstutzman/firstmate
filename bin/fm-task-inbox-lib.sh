@@ -445,15 +445,22 @@ EOF
 # non-printable inbox name fails without output so terminal controls never
 # reach the pane's line discipline.
 fm_task_inbox_doorbell_line() {  # <record-path>
-  local body quoted LC_ALL=C
+  local body
   if fm_task_inbox_is_inline "$1"; then
     body=$(fm_task_inbox_body "$1") || return 1
-    fm_task_inbox_inline_eligible "$body" || return 1
-    quoted=$(printf '%s' "$body" | sed "s/'/'\\\\''/g")
-    printf "%s%s'" "$FM_TASK_INBOX_INLINE_PREFIX" "$quoted"
-    return 0
+    fm_task_inbox_inline_line "$body"
+    return
   fi
   fm_task_inbox_pointer_line "${1%/*}"
+}
+
+# The inline doorbell line that carries <text> itself, or fail when the text
+# is not inline-eligible.
+fm_task_inbox_inline_line() {  # <text>
+  local quoted LC_ALL=C
+  fm_task_inbox_inline_eligible "$1" || return 1
+  quoted=$(printf '%s' "$1" | sed "s/'/'\\\\''/g")
+  printf "%s%s'" "$FM_TASK_INBOX_INLINE_PREFIX" "$quoted"
 }
 
 # The constant pointer doorbell for one inbox directory (or its handled/),

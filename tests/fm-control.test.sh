@@ -1639,6 +1639,49 @@ test_clear_pending_clears_an_inline_steer() {
   pass "fm-control clear-pending: a stuck inline steer is cleared"
 }
 
+# untaken_inline_steer_line <case-dir> <task-id> <text> -> the inline line
+# fm-send typed for a record it then untook (back in the root, no inline header).
+untaken_inline_steer_line() {
+  (
+    # shellcheck source=/dev/null
+    . "$ROOT/bin/fm-task-inbox-lib.sh"
+    rec=$(fm_task_inbox_write "$1/home/state" "$2" "$3" "" inline) || exit 1
+    line=$(fm_task_inbox_doorbell_line "$rec") || exit 1
+    rec=$(fm_task_inbox_untake "$rec") || exit 1
+    ! fm_task_inbox_is_inline "$rec" || exit 1
+    printf '%s' "$line"
+  )
+}
+
+test_submit_pending_submits_an_untaken_inline_steer() {
+  local dir out rc line
+  dir=$(pending_case submit-untaken 0 placeholder)
+  line=$(untaken_inline_steer_line "$dir" t1 "please rebase") || fail "could not write an untaken record"
+  [ -n "$(ls "$dir/home/state/t1.inbox"/*.msg 2>/dev/null)" ] || fail "the untaken record should sit in the inbox root"
+  claude_band_screen 0 "$line" > "$dir/fake/pane"
+  out=$(run_control "$dir" t1 submit-pending); rc=$?
+  expect_code 0 "$rc" "a stuck inline steer whose record was untaken should be submitted"$'\n'"$out"
+  assert_contains "$out" "submitted doorbell=inline-steer t1" "the result should name the inline steer"
+  [ "$(grep -c '^Enter$' "$dir/fake/keys")" -eq 1 ] || fail "one Enter should submit it, keys: $(cat "$dir/fake/keys")"
+  [ -z "$(literals "$dir")" ] || fail "submit-pending must type nothing"
+  [ -z "$(ls "$dir/home/state/t1.inbox"/*.msg 2>/dev/null)" ] || fail "the submitted record must be filed so its pointer doorbell cannot deliver it again"
+  [ -n "$(ls "$dir/home/state/t1.inbox/handled"/*.msg 2>/dev/null)" ] || fail "the submitted record should be in handled/"
+  pass "fm-control submit-pending: a stuck inline steer whose record was untaken is submitted and filed"
+}
+
+test_clear_pending_clears_an_untaken_inline_steer() {
+  local dir out rc line
+  dir=$(pending_case clear-untaken 0 placeholder)
+  line=$(untaken_inline_steer_line "$dir" t1 "please rebase") || fail "could not write an untaken record"
+  claude_band_screen 0 "$line" > "$dir/fake/pane"
+  claude_band_screen 0 '' > "$dir/fake/after-cu"
+  out=$(run_control "$dir" t1 clear-pending); rc=$?
+  expect_code 0 "$rc" "a stuck inline steer whose record was untaken should be cleared"$'\n'"$out"
+  assert_contains "$out" "cleared doorbell=inline-steer t1" "the result should name the inline steer"
+  [ -n "$(ls "$dir/home/state/t1.inbox"/*.msg 2>/dev/null)" ] || fail "clear-pending must leave the record unhandled for its pointer doorbell"
+  pass "fm-control clear-pending: a stuck inline steer whose record was untaken is cleared and its record left unhandled"
+}
+
 test_pending_inline_steer_window_orders_records_numerically() {
   local dir out rc line f i
   dir=$(pending_case inline-window 0 placeholder)
@@ -1843,6 +1886,8 @@ test_submit_pending_unreadable_after_enter_is_unconfirmed
 test_pending_verbs_refuse_text_that_is_not_firstmates
 test_submit_pending_submits_an_inline_steer
 test_clear_pending_clears_an_inline_steer
+test_submit_pending_submits_an_untaken_inline_steer
+test_clear_pending_clears_an_untaken_inline_steer
 test_pending_inline_steer_window_orders_records_numerically
 test_pending_verbs_refuse_a_foreign_or_edited_inline_steer
 test_pending_verbs_refuse_a_composer_not_proven_pending
