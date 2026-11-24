@@ -76,7 +76,8 @@ T3 Code has no composer and its `/mcp` tools offer no session stop, so `exit` re
 
 A doorbell that firstmate delivered can sit typed but unsubmitted in a Claude composer, and `exit` and `relaunch` then refuse because the composer holds text.
 `submit-pending` and `clear-pending` resolve that case without risking anyone else's input.
-Both act only when the composer is proven `pending` and its whole content, ignoring wrapping, is one of firstmate's own doorbells for the task: the task's constant steering-inbox doorbell, or an operational-input doorbell naming a record that exists in this home's `state/operational-inbox` (for a secondmate, also in its own home's).
+Both act only when the composer is proven `pending` and its whole content, ignoring wrapping, is one of firstmate's own doorbells for the task: the task's constant steering-inbox doorbell, an inline steer line built from the body of one of the task's newest inline-eligible records (50 by default, `FM_CONTROL_PENDING_INLINE_RECORDS`), whether the record is in `handled/` or was untaken back into the inbox root, or an operational-input doorbell naming a record that exists in this home's `state/operational-inbox` (for a secondmate, also in its own home's).
+When `submit-pending` submits an untaken inline steer, it files that record into `handled/`, so its pointer doorbell does not deliver the steer again.
 Any other text, such as a captain's or worker's draft, is refused with nothing sent, and so is a composer that is not proven pending and an agent that is running a turn.
 Both are verified for Claude on Herdr and tmux only and refuse every other pairing before reading anything.
 A Claude plugin band above the composer can hold the keyboard after a click on it or ctrl+x Tab, and while it does an Enter presses its focused Button instead of submitting.
@@ -255,7 +256,7 @@ The empirical basis for each adapter's value is the `harness-adapters` skill's v
 ## Verification
 
 - `tests/fm-control.test.sh` - the adapter contract for its verified-harness lane (adapters outside the lane pin their control mechanics in their own harness suites), the backend capability matrix, exact-id scoping, the closed verb list, the busy, idle, dead, and idempotent lifecycle cases, and marker non-regression, all against a stubbed session provider.
-- `tests/fm-control.test.sh` also covers `submit-pending` and `clear-pending`: both doorbell kinds, the band release and a band that keeps the focus, a composer that cannot be read after the Enter, and the refusals for a draft, a foreign doorbell, an unproven composer, and a harness other than Claude.
+- `tests/fm-control.test.sh` also covers `submit-pending` and `clear-pending`: the steering, inline-steer (taken and untaken) and operational doorbells, the band release and a band that keeps the focus, a composer that cannot be read after the Enter, and the refusals for a draft, a foreign doorbell, a foreign or edited inline steer, an unproven composer, and a harness other than Claude.
 - `tests/fm-claude-band-focus-live-e2e.test.sh` - the opt-in live guard for the plugin band focus against real Claude Code on an isolated Herdr lab session.
 - `tests/fm-spawn-claude-launch-doorbell.test.sh` - the spawn's launch-doorbell check: a submitted doorbell left alone, a pending one submitted once, a focused band released with one Escape first, and a doorbell that stays raising one check wake.
 - `tests/fm-control-relaunch.test.sh` - the relaunch transaction: identity preservation, harness switching, the progress note, checkpoint refusals, rollback after a failed launch, and the endpoint-absence proof both verbs share - the Herdr reclaim of a destroyed endpoint, and tmux refusing one it cannot prove absent.

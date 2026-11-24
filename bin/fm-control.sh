@@ -123,7 +123,11 @@
 #   submit-pending
 #              Submit text that sits unsubmitted in the agent's composer, but
 #              only when that text is exactly one of firstmate's own doorbells
-#              for this task: the task's constant steering-inbox doorbell, or a
+#              for this task: the task's constant steering-inbox doorbell, an
+#              inline steer line (the body of one of the task's newest 50
+#              inline-eligible records, in handled/ or untaken back in the
+#              inbox root; a submitted root record is filed into handled/, so
+#              its body is delivered once and nothing re-rings it), or a
 #              Firstmate operational-input doorbell naming a record that exists
 #              in this home's state/operational-inbox (for a secondmate, also
 #              its own home's). Any other pending text - a captain's or the
@@ -189,6 +193,9 @@
 #   FM_CONTROL_EXIT_RETRIES      Enter retries for the exit command (3)
 #   FM_CONTROL_PENDING_WAIT      wait for a submitted or cleared doorbell to
 #                                leave the composer (5)
+#   FM_CONTROL_PENDING_INLINE_RECORDS
+#                                newest inline-eligible records checked by
+#                                submit-pending and clear-pending (50)
 #   FM_CONTROL_LOCK_HELD_BY      pid of a caller that already holds the task's
 #                                lifecycle lock; honored only while the lock
 #                                records that live pid (bin/fm-tree-park.sh)
@@ -1418,6 +1425,8 @@ do_relaunch() {
 
 PENDING_LINE=
 PENDING_KIND=
+PENDING_RECORD=
+PENDING_INLINE_RECORDS=${FM_CONTROL_PENDING_INLINE_RECORDS:-50}
 
 # The composer's selected content, wrapped rows joined, from the same capture
 # fm_task_inbox_composer_holds reads.
@@ -1455,6 +1464,29 @@ pending_match_doorbell() {  # <content>
     PENDING_KIND=steering-doorbell
     return 0
   fi
+  # An inline steer that never submitted: its record is born taken in this
+  # task's handled/, or back in the inbox root without its inline header when
+  # fm-send untook it. Only the newest inline-eligible records are checked.
+  local inbox body n=0
+  inbox=$(fm_task_inbox_dir "$STATE" "$ID")
+  while IFS=$(printf '\t') read -r _ rec; do
+    [ -f "$rec" ] || continue
+    body=$(fm_task_inbox_body "$rec") || continue
+    candidate=$(fm_task_inbox_inline_line "$body") || continue
+    n=$((n + 1))
+    [ "$n" -le "$PENDING_INLINE_RECORDS" ] || break
+    if [ "$held" = "$(pending_squash "$candidate")" ]; then
+      PENDING_LINE=$candidate
+      PENDING_KIND='inline-steer'
+      PENDING_RECORD=$rec
+      return 0
+    fi
+  done <<EOF
+$(for rec in "$inbox"/*.msg "$inbox"/handled/*.msg; do
+    [ -f "$rec" ] || continue
+    printf '%s\t%s\n' "$(fm_task_inbox_seq_of "${rec##*/}")" "$rec"
+  done | sort -n -r -k1,1)
+EOF
   while IFS= read -r dir; do
     abs=$(cd -P "$dir" 2>/dev/null && pwd -P) || continue
     for rec in "$abs"/*.msg; do
@@ -1516,6 +1548,11 @@ do_submit_pending() {
   esac
   pending_wait_gone \
     || die "submit-delivered $ID doorbell=$PENDING_KIND submit=unconfirmed; the composer still holds it after ${PENDING_WAIT}s"
+  case "$PENDING_RECORD" in
+    ''|*/handled/*) ;;
+    *) [ ! -f "$PENDING_RECORD" ] || mv "$PENDING_RECORD" "${PENDING_RECORD%/*}/handled/" \
+         || die "submitted $ID doorbell=$PENDING_KIND, but its record $PENDING_RECORD could not be filed into handled/, so its pointer doorbell may deliver it again" ;;
+  esac
   printf 'submitted doorbell=%s' "$PENDING_KIND"
 }
 
