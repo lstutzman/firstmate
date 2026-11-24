@@ -192,6 +192,9 @@
 #   FM_CONTROL_EXIT_RETRIES      Enter retries for the exit command (3)
 #   FM_CONTROL_PENDING_WAIT      wait for a submitted or cleared doorbell to
 #                                leave the composer (5)
+#   FM_CONTROL_PENDING_INLINE_RECORDS
+#                                newest inline-steer records checked by
+#                                submit-pending and clear-pending (50)
 #   FM_CONTROL_LOCK_HELD_BY      pid of a caller that already holds the task's
 #                                lifecycle lock; honored only while the lock
 #                                records that live pid (bin/fm-tree-park.sh)
@@ -1421,7 +1424,7 @@ do_relaunch() {
 
 PENDING_LINE=
 PENDING_KIND=
-PENDING_INLINE_RECORDS=50
+PENDING_INLINE_RECORDS=${FM_CONTROL_PENDING_INLINE_RECORDS:-50}
 
 # The composer's selected content, wrapped rows joined, from the same capture
 # fm_task_inbox_composer_holds reads.
@@ -1465,6 +1468,7 @@ pending_match_doorbell() {  # <content>
   handled=$(fm_task_inbox_dir "$STATE" "$ID")/handled
   if [ -d "$handled" ]; then
     while IFS= read -r rec; do
+      rec="$handled/$rec"
       [ -f "$rec" ] || continue
       n=$((n + 1))
       [ "$n" -le "$PENDING_INLINE_RECORDS" ] || break
@@ -1476,7 +1480,7 @@ pending_match_doorbell() {  # <content>
         return 0
       fi
     done <<EOF
-$(ls -1 "$handled"/*.msg 2>/dev/null | sort -r)
+$(ls -1 "$handled" 2>/dev/null | grep '\.msg$' | sort -n -r)
 EOF
   fi
   while IFS= read -r dir; do

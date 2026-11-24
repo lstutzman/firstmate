@@ -1639,6 +1639,23 @@ test_clear_pending_clears_an_inline_steer() {
   pass "fm-control clear-pending: a stuck inline steer is cleared"
 }
 
+test_pending_inline_steer_window_orders_records_numerically() {
+  local dir out rc line f i
+  dir=$(pending_case inline-window 0 placeholder)
+  for i in 1 2 3; do
+    line=$(inline_steer_line "$dir" t1 "steer number $i") || fail "could not write an inline record"
+  done
+  f="$dir/home/state/t1.inbox/handled"
+  set -- "$f"/*.msg
+  [ "$#" -eq 3 ] || fail "expected three handled records, got $#"
+  mv "$1" "$f/998.msg"; mv "$2" "$f/999.msg"; mv "$3" "$f/1000.msg"
+  claude_band_screen 0 "$line" > "$dir/fake/pane"
+  out=$(FM_CONTROL_PENDING_INLINE_RECORDS=2 run_control "$dir" t1 submit-pending); rc=$?
+  expect_code 0 "$rc" "the newest record (1000) must be inside a 2-record window"$'\n'"$out"
+  assert_contains "$out" "submitted doorbell=inline-steer t1" "the result should name the inline steer"
+  pass "fm-control submit-pending: the inline-steer window orders records by number, so 1000 outranks 999"
+}
+
 test_pending_verbs_refuse_a_foreign_or_edited_inline_steer() {
   local dir out rc verb line other
   for verb in submit-pending clear-pending; do
@@ -1826,6 +1843,7 @@ test_submit_pending_unreadable_after_enter_is_unconfirmed
 test_pending_verbs_refuse_text_that_is_not_firstmates
 test_submit_pending_submits_an_inline_steer
 test_clear_pending_clears_an_inline_steer
+test_pending_inline_steer_window_orders_records_numerically
 test_pending_verbs_refuse_a_foreign_or_edited_inline_steer
 test_pending_verbs_refuse_a_composer_not_proven_pending
 test_clear_pending_clears_an_operational_launch_doorbell
