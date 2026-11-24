@@ -249,20 +249,26 @@ jq_lib() { # jq options/program via final argument
 }
 
 read_saved() {
-  local file dir task
+  local file dir task oversized
   local -a files=() tasks=()
   ERRORS=0
   if [ -L "$DATA" ]; then
     ERRORS=1; printf '[]\n' > "$TMP/saved.json"; return 0
   fi
+  # One find names every record past the 1 MiB cap. A size probe per file is a
+  # process per record, and under host load each process start costs seconds.
+  oversized=$'\n'$(find "$DATA" -mindepth 2 -maxdepth 2 -name contributions.json -type f -size +1048576c 2>/dev/null)$'\n'
   for file in "$DATA"/*/contributions.json; do
     [ -e "$file" ] || [ -L "$file" ] || continue
     fm_dirname_to dir "$file"
     fm_basename_to task "$dir"
-    if [ -L "$file" ] || [ -L "$dir" ] || [ ! -f "$file" ] || [ "$(wc -c < "$file")" -gt 1048576 ]; then
+    if [ -L "$file" ] || [ -L "$dir" ] || [ ! -f "$file" ]; then
       ERRORS=$((ERRORS + 1))
       continue
     fi
+    case "$oversized" in
+      *$'\n'"$file"$'\n'*) ERRORS=$((ERRORS + 1)); continue ;;
+    esac
     files+=("$file"); tasks+=("$task")
   done
   # Validate records in bounded jq batches: one process per file outgrows the
