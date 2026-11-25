@@ -202,7 +202,7 @@ It is a role of its own rather than part of the friction officer because it read
 It only reads: one `GET` per page through `curl`, this home's status logs, and `gh-axi api GET` for the state of a PR a card names.
 Its only writes are the Linear filing and the closing of its own settled or unrecurred items, described under [Page-check officer and Linear](#page-check-officer-and-linear), and only with `writes: linear`.
 
-Its findings are one of four kinds, each naming the page and the object so firstmate can route the fix:
+Its findings are one of six kinds, each naming the page and the object so firstmate can route the fix:
 
 | Kind | Meaning | Routed to |
 | --- | --- | --- |
@@ -210,10 +210,17 @@ Its findings are one of four kinds, each naming the page and the object so first
 | `stale-card` | A shown card that is past its snooze date, unanswered for `stale-days` (never a Later-band card, which cl-keeper parked on purpose), already answered, naming a closed PR or a merged PR that the card's ask is about, or settled by a later `resolved` status line; a card that names a merged PR but asks for something else (a Linear status, a production or activation action), or whose captain has not answered, is not stale (the script header owns both exceptions) | cl-keeper closes or corrects it |
 | `shown-after-done` | A card shown although its record is settled: a status line resolved by a captain answer before the card was raised again (a routing resolve does not count), or the app's own card record for the Bosun source is closed | cl-keeper closes it; the source that re-raised it is fixed |
 | `page-old` | A page older than its normal gap (Bosun's results: 26 hours), never published, unreachable or unreadable (including JSON of an unexpected shape), a live Runs job whose health is failing, or a live Runs job whose latest finished run has no summary (a run still in progress is not itself judged, and a never-run job is not flagged) | the page's owner fixes the feed |
+| `commitment-unproven` | A row in a home's standing-commitments register whose enforcement point is missing, is `memory` or `none`, or whose verification finds nothing (high; the evidence says which part failed) | the owner home enforces or retires the commitment |
+| `commitment-unrecorded` | A status line from the last 48 hours that says "from now on", "every time" or "standing" about its own behaviour and carries no `[commitment=<id>]` mark naming a recorded row (medium) | the owner home records the commitment, or retires it |
 
 Standing rules are lines in the `rules` file of the form `- standing-rule <id> /<regex>/ - <rule text>`; the case-insensitive regex is matched against a card's words, and every other line of the file is ignored.
 A rule becomes a check by adding one such line next to its prose in `data/captain-shared.md`.
 A rules file with no such line is a coverage note in the digest, because the `standing-rule` check then covers nothing.
+
+The two commitment kinds read each local `--home`'s `data/standing-commitments.json`, which `bin/fm-commitment.sh` writes; its header owns the row fields and the enforcement and verification specs.
+The officer only evaluates typed specs (a file, a log line or a status line); it never runs a command from a row.
+The digest ends with a "Standing commitments" section that lists every unretired row, green or red, with the reason, so the digest shows the whole register and not only new findings.
+An unreadable register is a coverage note and counts for no auto-close, and while any register is unread a status line with a `[commitment=<id>]` mark is not flagged `commitment-unrecorded`; neither kind ever starts work.
 
 The run keeps `state.json` in its lane, when each finding was last reported.
 Its digest line counts only findings not reported in the last `remind-hours`, so an unchanged page set is silent every slot while a finding nobody fixed returns daily.
@@ -227,7 +234,7 @@ Every open finding is filed once in team FLEET, with the label Bug, as a line on
 A finding whose bundle or older single item a person closed is not filed again and never starts.
 The shared [filing rules](../officers/contract.md#file) own duplicates, recurrences and the call budget, and the item names a card by its id and never carries the card's words.
 A `page-old` or `shown-after-done` finding whose item exists is handed to the Quartermaster as a start request; that routing needs `start-home: quartermaster` on the registry line, as in the example above, and without it the request goes to the home running the officer.
-A `standing-rule` or `stale-card` finding is filed so its card is cleared and never starts a fix.
+A `standing-rule`, `stale-card`, `commitment-unproven` or `commitment-unrecorded` finding is filed so its card or commitment is cleared and never starts a fix.
 The reserved-class check judges what the started fix would change, so it reads the finding's own kind, page, evidence and route, and the object id only when the object is the fix target (a page or a Runs job), never a card's id or question; a finding whose fix is in a reserved class is held as one keyed `needs-decision` line in the digest.
 A `page-old` or `shown-after-done` finding is a bug, so its bad pattern (the kind and the page or Runs job, with the route as the safe form, and no timestamps or card id) is remembered once and handed on in the digest's `patterns` and one batched pattern-memory start request (not for a failing job, route "page owner: fix the job": a stale run, not a code pattern).
 The officer also closes a single item it filed itself once its card settles or its finding has not recurred for two checks; [the rubric](../officers/page-check-rubric.md#closing-its-own-items) owns the conditions.

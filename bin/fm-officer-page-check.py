@@ -14,9 +14,10 @@ Usage:
 
 Lee's rule is that every fleet-app page stays current without being asked.
 This pass reads each page's own GET endpoint (curl, never a write) and this
-home's status logs, and flags four kinds of finding, each naming the page and
+home's status logs, and flags six kinds of finding, each naming the page and
 the object so firstmate can route the fix (cl-keeper closes or corrects a
-card, a page owner fixes a page). It acts on nothing itself.
+card, a page owner fixes a page, a commitment's owner home enforces or retires
+it). It acts on nothing itself.
 
   standing-rule  a card or suggestion Lee is shown that a standing rule already
                  settles. Rules are lines in --rules (default this home's
@@ -75,6 +76,23 @@ reported more than --remind-hours (default 24) ago, so an unchanged page set
 does not wake firstmate every slot while a finding nobody fixed returns daily.
 An unreachable app is a finding, not a failed run.
 
+Standing commitments. Each --home keeps a register of its "from now on" promises (bin/fm-commitment.sh owns the
+format, the spec grammar and the evaluation: data/standing-commitments.json). Every unretired row of every read home
+is evaluated on each run, page "Standing commitments":
+
+  commitment-unproven   high. A row whose enforcement point is missing, or is `memory` or `none`, or whose
+                 verification finds nothing. The evidence says which part failed. A row with only a memory note is red.
+  commitment-unrecorded medium. A status line from the last 48 hours in any read home whose text says "from now on",
+                 "every time" or "standing" about the home's own behaviour (fm-commitment.py PHRASES: quoted spans,
+                 "outstanding", the Linear Standing label and a rule id do not count) with no [commitment=<id>] mark
+                 naming a row in any read register. The finding names the home, task and time, never the line's words.
+
+Both go through the filing, digest and auto-close paths below unchanged, routed `owner home: enforce or retire the
+commitment`, and never start work (neither is in START_SOURCES). The digest ends with a "Standing commitments" section
+listing every row, green or red, with the reason. An unreadable register is a coverage note and stops its rows' findings
+from counting toward an auto-close; while any register is unread, a status line that carries a [commitment=<id>] mark is
+not flagged commitment-unrecorded, because its row may be in the register that was not read.
+
 Linear. With --writes linear (the registry's `writes: linear`) the officer follows the
 shared officer contract (docs/officers/contract.md; bin/fm-officer-linear.py owns the
 mechanics) with its rubric docs/officers/page-check-rubric.md, which owns what counts
@@ -115,6 +133,10 @@ import sys
 import time
 
 MAX_PR_LOOKUPS = 40
+COMMITMENT_PAGE = "Standing commitments"
+COMMITMENT_KINDS = ("commitment-unproven", "commitment-unrecorded")
+COMMITMENT_ROUTE = "owner home: enforce or retire the commitment"
+UNRECORDED_WINDOW = 48 * 3600
 RUBRIC_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "officers", "page-check-rubric.md")
 # The kinds the rubric may let start: a page or a card source that is broken, never a card a rule already settles.
 START_SOURCES = ("page-old", "shown-after-done")
@@ -162,8 +184,20 @@ def _friction():
     return mod
 
 
+def _commitments():
+    mod = sys.modules.get("fm_commitment")
+    if mod is None:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fm-commitment.py")
+        spec = importlib.util.spec_from_file_location("fm_commitment", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        sys.modules["fm_commitment"] = mod
+    return mod
+
+
 friction = _friction()
 triage = friction.triage
+commit = _commitments()
 
 
 def fetch(app, path):
@@ -344,6 +378,78 @@ def card_findings(log, rules, settled, known_closed, now, stale_days, coverage, 
     return out
 
 
+def home_id(path):
+    return os.path.basename(path.rstrip("/").rsplit(":", 1)[-1])
+
+
+def commitment_findings(homes, now):
+    """(findings, rows, coverage, retired, complete): the unproven and unrecorded commitments of every local --home.
+    rows: one dict per unretired register row, green or red with its reasons, for the digest; retired counts the skipped
+    rows. complete is False when a home or register could not be read, so no commitment finding counts toward an auto-close."""
+    out, rows, coverage = [], [], []
+    roots = {}
+    for h in homes:
+        if ":" in h.split("/", 1)[0]:
+            coverage.append("home %s is on another host, so its standing commitments were not read" % h)
+            continue
+        roots[home_id(h)] = triage.Home(h).root
+    registers, unread = {}, False
+    for hid, root in sorted(roots.items()):
+        if not os.path.isdir(root):
+            coverage.append("home %s is not readable, so its standing commitments were not read" % hid)
+            unread = True
+            continue
+        reg, notes = commit.load_register(root)
+        coverage.extend(notes)
+        if reg is None:
+            unread = True
+            continue
+        registers[hid] = reg
+    known = {r["id"] for reg in registers.values() for r in reg}
+    retired = 0
+    for hid, reg in registers.items():
+        for r in sorted(reg, key=lambda r: r["id"]):
+            if commit.is_retired(r):
+                retired += 1
+                continue
+            green, reasons = commit.evaluate(r, now, roots)
+            rows.append({"home": hid, "id": r["id"], "owner": r.get("owner"), "commitment": friction.scrub(str(r.get("commitment") or ""), 100),
+                         "status": "green" if green else "red", "reasons": reasons})
+            if not green:
+                # The finding goes to Linear (third-party storage): a hand-edited row's id and owner are checked against
+                # the recorder's own patterns, and the evidence is token-scrubbed and cut.
+                rid = r["id"] if commit.ID_RE.fullmatch(r["id"]) else "invalid-id"
+                owner = r.get("owner") if isinstance(r.get("owner"), str) and commit.HOME_RE.fullmatch(r["owner"]) else "<invalid owner>"
+                out.append(finding("commitment-unproven", COMMITMENT_PAGE, "%s:%s" % (hid, rid),
+                                   "commitment %s is unproven" % rid,
+                                   friction.scrub("owner %s, recorded in %s; %s" % (owner, hid, "; ".join(reasons)), 400),
+                                   COMMITMENT_ROUTE, "high"))
+    for hid, root in sorted(roots.items()):
+        state = os.path.join(root, "state")
+        try:
+            names = sorted(n for n in os.listdir(state) if n.endswith(".status") and not n.startswith("."))
+        except OSError:
+            continue
+        for name in names:
+            for line in commit.read_lines(os.path.join(state, name)) or []:
+                parsed = friction.parse_status_line(line)
+                if not parsed or parsed[2] is None or not (now - UNRECORDED_WINDOW <= parsed[2] <= now + 3600):
+                    continue
+                phrase = commit.commitment_phrase(parsed[3])
+                marks = commit.MARK_RE.findall(line)
+                if phrase and not any(m in known for m in marks) and not (marks and unread):
+                    task = name[:-len(".status")]
+                    out.append(finding("commitment-unrecorded", COMMITMENT_PAGE, "%s:%s:%d" % (hid, task, parsed[2]),
+                                       "status line of %s says \"%s\" with no recorded commitment" % (task, phrase),
+                                       "home %s, task %s, at %s: the status line says \"%s\" about its own behaviour and carries no "
+                                       "[commitment=<id>] mark naming a recorded row; record it with bin/fm-commitment.sh add" % (
+                                           hid, task, time.strftime("%Y-%m-%d %H:%MZ", time.gmtime(parsed[2])), phrase),
+                                       COMMITMENT_ROUTE))
+    if not homes:
+        unread = True
+    return out, rows, coverage, retired, (not unread and bool(registers))
+
+
 def page_findings(app, now):
     out, docs = [], {}
     for page, (path, keys, max_hours) in sorted(PAGES.items()):
@@ -452,7 +558,7 @@ def description(lf, key, off, near=None, recurrence=None):
     f = lf["raw"]
     day = key[:10]
     lines = ["Filed by the page-check officer from the %s page check." % key,
-             "What it is for: a fleet-app page that shows a card a rule already settles, a stale card, a card shown after it was settled, or an old page.",
+             "What it is for: a fleet-app page that shows a card a rule already settles, a stale card, a card shown after it was settled, or an old page; or a standing commitment with no proof or no record.",
              "Epic: not assigned; whoever triages this picks one.", "",
              "Severity: %s. Kind: %s. Page: %s. Object: %s." % (lf["severity"], f["kind"], f["page"], f["id"].split(":", 2)[2]),
              off.found_line(1, day, day)]
@@ -673,7 +779,19 @@ def linear_pass(raw, args, key, docs, unread_kinds):
                          "captures": captures, "lint": lint}}
 
 
-def render_md(key, findings, new_ids, coverage, linear):
+def render_commitments(rows, retired):
+    red = [r for r in rows if r["status"] == "red"]
+    lines = ["", "## Standing commitments", "",
+             "%d row(s): %d green, %d red.%s" % (len(rows), len(rows) - len(red), len(red),
+                                                 " %d retired row(s) not checked." % retired if retired else "")]
+    if not rows:
+        lines.append("No standing commitment is recorded in any home read.")
+    for r in sorted(rows, key=lambda r: (r["status"] != "red", r["home"], r["id"])):
+        lines.append("- %s %s/%s (owner %s): %s - %s" % (r["status"].upper(), r["home"], r["id"], r["owner"], "; ".join(r["reasons"]), r["commitment"]))
+    return lines
+
+
+def render_md(key, findings, new_ids, coverage, linear, rows=(), retired=0):
     lines = ["# Page check %s" % key, "", "%d open finding(s), %d new." % (len(findings), len(new_ids)), ""]
     lines += ["Coverage: " + c for c in coverage]
     lines += ["- Linear: writes %s; %d of %d call(s) used%s." % (
@@ -695,7 +813,7 @@ def render_md(key, findings, new_ids, coverage, linear):
             f["evidence"], f["route"],
             " [Linear %s, found %d, score %.1f%s]" % (lin.get("issue") or lin.get("action", "not filed"), lin["found"], lin["score"],
                                                     ": " + lin["reason"] if lin.get("reason") else "") if lin else ""))
-    return "\n".join(lines) + "\n"
+    return "\n".join(lines + render_commitments(list(rows), retired)) + "\n"
 
 
 def run(args):
@@ -719,6 +837,12 @@ def run(args):
                 coverage.append("card record for source %s was %s" % (source, fstate))
         findings += card_findings(doc if isinstance(doc, dict) else {}, rules, settled_by_status(args.home), known_closed,
                                   now, args.stale_days, coverage, unread_kinds)
+    cfindings, crows, ccoverage, cretired, complete = commitment_findings(args.home, now)
+    findings += cfindings
+    coverage.extend(ccoverage)
+    docs[COMMITMENT_PAGE] = {} if args.home else None
+    if not complete:
+        unread_kinds.update(COMMITMENT_KINDS)
     findings.sort(key=lambda f: f["id"])
     os.makedirs(args.out, exist_ok=True)
     linear = linear_pass(findings, args, args.key, docs, unread_kinds)
@@ -734,9 +858,10 @@ def run(args):
     kept = {f["id"]: (now if f["id"] in new_ids else seen[f["id"]]) for f in findings}
     triage.write_if_changed(seen_path, json.dumps(kept, sort_keys=True, indent=1) + "\n")
     triage.write_if_changed(os.path.join(args.out, args.key + ".json"),
-                            json.dumps(dict(linear, key=args.key, findings=findings, new=sorted(new_ids), coverage=coverage),
+                            json.dumps(dict(linear, key=args.key, findings=findings, new=sorted(new_ids), coverage=coverage,
+                                            commitments=crows, commitments_retired=cretired),
                                        sort_keys=True, indent=1, ensure_ascii=False) + "\n")
-    triage.write_if_changed(os.path.join(args.out, args.key + ".md"), render_md(args.key, findings, new_ids, coverage, linear))
+    triage.write_if_changed(os.path.join(args.out, args.key + ".md"), render_md(args.key, findings, new_ids, coverage, linear, crows, cretired))
     if args.fm_home:
         friction._progress().write_handoff(os.path.join(args.out, args.key + ".start-requests.sh"),
                                            [r["execute"] for r in linear["start_requests"] if r["execute"]["env"]["FM_HOME"] == args.fm_home])

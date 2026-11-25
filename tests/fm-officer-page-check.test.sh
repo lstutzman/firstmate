@@ -782,6 +782,189 @@ test_a_failed_move_is_retried_without_a_second_comment() {
   pass "fm-officer page-check: a close whose move failed is retried without a second comment"
 }
 
+# commit_world <name>: a world whose home carries a register covering every spec type, green and red, and a second
+# local home (navigator, through data/secondmates.md) with a status log. Prints the home.
+commit_world() {
+  local name=$1 home nav t="$TMP_ROOT/$1" hook logs
+  home=$(make_world "$name")
+  nav="$t/navigator"
+  mkdir -p "$nav/state" "$nav/data" "$t/proof"
+  nav=$(cd "$nav" && pwd -P)
+  printf -- '- navigator - nav (home: %s; scope: office; projects: none; added 2026-11-04)\n' "$nav" > "$home/data/secondmates.md"
+  hook="$t/proof/landing-hook.sh"
+  printf '#!/bin/sh\nexec gate-ledger.py "$@"\n' > "$hook"
+  logs="$t/proof/logs"
+  mkdir -p "$logs"
+  printf '%s\n' '==> dotnet build ok' '==> dotnet build skipped (cached)' > "$logs/admission-one.log"
+  printf '%s\n' '==> dotnet build ok' '==> dotnet build again' > "$logs/admission-two.log"
+  printf '%s\n' '==> dotnet build skipped' > "$logs/admission-three.log"
+  printf '[at=%d] gate-ledger recorded\n' "$((NOW - 3600))" > "$logs/ledger-fresh.log"
+  printf '[at=%d] gate-ledger recorded\n' "$((NOW - 30 * 3600))" > "$logs/ledger-old.log"
+  : > "$t/proof/receipt-fresh.json"
+  : > "$t/proof/receipt-old.json"
+  touch -d "@$((NOW - 2 * 3600))" "$t/proof/receipt-fresh.json"
+  touch -d "@$((NOW - 40 * 3600))" "$t/proof/receipt-old.json"
+  printf 'working [at=%d]: ledger attributed\n' "$((NOW - 7200))" > "$nav/state/task-n.status"
+  row() {  # <id> <enforcement> <verify> [add args]
+    local id=$1 enf=$2 ver=$3
+    shift 3
+    FM_HOME="$home" bash "$ROOT/bin/fm-commitment.sh" add --id "$id" --commitment "The $id commitment" \
+      --lee-words 'Lee, main chat, 2026-11-25: "from now on"' --enforcement "$enf" --verify "$ver" "$@" >/dev/null \
+      || fail "could not record row $id"
+  }
+  row g-file "file:$hook#contains=gate-ledger.py" "file:$t/proof/receipt-*.json;max-age=26h" --owner navigator
+  row r-file-stale "file:$hook" "file:$t/proof/receipt-old.json;max-age=26h"
+  row r-file-none "file:$hook" "file:$t/proof/no-such-*.json"
+  row g-log "file:$hook" "log:$logs/ledger-*.log;regex=gate-ledger recorded;max-age=6h"
+  row r-log-old "file:$hook" "log:$logs/ledger-old.log;regex=gate-ledger recorded;max-age=6h"
+  row r-log-nomatch "file:$hook" "log:$logs/ledger-fresh.log;regex=attributed"
+  row g-count "file:$hook" "log:$logs/admission-one.log;regex=^==> dotnet build(?!.*skipped);max-count=1"
+  row r-count "file:$hook" "log:$logs/admission-*.log;regex=^==> dotnet build(?!.*skipped);max-count=1"
+  row g-status "file:$hook" "status:navigator;regex=ledger attributed;max-age=12h"
+  row r-status-old "file:$hook" "status:navigator;regex=ledger attributed;max-age=1h"
+  row r-status-home "file:$hook" "status:nowhere;regex=x"
+  row r-memory memory none --owner slarti
+  row r-none-both none none --owner navigator
+  printf '#!/bin/sh\nexec gate-ledger.py "$@"\n' > "$t/proof/removed-hook.sh"
+  row r-hook-gone "file:$t/proof/removed-hook.sh#contains=gate-ledger.py" "file:$t/proof/receipt-fresh.json"
+  # Move the hook away (CI runners have no trash tool) so its recorded path is gone.
+  mv "$t/proof/removed-hook.sh" "$t/proof/removed-hook.sh.gone" || fail "could not move the fixture hook away"
+  row retired-red none none
+  FM_HOME="$home" bash "$ROOT/bin/fm-commitment.sh" retire --id retired-red --reason 'superseded' >/dev/null || fail "could not retire"
+  # A hand-edited row whose enforcement spec is malformed.
+  jq '.rows += [{id: "r-malformed", commitment: "bad", lee_words: "w", owner: "x", enforcement: "bogus", verify: "none", recorded_at: "2026-11-25T00:00:00Z", retired: null}]' \
+    "$home/data/standing-commitments.json" > "$t/reg.tmp" && mv "$t/reg.tmp" "$home/data/standing-commitments.json"
+  printf '%s\n' "$home"
+}
+
+commit_ids() {  # <json> <kind>
+  jq -r --arg k "$2" '[.findings[] | select(.kind == $k) | .id | sub("^[^:]*:Standing commitments:"; "")] | sort | join(" ")' "$1"
+}
+
+test_every_spec_type_is_green_or_red_in_the_digest() {
+  local home json md
+  home=$(commit_world commits)
+  officer commits run page-check --date "$KEY" >/dev/null || fail "run must succeed"
+  json="$home/data/officers/page-check/$KEY.json"
+  md=$(<"$home/data/officers/page-check/$KEY.md")
+  assert_equals "$(basename "$home"):r-count $(basename "$home"):r-file-none $(basename "$home"):r-file-stale $(basename "$home"):r-hook-gone $(basename "$home"):r-log-nomatch $(basename "$home"):r-log-old $(basename "$home"):r-malformed $(basename "$home"):r-memory $(basename "$home"):r-none-both $(basename "$home"):r-status-home $(basename "$home"):r-status-old" \
+    "$(commit_ids "$json" commitment-unproven)" "every red row is one commitment-unproven finding; green rows and the retired row raise none"
+  assert_equals "high" "$(jq -r '[.findings[] | select(.kind == "commitment-unproven") | .severity] | unique | join(",")' "$json")" "commitment-unproven is high"
+  assert_equals "owner home: enforce or retire the commitment" "$(jq -r '[.findings[] | select(.kind == "commitment-unproven") | .route] | unique | join(",")' "$json")" "the route names the owner home"
+  assert_contains "$md" "## Standing commitments" "the digest has a Standing commitments section"
+  assert_contains "$md" "15 row(s): 4 green, 11 red. 1 retired row(s) not checked." "the section counts every unretired row and the retired one"
+  assert_contains "$md" "GREEN $(basename "$home")/g-file" "a green row is listed"
+  assert_contains "$md" "GREEN $(basename "$home")/g-status" "a status row with a fresh matching line is green"
+  assert_contains "$md" "enforcement: enforcement is a memory note only, which is not enforcement" "a memory row is red and says so"
+  assert_contains "$md" "enforcement: no enforcement point is named; verification: no verification is named" "a none/none row names both parts"
+  assert_contains "$md" "enforcement: enforcement file" "a vanished enforcement file is named as the failed part"
+  assert_contains "$md" "enforcement spec is malformed" "a malformed stored spec is red, not a crash"
+  assert_contains "$md" "admission-two.log has 2 line(s) matching" "a count breach names the file and its count"
+  assert_not_contains "$md" "admission-one.log has" "a file within the count is not named as a breach"
+  assert_contains "$md" "home nowhere is not read by this officer" "a status row naming an unread home is red"
+  assert_contains "$md" "no file matches" "a file glob with no match is red"
+  assert_contains "$md" "is 40.0h old; the limit is 26h" "a stale file is red with its age"
+  assert_contains "$md" "newest match in" "a stamped log match is judged by its newest stamp"
+  assert_not_contains "$md" "retired-red" "a retired row is skipped, in the digest and in the findings"
+  assert_equals "15" "$(jq '.commitments | length' "$json")" "the json digest lists every unretired row"
+  assert_equals "false" "$(jq '[.findings[].id] | any(contains("retired-red"))' "$json")" "a retired row raises no finding"
+  assert_equals "" "$(jq -r '[.start_requests[] | select(.id | startswith("commitment-"))] | map(.id) | join(" ")' "$json")" "a commitment finding never starts work"
+  pass "fm-officer page-check: every spec type is green or red, memory and none are red, a retired row is skipped, and the digest lists the whole register"
+}
+
+# status_line <home> <task> <at> <text>
+status_line() {
+  printf 'working [at=%d]: %s\n' "$3" "$4" >> "$1/state/$2.status"
+}
+
+test_unrecorded_commitments_match_tightly() {
+  local home json md recent=$((NOW - 3600)) old=$((NOW - 60 * 3600)) ids
+  home=$(make_world unrecorded)
+  FM_HOME="$home" bash "$ROOT/bin/fm-commitment.sh" add --id known-row --commitment c --lee-words w --enforcement none --verify none >/dev/null \
+    || fail "could not record the known row"
+  # Positives: each is its own task, so its finding id names it.
+  status_line "$home" pos-from "$recent" 'From now on every landing runs gate-ledger.py on a red pile'
+  status_line "$home" pos-clause "$recent" 'Every time a pile goes red, landing runs attribute-failure.py'
+  status_line "$home" pos-modal "$recent" 'we will run the ledger every time a gate fails'
+  status_line "$home" pos-standing "$recent" 'recorded a new standing rule: gate first'
+  printf 'working [at=%d] [commitment=no-such-row]: from now on the mark names nothing\n' "$recent" > "$home/state/pos-badmark.status"
+  # Negatives.
+  status_line "$home" neg-outstanding "$recent" 'outstanding items remain: 3 standing by for review'
+  status_line "$home" neg-label "$recent" 'filed under the Linear Standing label, nothing else'
+  status_line "$home" neg-quoted "$recent" 'Lee said "from now on turn it on" and I read it; no change made'
+  status_line "$home" neg-title "$recent" 'matched standing-rule routine-cleanup on the card'
+  status_line "$home" neg-result "$recent" 'the test fails every time on the old branch'
+  status_line "$home" neg-existing "$recent" 'the standing rule settles it, so no card was raised'
+  status_line "$home" neg-old "$old" 'from now on this is old news'
+  printf 'working [at=%d] [commitment=known-row]: from now on landing runs the ledger\n' "$recent" > "$home/state/neg-marked.status"
+  officer unrecorded run page-check --date "$KEY" >/dev/null || fail "run must succeed"
+  json="$home/data/officers/page-check/$KEY.json"
+  ids=$(jq -r '[.findings[] | select(.kind == "commitment-unrecorded") | .id | split(":")[3]] | sort | join(" ")' "$json")
+  assert_equals "pos-badmark pos-clause pos-from pos-modal pos-standing" "$ids" \
+    "only first-person or clause-opening commitments, unquoted, from the last 48 hours and with no recorded mark are flagged"
+  assert_equals "medium" "$(jq -r '[.findings[] | select(.kind == "commitment-unrecorded") | .severity] | unique | join(",")' "$json")" "commitment-unrecorded is medium"
+  assert_equals "false" "$(jq '[.findings[] | select(.kind == "commitment-unrecorded") | .evidence] | any(contains("gate-ledger") or contains("attribute-failure"))' "$json")" \
+    "the finding never carries the status line's own words"
+  assert_equals "owner home: enforce or retire the commitment" "$(jq -r '[.findings[] | select(.kind == "commitment-unrecorded") | .route] | unique | join(",")' "$json")" "the route is the owner's"
+  md=$(<"$home/data/officers/page-check/$KEY.md")
+  assert_contains "$md" "1 row(s): 0 green, 1 red." "the section counts the one unretired row, which has no proof"
+  pass "fm-officer page-check: an unrecorded commitment is matched tightly (outstanding, the Linear label, quotes, a rule id and results are not)"
+}
+
+test_an_unreadable_register_is_a_coverage_note_not_a_close() {  # also: no register at all is an empty section
+  local home json
+  home=$(make_world badreg)
+  officer badreg run page-check --date "$KEY" >/dev/null || fail "run must succeed with no register"
+  assert_contains "$(<"$home/data/officers/page-check/$KEY.md")" "No standing commitment is recorded in any home read." "no register still gets its section"
+  printf 'not json' > "$home/data/standing-commitments.json"
+  officer badreg run page-check --date "$KEY" >/dev/null || fail "an unreadable register must not fail the run"
+  json="$home/data/officers/page-check/$KEY.json"
+  assert_contains "$(jq -r '.coverage | join("\n")' "$json")" "standing-commitments.json is unreadable" "the digest names the unreadable register"
+  assert_equals "" "$(commit_ids "$json" commitment-unproven)" "an unreadable register raises no unproven finding"
+  printf 'working [at=%d] [commitment=lost-row]: from now on landing runs the ledger\n' "$((NOW - 3600))" > "$home/state/marked.status"
+  printf 'working [at=%d]: from now on landing runs the ledger\n' "$((NOW - 3600))" > "$home/state/unmarked.status"
+  officer badreg run page-check --date "$KEY" >/dev/null || fail "an unreadable register must not fail the run"
+  assert_equals "unmarked" "$(jq -r '[.findings[] | select(.kind == "commitment-unrecorded") | .id | split(":")[3]] | join(" ")' "$json")" \
+    "a marked line is not called unrecorded while a register is unreadable; an unmarked one still is"
+  pass "fm-officer page-check: an unreadable register is a coverage note"
+}
+
+test_commitment_findings_are_filed_and_never_started() {
+  local dir home json issue
+  linear_world commitfile
+  dir=$FAKE_LINEAR_DIR
+  home=$LW_HOME
+  FM_HOME="$home" bash "$ROOT/bin/fm-commitment.sh" add --id c1 --commitment c --lee-words w --enforcement memory --verify none >/dev/null \
+    || fail "could not record the row"
+  officer commitfile run page-check --date "$KEY" >/dev/null || fail "run must succeed"
+  json="$home/data/officers/page-check/$KEY.json"
+  issue=$(jq -r '[.findings[] | select(.kind == "commitment-unproven")][0].linear.issue' "$json")
+  assert_contains "$issue" "PC-" "a red commitment is filed in Linear through the shared path"
+  assert_equals "0" "$(jq '[.start_requests[] | select((.id // "") | startswith("commitment-"))] | length' "$json")" "and no start request is made for it"
+  assert_equals "0" "$(jq '.asks_for_lee | length' "$json")" "and nothing is held for Lee"
+  assert_not_contains "$(cat "$dir/bodies")" "The c1 commitment" "the item names the row by id and never carries its text"
+  pass "fm-officer page-check: a red commitment is filed in Linear and never started"
+}
+
+test_a_commitment_item_closes_once_its_row_is_retired_but_not_while_unread() {
+  local home
+  linear_world commitclose
+  home=$LW_HOME
+  seed_own_item PC-61 commitment-unproven "Standing commitments" "home:gone-row" "Filed by the page-check officer from the 2026-11-07T10 page check." '{}' "owner home; enforcement: no enforcement point is named"
+  seed_own_item PC-62 commitment-unproven "Standing commitments" "home:also-gone" "Filed by the page-check officer from the 2026-11-07T10 page check." '{}' "owner home; enforcement: no enforcement point is named"
+  printf 'not json' > "$home/data/standing-commitments.json"
+  officer commitclose run page-check --date "$KEY" >/dev/null || fail "run must succeed"
+  later_day commitclose 2026-11-01T14 >/dev/null || fail "a later check must succeed"
+  assert_equals "0" "$(closes_of PC-61)" "two checks that could not read the register do not close a commitment item"
+  rm -f "$home/data/standing-commitments.json"
+  later_day commitclose 2026-11-01T16 >/dev/null || fail "a readable check must succeed"
+  assert_equals "0" "$(closes_of PC-61)" "the first check that read the register is only one check"
+  later_day commitclose 2026-11-01T18 >/dev/null || fail "a second readable check must succeed"
+  assert_equals "1" "$(closes_of PC-61)" "an item whose row is gone from two readable checks closes"
+  assert_contains "$(grep '^issue comment PC-61 .*--dry-run' "$FAKE_LINEAR_DIR/log" | head -1)" "not recurred in two checks" "with the usual reason comment"
+  pass "fm-officer page-check: a commitment item closes after two readable checks without its finding, never on an unread register"
+}
+
 test_registry_needs_an_https_app
 test_findings_of_every_kind
 test_live_decisions_are_not_stale
@@ -804,3 +987,8 @@ test_a_failed_move_is_retried_without_a_second_comment
 test_an_unread_rules_file_or_card_record_does_not_count
 test_a_recurrence_in_a_blocked_check_resets_the_count
 test_a_log_without_cards_does_not_count
+test_every_spec_type_is_green_or_red_in_the_digest
+test_unrecorded_commitments_match_tightly
+test_an_unreadable_register_is_a_coverage_note_not_a_close
+test_commitment_findings_are_filed_and_never_started
+test_a_commitment_item_closes_once_its_row_is_retired_but_not_while_unread
