@@ -22,7 +22,9 @@
 #   - state/<id>.merge-handoff names its recorded pr= (bin/fm-pr-check.sh wrote
 #     it when it handed the PR to its merger home);
 #   - fm_office_task_landing holds: the latest event is the worker's done line,
-#     the PR was handed off, and no steer arrived since that line;
+#     the PR was handed off, and no steer arrived since that line; or, for a lane
+#     steered since (a read steer, none waiting), its merge poll is armed for the
+#     PR (fm_office_task_merge_watched, "handed" mode);
 #   - a no-mistakes task's run was released for that same handoff
 #     (state/<id>.nm-released equals the handoff record); an unreleased run is
 #     waited for, never parked under.
@@ -194,7 +196,8 @@ park_candidate() {
   PARK_HANDOFF=$(park_record_line "$STATE/$ID.merge-handoff") || { PARK_WHY="PR not handed to another home's merger"; return 1; }
   [ "${PARK_HANDOFF%% *}" = "$PARK_URL" ] || { PARK_WHY="handoff record names another PR"; return 1; }
   self=$(park_home_id) || { PARK_WHY="this home's identity marker is unusable"; return 1; }
-  fm_office_task_landing "$STATE" "$ID" "$self" || { PARK_WHY="task is not waiting on its merger"; return 1; }
+  fm_office_task_landing "$STATE" "$ID" "$self" || fm_office_task_merge_watched "$STATE" "$ID" handed \
+    || { PARK_WHY="task is not waiting on its merger"; return 1; }
   if [ "$PARK_MODE" = no-mistakes ]; then
     [ "$(park_record_line "$STATE/$ID.nm-released" || true)" = "$PARK_HANDOFF" ] \
       || { PARK_WHY="its no-mistakes run has not been released for this handoff"; return 1; }

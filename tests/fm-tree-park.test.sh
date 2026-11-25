@@ -272,6 +272,62 @@ test_sweep_reports_a_failure_after_the_agent_stopped_once() {
   pass "a park that fails after it stopped the agent is reported once and keeps the record naming its copy"
 }
 
+# arm_merge_poll <dir>: the merge poll bin/fm-pr-check.sh publishes for the lab
+# task's PR, written through the same library calls so its registration is genuine.
+arm_merge_poll() {  # <dir>
+  (
+    # shellcheck source=/dev/null
+    . "$ROOT/bin/fm-pr-lib.sh"
+    fm_pr_poll_prepare "$1/home/state" "$ID" github "$URL" github.com o/r "${URL##*/}" "$1/root/bin/fm-pr-poll.sh" \
+      && fm_pr_poll_publish_prepared
+  )
+}
+
+# A lane handed to its merger and then steered, as PropertyCompass lanes were
+# (FLEET-197): the steer was read after the worker's done line, the merge poll is
+# armed, and the worker stopped again. The steer must not keep the copy out of
+# the pool; a steer still waiting to be read, or no armed poll, still must.
+test_parks_a_steered_handed_lane_whose_merge_poll_is_armed() {
+  local dir msg
+  dir=$(make_lab handed-steered)
+  arm_merge_poll "$dir" || fail "handed-steered: could not arm the merge poll"
+  mkdir -p "$dir/home/state/$ID.inbox/handled"
+  msg="$dir/home/state/$ID.inbox/handled/0001.msg"
+  printf 'schema=fm-task-inbox.v1\nat=%s\n--\nhanded to the merger, stand by\n' "$(date -u -d '@1700000200' +%Y-%m-%dT%H:%M:%SZ)" > "$msg"
+  park "$dir" >/dev/null 2>"$dir/err" || fail "handed-steered: a handled steer kept an armed, handed lane out of the pool: $(cat "$dir/err")"
+  [ "$(meta_value "$dir" parked)" = 1 ] || fail "handed-steered: the lane was not recorded as parked"
+
+  dir=$(make_lab handed-steered-unread)
+  arm_merge_poll "$dir" || fail "handed-steered-unread: could not arm the merge poll"
+  mkdir -p "$dir/home/state/$ID.inbox"
+  printf 'restack\n' > "$dir/home/state/$ID.inbox/0001.msg"
+  park "$dir" >/dev/null 2>&1 && fail "handed-steered-unread: a lane with an unread steer was parked"
+  assert_not_parked "$dir" handed-steered-unread
+
+  dir=$(make_lab handed-steered-unarmed)
+  mkdir -p "$dir/home/state/$ID.inbox/handled"
+  printf 'schema=fm-task-inbox.v1\nat=%s\n--\nhanded\n' "$(date -u -d '@1700000200' +%Y-%m-%dT%H:%M:%SZ)" > "$dir/home/state/$ID.inbox/handled/0001.msg"
+  park "$dir" >/dev/null 2>&1 && fail "handed-steered-unarmed: a steered lane with no merge poll was parked"
+  assert_not_parked "$dir" handed-steered-unarmed
+
+  dir=$(make_lab handed-steered-open-decision)
+  arm_merge_poll "$dir" || fail "handed-steered-open-decision: could not arm the merge poll"
+  printf 'needs-decision [at=1700000150] [key=q1]\n' >> "$dir/home/state/$ID.status"
+  mkdir -p "$dir/home/state/$ID.inbox/handled"
+  printf 'schema=fm-task-inbox.v1\nat=%s\n--\nhanded\n' "$(date -u -d '@1700000200' +%Y-%m-%dT%H:%M:%SZ)" > "$dir/home/state/$ID.inbox/handled/0001.msg"
+  park "$dir" >/dev/null 2>&1 && fail "handed-steered-open-decision: an armed, handed lane with an open decision was parked"
+  assert_not_parked "$dir" handed-steered-open-decision
+
+  dir=$(make_lab handed-steered-handoff-decision)
+  arm_merge_poll "$dir" || fail "handed-steered-handoff-decision: could not arm the merge poll"
+  printf 'needs-decision [at=1700000150] [key=merge-handoff-%s]: merge it\n' "${URL##*/}" >> "$dir/home/state/$ID.status"
+  mkdir -p "$dir/home/state/$ID.inbox/handled"
+  printf 'schema=fm-task-inbox.v1\nat=%s\n--\nhanded\n' "$(date -u -d '@1700000200' +%Y-%m-%dT%H:%M:%SZ)" > "$dir/home/state/$ID.inbox/handled/0001.msg"
+  park "$dir" >/dev/null 2>"$dir/err" || fail "handed-steered-handoff-decision: an open merge-handoff decision kept an armed, handed lane out of the pool: $(cat "$dir/err")"
+  [ "$(meta_value "$dir" parked)" = 1 ] || fail "handed-steered-handoff-decision: the lane was not recorded as parked"
+  pass "a handed lane steered after its done line parks once its merge poll is armed, never with an unread steer, an open decision or no poll"
+}
+
 test_refuses_each_unsafe_copy() {
   local dir
   dir=$(make_lab unsafe-dirty)
@@ -946,6 +1002,7 @@ fm_test_run \
   test_routed_handoff_record_releases_and_parks \
   test_sweep_parks_once_per_handoff \
   test_sweep_reports_a_failure_after_the_agent_stopped_once \
+  test_parks_a_steered_handed_lane_whose_merge_poll_is_armed \
   test_refuses_each_unsafe_copy \
   test_codex_task_parks_only_once_its_rollout_proves_it_settled \
   test_transient_refusals_are_retried_on_a_later_sweep \
