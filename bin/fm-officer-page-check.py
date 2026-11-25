@@ -276,6 +276,8 @@ def settled_by_status(homes):
     """card id -> (epoch, text) of the newest keyed status line over every key that maps to the card, when that line is `resolved`."""
     newest_line = {}
     for home in homes:
+        if ":" in home.split("/", 1)[0]:
+            continue  # host:/dir, on another host: not read here (commitment_findings names it in coverage)
         for task, stream in friction.status_streams(triage.Home(home)).items():
             for e in stream:
                 if e["key"]:

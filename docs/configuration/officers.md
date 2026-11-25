@@ -199,7 +199,7 @@ It reads the registry's `repos`, `facts`, `gate`, `archive`, `window-days`, `max
 The page-check officer keeps the fleet app's pages current without Lee asking.
 It is a role of its own rather than part of the friction officer because it reads live pages every few hours, while the friction officer needs a harvested archive day and so can only run once a day; the friction officer still owns Lee's repeated asks (below).
 `bin/fm-officer-page-check.py`'s header owns the checks and the table of pages with their normal gaps.
-It only reads: one `GET` per page through `curl`, this home's status logs, and `gh-axi api GET` for the state of a PR a card names.
+It only reads: one `GET` per page through `curl`, the status logs of every home it reads (see below), and `gh-axi api GET` for the state of a PR a card names.
 Its only writes are the Linear filing and the closing of its own settled or unrecurred items, described under [Page-check officer and Linear](#page-check-officer-and-linear), and only with `writes: linear`.
 
 Its findings are one of six kinds, each naming the page and the object so firstmate can route the fix:
@@ -218,6 +218,7 @@ A rule becomes a check by adding one such line next to its prose in `data/captai
 A rules file with no such line is a coverage note in the digest, because the `standing-rule` check then covers nothing.
 
 The two commitment kinds read each local `--home`'s `data/standing-commitments.json`, which `bin/fm-commitment.sh` writes; its header owns the row fields and the enforcement and verification specs.
+The homes are this home, each local second mate home, and each remote-form home whose directory exists on this machine, read in place; a remote-form home that is not on this machine is named in the coverage notes as on another host, and its register and status logs are not read.
 The officer only evaluates typed specs (a file, a log line or a status line); it never runs a command from a row.
 The digest ends with a "Standing commitments" section that lists every unretired row, green or red, with the reason, so the digest shows the whole register and not only new findings.
 An unreadable register is a coverage note and counts for no auto-close, and while any register is unread a status line with a `[commitment=<id>]` mark is not flagged `commitment-unrecorded`; neither kind ever starts work.
