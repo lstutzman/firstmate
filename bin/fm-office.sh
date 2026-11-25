@@ -176,8 +176,8 @@
 #                    dispatches to reads "on", it enqueues one start request per missing kind of maintenance
 #                    lane (bosun, linear, sdlc) into this office's own inbox with fm-inbox.sh note --request-id,
 #                    unless a live task has the kind's id prefix, its request is still unhandled, or it was
-#                    already sent this episode (first "on" to the next "off"). Standing briefs: config/idle-maintenance
-#                    or the built-in ones; docs/configuration/secondmates-and-offices.md owns the schema. Reads the
+#                    already sent this episode (first "on" to the next "off"). The PR drain is the only trigger
+#                    wired; docs/configuration/secondmates-and-offices.md owns the details. Reads the
 #                    drain at most every FM_OFFICE_IDLE_MAINT_SECS (default 900); each start is logged in
 #                    data/office/idle-maintenance.log; FM_OFFICE_DRAIN_CMD replaces the drain reader (tests).
 #   upstream         "office <id>: upstream <old>..<new>: <n> new commit(s) not in <fork-ref>; newest: <subject> | ..."
@@ -1043,41 +1043,14 @@ record("delivered", "%d start request(s) delivered to this office's inbox" % len
 PY
 }
 
-# idle_briefs: sets IM_PROJECTS (space-separated projects whose PR drain parks forward work) and IM_BRIEFS (one
-# "<kind>|<prefixes>|<ask>" line per kind) from config/idle-maintenance, or from the built-in standing briefs when that
-# file is absent; a malformed line, or a bosun ask that does not quote the clean-up approvals it runs under, goes to
-# data/office/idle-maintenance.err and is skipped.
+# idle_briefs: sets IM_PROJECTS (the registry line's dispatch projects, whose PR drain parks forward work) and
+# IM_BRIEFS (one "<kind>|<prefixes>|<ask>" standing brief per kind).
 idle_briefs() {
-  local cfg="$CONFIG/idle-maintenance" line err="$DATA/office/idle-maintenance.err" problems=''
-  IM_PROJECTS=
-  IM_BRIEFS=
-  if [ -f "$cfg" ]; then
-    while IFS= read -r line || [ -n "$line" ]; do
-      case "$line" in ''|'#'*) continue ;; esac
-      if [[ "$line" =~ ^drain[[:space:]]+([A-Za-z0-9._,-]+)[[:space:]]*$ ]]; then
-        IM_PROJECTS="$IM_PROJECTS ${BASH_REMATCH[1]//,/ }"
-      elif [[ "$line" =~ ^kind[[:space:]]+([a-z]+)[[:space:]]+prefixes=([a-z0-9,-]+)[[:space:]]+ask=(.+)$ ]]; then
-        if [ "${BASH_REMATCH[1]}" = bosun ] && [[ "${BASH_REMATCH[3]}" != *"fleet-rules-cleanup.md rules a to g only"* ]]; then
-          problems="${problems}bosun: its ask must quote that it runs under the standing clean-up approvals in fleet-rules-cleanup.md rules a to g only; kind skipped"$'\n'
-          continue
-        fi
-        IM_BRIEFS="${IM_BRIEFS}${BASH_REMATCH[1]}|${BASH_REMATCH[2]}|${BASH_REMATCH[3]}"$'\n'
-      else
-        problems="${problems}not a drain or kind line: $(printf '%s' "$line" | cut -c1-80)"$'\n'
-      fi
-    done < "$cfg"
-  else
-    IM_BRIEFS="bosun|bosun-,maint-bosun|Run Bosun clean-up as an idle-maintenance lane: this office ($OFFICE_ID) is the Bosun runner until a Bosun home exists, and the lane runs under the standing clean-up approvals in ~/.claude/references/fleet-rules-cleanup.md rules a to g only; anything outside rules a to g stays with Lee."$'\n'
-    IM_BRIEFS="${IM_BRIEFS}linear|linear-triage-,linear-validate-,maint-linear|Run Linear triage and validation as an idle-maintenance lane: triage the open Linear items and validate the recently completed ones against their acceptance."$'\n'
-    IM_BRIEFS="${IM_BRIEFS}sdlc|sdlc-review-,maint-sdlc|Run an SDLC review and sharpening lane: review how delivery went recently and sharpen the rules, checks or skills that slowed work."$'\n'
-  fi
-  [ -n "$IM_PROJECTS" ] || IM_PROJECTS=$(line_field "$OFFICE_LINE" dispatch || true)
+  IM_BRIEFS="bosun|bosun-,maint-bosun|Run Bosun clean-up as an idle-maintenance lane: this office ($OFFICE_ID) is the Bosun runner until a Bosun home exists, and the lane runs under the standing clean-up approvals in ~/.claude/references/fleet-rules-cleanup.md rules a to g only; anything outside rules a to g stays with Lee."$'\n'
+  IM_BRIEFS="${IM_BRIEFS}linear|linear-triage-,linear-validate-,maint-linear|Run Linear triage and validation as an idle-maintenance lane: triage the open Linear items and validate the recently completed ones against their acceptance."$'\n'
+  IM_BRIEFS="${IM_BRIEFS}sdlc|sdlc-review-,maint-sdlc|Run an SDLC review and sharpening lane: review how delivery went recently and sharpen the rules, checks or skills that slowed work."$'\n'
+  IM_PROJECTS=$(line_field "$OFFICE_LINE" dispatch || true)
   IM_PROJECTS=${IM_PROJECTS//,/ }
-  if [ -n "$problems" ]; then
-    printf '%s' "$problems" > "$err" 2>/dev/null || true
-  else
-    rm -f "$err" 2>/dev/null || true
-  fi
 }
 
 # idle_lane_live <comma-separated prefixes>: 0 when a live task of this home (fm_office_live_tasks's places) has an id starting with one of them.
@@ -1097,8 +1070,10 @@ idle_lane_live() {
 # --request-id, for the office to dispatch as ordinary routed work. A kind is skipped when a live task has one of its
 # id prefixes, when its request is still unhandled in the inbox, or when it was already sent in this episode (an episode
 # runs from the first "on" to the next "off"; records: data/office/idle-maintenance.episode and .sent). The drain is read
-# at most every FM_OFFICE_IDLE_MAINT_SECS (default 900); "unknown" and "none" change nothing. It prints nothing (the
-# inbox note wakes the office) and logs each start to data/office/idle-maintenance.log.
+# at most every FM_OFFICE_IDLE_MAINT_SECS (default 900); "unknown" and "none" change nothing, and a project that reads
+# "none" (no GitHub remote) is left out of the episode-end count. The PR drain is the only trigger wired: a demo
+# freeze, a line stop and a quota hold start nothing until something publishes a structured record of them. It prints
+# nothing (the inbox note wakes the office) and logs each start to data/office/idle-maintenance.log.
 check_idle_maintenance() {
   local interval=${FM_OFFICE_IDLE_MAINT_SECS:-900} now last ep sent project dir state on_project='' off=0 read=0
   local brief kind prefixes ask rid first body line
@@ -1110,7 +1085,6 @@ check_idle_maintenance() {
   if [[ "$last" =~ ^[0-9]+$ ]] && [ "$now" -ge "$last" ] && [ $((now - last)) -lt "$interval" ]; then return 0; fi
   printf '%s\n' "$now" > "$DATA/office/idle-maintenance.try" 2>/dev/null || return 0
   idle_briefs
-  [ -n "$IM_BRIEFS" ] || return 0
   if [ -n "${FM_OFFICE_DRAIN_CMD:-}" ]; then drain_cmd=("$FM_OFFICE_DRAIN_CMD"); else drain_cmd=(python3 "$SCRIPT_DIR/fm-pr-drain.py"); fi
   for project in $IM_PROJECTS; do
     dir="$FM_HOME/projects/$project"
@@ -1119,6 +1093,7 @@ check_idle_maintenance() {
     case "$state" in
       on) on_project=$project; break ;;
       off) off=$((off + 1)); read=$((read + 1)) ;;
+      none) ;;
       *) read=$((read + 1)) ;;
     esac
   done

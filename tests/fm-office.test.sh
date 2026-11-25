@@ -1064,36 +1064,30 @@ EOF
   pass 'the check reads the drain at most once per interval'
 }
 
-test_idle_maintenance_config_replaces_the_standing_briefs() {
+test_idle_maintenance_project_off_github_does_not_hold_the_episode_open() {
   local w
-  w=$(idle_world config)
-  drain_on "$w"
-  mkdir -p "$w/navigator/projects/skills" "$w/navigator/config"
-  cat > "$w/navigator/config/idle-maintenance" <<'EOF'
-# overrides the built-in standing briefs
-drain skills
-kind sdlc prefixes=sdlc-review-,maint-sdlc ask=Review the SDLC.
+  w=$(idle_world mixed)
+  sed -i.bak 's/dispatch: PropertyCompass2;/dispatch: PropertyCompass2,skills;/' "$w/data/offices.md" && rm -f "$w/data/offices.md.bak"
+  mkdir -p "$w/navigator/projects/skills"
+  cat > "$w/drain-stub.sh" <<'EOF'
+#!/usr/bin/env bash
+case "$3" in
+  skills) echo none ;;
+  *) cat "$(dirname "$0")/drain.state" ;;
+esac
 EOF
-  printf 'on lstutzman/skills 30\n' > "$w/drain.state"
-  idle_check "$w" >/dev/null
-  assert_equals "sdlc" "$(idle_requests "$w")" "the config names the kinds and the drain projects"
-  pass 'config/idle-maintenance replaces the built-in standing briefs'
-}
-
-test_idle_maintenance_refuses_a_bosun_ask_without_its_approval_quote() {
-  local w
-  w=$(idle_world quote)
   drain_on "$w"
-  mkdir -p "$w/navigator/config"
-  cat > "$w/navigator/config/idle-maintenance" <<'EOF'
-drain PropertyCompass2
-kind bosun prefixes=bosun-,maint-bosun ask=Run Bosun clean-up.
-kind sdlc prefixes=sdlc-review-,maint-sdlc ask=Review the SDLC.
-EOF
   idle_check "$w" >/dev/null
-  assert_equals "sdlc" "$(idle_requests "$w")" "a Bosun ask that does not quote the clean-up rules a to g is not sent"
-  assert_contains "$(cat "$w/navigator/data/office/idle-maintenance.err")" "bosun" "the refusal is logged"
-  pass 'a Bosun kind whose ask omits the standing clean-up approval quote is refused'
+  assert_equals 3 "$(idle_requests "$w" | wc -l | tr -d ' ')" "first episode enqueues three"
+  mkdir -p "$w/navigator/state/inbox/handled"
+  mv "$w"/navigator/state/inbox/*.note "$w/navigator/state/inbox/handled/"
+  drain_off "$w"
+  idle_check "$w" $((SRC_NOW + 1800)) >/dev/null
+  assert_absent "$w/navigator/data/office/idle-maintenance.episode" "off on one project and none on the other ends the episode"
+  drain_on "$w"
+  idle_check "$w" $((SRC_NOW + 3600)) >/dev/null
+  assert_equals 6 "$(idle_requests "$w" | wc -l | tr -d ' ')" "a new episode enqueues again"
+  pass 'a project that reads none does not hold an idle episode open'
 }
 
 test_idle_maintenance_source_registers_and_validates() {
@@ -1750,6 +1744,5 @@ test_idle_maintenance_in_flight_lane_suppresses_its_kind
 test_idle_maintenance_one_request_per_kind_per_episode
 test_idle_maintenance_unhandled_request_suppresses_a_new_episode
 test_idle_maintenance_reads_the_drain_at_most_every_interval
-test_idle_maintenance_config_replaces_the_standing_briefs
-test_idle_maintenance_refuses_a_bosun_ask_without_its_approval_quote
+test_idle_maintenance_project_off_github_does_not_hold_the_episode_open
 test_idle_maintenance_source_registers_and_validates
