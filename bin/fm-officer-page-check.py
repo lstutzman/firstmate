@@ -55,8 +55,10 @@ it). It acts on nothing itself.
                    ("captain hold <id>: answered" or "...: released"). A
                    routing or reconcile acknowledgement (decision-sweep,
                    pending-reply, reconciled) is not evidence.
-  shown-after-done  a card shown although its record is settled: its status
-                 line was resolved by a captain answer before the card was (re)raised
+  shown-after-done  a card shown although its record is settled: the newest
+                 status line over every key that maps to the card (a later
+                 -2 hold reopens it) was resolved by a captain answer before
+                 the card was (re)raised
                  (same evidence as stale-card; a routing resolve does not
                  count), or the app's
                  own card record for a facts source (GET
@@ -266,18 +268,16 @@ def load_rules(path):
 
 
 def settled_by_status(homes):
-    """card id -> (epoch, text) of its keyed status line's last word, when that word is `resolved`."""
-    out = {}
+    """card id -> (epoch, text) of the newest keyed status line over every key that maps to the card, when that line is `resolved`."""
+    newest_line = {}
     for home in homes:
         for task, stream in friction.status_streams(triage.Home(home)).items():
-            last = {}
             for e in stream:
                 if e["key"]:
-                    last[e["key"]] = e
-            for key, e in last.items():
-                if e["state"] == "resolved":
-                    out[friction.card_id(task, key)] = (e["at"], e["text"])
-    return out
+                    cid = friction.card_id(task, e["key"])
+                    if cid not in newest_line or e["at"] >= newest_line[cid]["at"]:
+                        newest_line[cid] = e
+    return {cid: (e["at"], e["text"]) for cid, e in newest_line.items() if e["state"] == "resolved"}
 
 
 def pr_state(repo, number, cache, budget):
