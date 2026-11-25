@@ -958,12 +958,24 @@ test_homes_with_one_basename_are_each_read() {
   FM_HOME="$b" bash "$ROOT/bin/fm-commitment.sh" add --id row-b --commitment c --lee-words w --enforcement memory --verify none >/dev/null || fail "could not record row-b"
   status_line "$a" task-a "$((NOW - 3600))" 'from now on landing runs the ledger'
   status_line "$b" task-b "$((NOW - 3600))" 'from now on landing runs the ledger'
+  status_line "$a" proof-a "$((NOW - 3600))" 'ledger-proof-only-in-copy1'
+  status_line "$b" proof-b "$((NOW - 3600))" 'ledger-proof-only-in-copy2'
+  FM_HOME="$b" bash "$ROOT/bin/fm-commitment.sh" add --id row-first --commitment c --lee-words w --enforcement memory \
+    --verify 'status:mate;regex=ledger-proof-only-in-copy1' >/dev/null || fail "could not record row-first"
+  FM_HOME="$b" bash "$ROOT/bin/fm-commitment.sh" add --id row-later --commitment c --lee-words w --enforcement memory \
+    --verify 'status:mate;regex=ledger-proof-only-in-copy2' >/dev/null || fail "could not record row-later"
   officer samename run page-check --date "$KEY" >/dev/null || fail "run must succeed"
   json="$home/data/officers/page-check/$KEY.json"
-  assert_equals "2" "$(jq '.commitments | length' "$json")" "both same-named homes' register rows are read"
+  assert_equals "4" "$(jq '.commitments | length' "$json")" "both same-named homes' register rows are read"
+  assert_not_contains "$(jq -r '.commitments[] | select(.id == "row-first") | .reasons | join("; ")' "$json")" "verification:" \
+    "status:<basename> reads the first home passed with that basename"
+  assert_contains "$(jq -r '.commitments[] | select(.id == "row-later") | .reasons | join("; ")' "$json")" "no line in home mate status logs matches" \
+    "status:<basename> never reads a later home with that basename"
+  assert_equals "mate:row-a" "$(jq -r '[.findings[] | select(.kind == "commitment-unproven") | .id | select(endswith(":row-a"))] | .[0] | split(":")[2:] | join(":")' "$json")" \
+    "the first home keeps its basename as its id"
   assert_equals "task-a task-b" "$(jq -r '[.findings[] | select(.kind == "commitment-unrecorded") | .id | split(":")[3]] | sort | join(" ")' "$json")" \
     "both same-named homes' unrecorded status lines are found"
-  assert_equals "2" "$(jq '[.findings[] | select(.kind == "commitment-unproven") | .id] | unique | length' "$json")" "each row is its own finding"
+  assert_equals "4" "$(jq '[.findings[] | select(.kind == "commitment-unproven") | .id] | unique | length' "$json")" "each row is its own finding"
   pass "fm-officer page-check: two homes with one basename are each read"
 }
 

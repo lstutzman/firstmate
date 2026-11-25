@@ -94,6 +94,11 @@ commitment`, and never start work (neither is in START_SOURCES). The digest ends
 listing every row, green or red, with the reason. An unreadable register is a coverage note and stops its rows' findings
 from counting toward an auto-close; while any register is unread, a status line that carries a [commitment=<id>] mark is
 not flagged commitment-unrecorded, because its row may be in the register that was not read.
+A home's id is its folder's basename. When several --home paths share a basename (a main home and its worktree copies),
+the first one passed keeps the basename, so its finding ids stay the same as copies come and go, and a
+`status:<basename>` verify spec reads it. bin/fm-officer.sh passes the officer's own home first. Each later home gets the
+fewest trailing path parts, joined with '-', that tell it apart; that id depends on the other homes, so a spec cannot
+name a later home reliably.
 
 Linear. With --writes linear (the registry's `writes: linear`) the officer follows the
 shared officer contract (docs/officers/contract.md; bin/fm-officer-linear.py owns the
@@ -383,23 +388,25 @@ def home_id(path):
 
 
 def display_ids(paths):
-    """{path: id}: the basename while it is unique among paths, otherwise the fewest trailing path parts, joined with '-',
-    that tell the homes apart. An id never repeats within the run."""
+    """{path: id} over paths in the order given: the first path with a basename keeps the basename, and each later path
+    with that basename gets the fewest trailing path parts, joined with '-', that no other id has. An id never repeats."""
     parts = {p: [x for x in p.split("/") if x] or [p] for p in paths}
     out, used = {}, set()
-    for base in sorted({v[-1] for v in parts.values()}):
-        group = sorted(p for p, v in parts.items() if v[-1] == base)
-        k = 1
-        while True:
-            ids = ["-".join(parts[p][-k:]) for p in group]
-            if len(set(ids)) == len(ids) and not used.intersection(ids) or all(k >= len(parts[p]) for p in group):
-                break
+    for p in paths:
+        if parts[p][-1] not in used:
+            out[p] = parts[p][-1]
+            used.add(out[p])
+    for p in paths:
+        if p in out:
+            continue
+        k = 2
+        while k < len(parts[p]) and "-".join(parts[p][-k:]) in used:
             k += 1
-        for p, i in zip(group, ids):
-            while i in used:
-                i += "-"
-            out[p] = i
-            used.add(i)
+        i = "-".join(parts[p][-k:])
+        while i in used:
+            i += "-"
+        out[p] = i
+        used.add(i)
     return out
 
 
@@ -418,11 +425,8 @@ def commitment_findings(homes, now):
     # Homes are keyed by resolved path: two homes with one basename (a main home and its worktree copies) never collide.
     ids = display_ids(list(paths))
     roots = {ids[p]: paths[p] for p in paths}
-    for base in {os.path.basename(p) for p in paths}:
-        if base not in roots:
-            roots[base] = None  # ambiguous: more than one home has this basename
     registers, unread = {}, False
-    for hid, root in sorted((i, r) for i, r in roots.items() if r is not None):
+    for hid, root in sorted(roots.items()):
         if not os.path.isdir(root):
             coverage.append("home %s is not readable, so its standing commitments were not read" % hid)
             unread = True
@@ -452,7 +456,7 @@ def commitment_findings(homes, now):
                                    "commitment %s is unproven" % rid,
                                    friction.scrub("owner %s, recorded in %s; %s" % (owner, hid, "; ".join(reasons)), 400),
                                    COMMITMENT_ROUTE, "high"))
-    for hid, root in sorted((i, r) for i, r in roots.items() if r is not None):
+    for hid, root in sorted(roots.items()):
         state = os.path.join(root, "state")
         try:
             names = sorted(n for n in os.listdir(state) if n.endswith(".status") and not n.startswith("."))
