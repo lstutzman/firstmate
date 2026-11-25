@@ -54,8 +54,10 @@ card, a page owner fixes a page). It acts on nothing itself.
                    ("captain hold <id>: answered" or "...: released"). A
                    routing or reconcile acknowledgement (decision-sweep,
                    pending-reply, reconciled) is not evidence.
-  shown-after-done  a card shown although its record is settled: its status
-                 line was resolved by a captain answer before the card was (re)raised
+  shown-after-done  a card shown although its record is settled: the newest
+                 status line over every key that maps to the card (a later
+                 -2 hold reopens it) was resolved by a captain answer before
+                 the card was (re)raised
                  (same evidence as stale-card; a routing resolve does not
                  count), or the app's
                  own card record for a facts source (GET
