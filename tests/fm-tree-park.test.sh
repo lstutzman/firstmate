@@ -309,7 +309,23 @@ test_parks_a_steered_handed_lane_whose_merge_poll_is_armed() {
   printf 'schema=fm-task-inbox.v1\nat=%s\n--\nhanded\n' "$(date -u -d '@1700000200' +%Y-%m-%dT%H:%M:%SZ)" > "$dir/home/state/$ID.inbox/handled/0001.msg"
   park "$dir" >/dev/null 2>&1 && fail "handed-steered-unarmed: a steered lane with no merge poll was parked"
   assert_not_parked "$dir" handed-steered-unarmed
-  pass "a handed lane steered after its done line parks once its merge poll is armed, never with an unread steer or no poll"
+
+  dir=$(make_lab handed-steered-open-decision)
+  arm_merge_poll "$dir" || fail "handed-steered-open-decision: could not arm the merge poll"
+  printf 'needs-decision [at=1700000150] [key=q1]: which way\n' >> "$dir/home/state/$ID.status"
+  mkdir -p "$dir/home/state/$ID.inbox/handled"
+  printf 'schema=fm-task-inbox.v1\nat=%s\n--\nhanded\n' "$(date -u -d '@1700000200' +%Y-%m-%dT%H:%M:%SZ)" > "$dir/home/state/$ID.inbox/handled/0001.msg"
+  park "$dir" >/dev/null 2>&1 && fail "handed-steered-open-decision: an armed, handed lane with an open decision was parked"
+  assert_not_parked "$dir" handed-steered-open-decision
+
+  dir=$(make_lab handed-steered-handoff-decision)
+  arm_merge_poll "$dir" || fail "handed-steered-handoff-decision: could not arm the merge poll"
+  printf 'needs-decision [at=1700000150] [key=merge-handoff-%s]: merge it\n' "${URL##*/}" >> "$dir/home/state/$ID.status"
+  mkdir -p "$dir/home/state/$ID.inbox/handled"
+  printf 'schema=fm-task-inbox.v1\nat=%s\n--\nhanded\n' "$(date -u -d '@1700000200' +%Y-%m-%dT%H:%M:%SZ)" > "$dir/home/state/$ID.inbox/handled/0001.msg"
+  park "$dir" >/dev/null 2>"$dir/err" || fail "handed-steered-handoff-decision: an open merge-handoff decision kept an armed, handed lane out of the pool: $(cat "$dir/err")"
+  [ "$(meta_value "$dir" parked)" = 1 ] || fail "handed-steered-handoff-decision: the lane was not recorded as parked"
+  pass "a handed lane steered after its done line parks once its merge poll is armed, never with an unread steer, an open decision or no poll"
 }
 
 test_refuses_each_unsafe_copy() {
