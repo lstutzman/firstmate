@@ -948,8 +948,8 @@ test_unrecorded_commitments_match_tightly() {
 test_homes_with_one_basename_are_each_read() {
   local home json t="$TMP_ROOT/samename" a b
   home=$(make_world samename)
-  a="$t/copy1/mate"
-  b="$t/copy2/mate"
+  a="$t/zcopy/mate"
+  b="$t/acopy/mate"
   mkdir -p "$a/state" "$a/data" "$b/state" "$b/data"
   a=$(cd "$a" && pwd -P)
   b=$(cd "$b" && pwd -P)
@@ -958,12 +958,12 @@ test_homes_with_one_basename_are_each_read() {
   FM_HOME="$b" bash "$ROOT/bin/fm-commitment.sh" add --id row-b --commitment c --lee-words w --enforcement memory --verify none >/dev/null || fail "could not record row-b"
   status_line "$a" task-a "$((NOW - 3600))" 'from now on landing runs the ledger'
   status_line "$b" task-b "$((NOW - 3600))" 'from now on landing runs the ledger'
-  status_line "$a" proof-a "$((NOW - 3600))" 'ledger-proof-only-in-copy1'
-  status_line "$b" proof-b "$((NOW - 3600))" 'ledger-proof-only-in-copy2'
+  status_line "$a" proof-a "$((NOW - 3600))" 'ledger-proof-only-in-first-passed'
+  status_line "$b" proof-b "$((NOW - 3600))" 'ledger-proof-only-in-later-passed'
   FM_HOME="$b" bash "$ROOT/bin/fm-commitment.sh" add --id row-first --commitment c --lee-words w --enforcement memory \
-    --verify 'status:mate;regex=ledger-proof-only-in-copy1' >/dev/null || fail "could not record row-first"
+    --verify 'status:mate;regex=ledger-proof-only-in-first-passed' >/dev/null || fail "could not record row-first"
   FM_HOME="$b" bash "$ROOT/bin/fm-commitment.sh" add --id row-later --commitment c --lee-words w --enforcement memory \
-    --verify 'status:mate;regex=ledger-proof-only-in-copy2' >/dev/null || fail "could not record row-later"
+    --verify 'status:mate;regex=ledger-proof-only-in-later-passed' >/dev/null || fail "could not record row-later"
   officer samename run page-check --date "$KEY" >/dev/null || fail "run must succeed"
   json="$home/data/officers/page-check/$KEY.json"
   assert_equals "4" "$(jq '.commitments | length' "$json")" "both same-named homes' register rows are read"
