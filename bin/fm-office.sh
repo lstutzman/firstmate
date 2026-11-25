@@ -121,11 +121,11 @@
 # register-sources runs in an office home (one carrying .fm-office). It reads
 # the office's registry line from the parent's data/offices.md, writes one
 # shim state/office-<source>.check.sh for each source in its sources: field
-# (tick -> office-tick, upstream -> office-upstream, ratchet -> office-ratchet, research -> office-research,
+# (tick -> office-tick, upstream -> office-upstream, ratchet -> office-ratchet, research -> office-research, idle-maintenance -> office-idle-maintenance,
 # lane:progress -> office-lane-progress, lane:surgeon:high -> office-lane-surgeon-high),
 # and binds each with fm-check-register.sh. Each shim exports FM_HOME for the
 # office home and execs "fm-office.sh check <source>". It is idempotent, and it
-# unregisters an office-tick, office-upstream, office-ratchet, office-research or office-lane-*
+# unregisters an office-tick, office-upstream, office-ratchet, office-research, office-idle-maintenance or office-lane-*
 # shim whose source is no longer listed. The office's own watcher sweeps state/*.check.sh, so a source wakes the office and never main.
 #
 # check <source> is the body of a source check. It is fast, contacts no other
@@ -172,6 +172,14 @@
 # parent. Start delivery runs
 # fm-inbox.sh in this home only; nothing in the parent is written.
 #
+#   idle-maintenance (opt-in) prints nothing. While the PR drain (bin/fm-pr-drain.py state) of a project the office
+#                    dispatches to reads "on", it enqueues one start request per missing kind of maintenance
+#                    lane (bosun, linear, sdlc) into this office's own inbox with fm-inbox.sh note --request-id,
+#                    unless a live task has the kind's id prefix, its request is still unhandled, or it was
+#                    already sent this episode (first "on" to the next "off"). Standing briefs: config/idle-maintenance
+#                    or the built-in ones; docs/configuration/secondmates-and-offices.md owns the schema. Reads the
+#                    drain at most every FM_OFFICE_IDLE_MAINT_SECS (default 900); each start is logged in
+#                    data/office/idle-maintenance.log; FM_OFFICE_DRAIN_CMD replaces the drain reader (tests).
 #   upstream         "office <id>: upstream <old>..<new>: <n> new commit(s) not in <fork-ref>; newest: <subject> | ..."
 #                    once per new upstream head, read from config/firstmate-upstream
 #                    (one line: <remote-or-url> [<branch>] [<fork-ref>]; branch defaults to
@@ -297,17 +305,17 @@ office_problems() {
   [ "$v" = none ] || printf 'auto-merge-classes must be none, got "%s"\n' "$v"
   v=$(line_field "$line" sources || true)
   if [ -z "$v" ]; then
-    printf 'sources must list tick, upstream, ratchet, research or lane:<officer-id>[:high]\n'
+    printf 'sources must list tick, upstream, ratchet, research, idle-maintenance or lane:<officer-id>[:high]\n'
   else
     for p in ${v//,/ }; do
       case "$p" in
-        tick|upstream|ratchet|research) ;;
+        tick|upstream|ratchet|research|idle-maintenance) ;;
         lane:*)
           p=${p#lane:}; p=${p%:high}
           grep -Eq "^- $p - " "$DATA/officers.md" 2>/dev/null \
             || printf 'source lane:%s is not a registered officer\n' "$p"
           ;;
-        *) printf 'source "%s" must be tick, upstream, ratchet, research, lane:<officer-id> or lane:<officer-id>:high\n' "$p" ;;
+        *) printf 'source "%s" must be tick, upstream, ratchet, research, idle-maintenance, lane:<officer-id> or lane:<officer-id>:high\n' "$p" ;;
       esac
     done
   fi
@@ -795,7 +803,7 @@ cmd_register_sources() {
   device=$(fm_pr_file_device "$STATE") || die "state directory is unavailable"
   for src in ${sources//,/ }; do
     case "$src" in
-      tick|upstream|ratchet|research|lane:*) ;;
+      tick|upstream|ratchet|research|idle-maintenance|lane:*) ;;
       *) die "unknown source $src" 3 ;;
     esac
     id=$(source_check_id "$src")
@@ -817,7 +825,7 @@ cmd_register_sources() {
     keep="$keep$id "
     printf 'registered: office source %s (state/%s.check.sh)\n' "$src" "$id"
   done
-  for f in "$STATE"/office-tick.check.sh "$STATE"/office-upstream.check.sh "$STATE"/office-ratchet.check.sh "$STATE"/office-research.check.sh "$STATE"/office-lane-*.check.sh; do
+  for f in "$STATE"/office-tick.check.sh "$STATE"/office-upstream.check.sh "$STATE"/office-ratchet.check.sh "$STATE"/office-research.check.sh "$STATE"/office-idle-maintenance.check.sh "$STATE"/office-lane-*.check.sh; do
     [ -e "$f" ] || continue
     id=$(basename "$f" .check.sh)
     case "$keep" in *" $id "*) continue ;; esac
@@ -1035,6 +1043,120 @@ record("delivered", "%d start request(s) delivered to this office's inbox" % len
 PY
 }
 
+# idle_briefs: sets IM_PROJECTS (space-separated projects whose PR drain parks forward work) and IM_BRIEFS (one
+# "<kind>|<prefixes>|<ask>" line per kind) from config/idle-maintenance, or from the built-in standing briefs when that
+# file is absent; a malformed line, or a bosun ask that does not quote the clean-up approvals it runs under, goes to
+# data/office/idle-maintenance.err and is skipped.
+idle_briefs() {
+  local cfg="$CONFIG/idle-maintenance" line err="$DATA/office/idle-maintenance.err" problems=''
+  IM_PROJECTS=
+  IM_BRIEFS=
+  if [ -f "$cfg" ]; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in ''|'#'*) continue ;; esac
+      if [[ "$line" =~ ^drain[[:space:]]+([A-Za-z0-9._,-]+)[[:space:]]*$ ]]; then
+        IM_PROJECTS="$IM_PROJECTS ${BASH_REMATCH[1]//,/ }"
+      elif [[ "$line" =~ ^kind[[:space:]]+([a-z]+)[[:space:]]+prefixes=([a-z0-9,-]+)[[:space:]]+ask=(.+)$ ]]; then
+        if [ "${BASH_REMATCH[1]}" = bosun ] && [[ "${BASH_REMATCH[3]}" != *"fleet-rules-cleanup.md rules a to g only"* ]]; then
+          problems="${problems}bosun: its ask must quote that it runs under the standing clean-up approvals in fleet-rules-cleanup.md rules a to g only; kind skipped"$'\n'
+          continue
+        fi
+        IM_BRIEFS="${IM_BRIEFS}${BASH_REMATCH[1]}|${BASH_REMATCH[2]}|${BASH_REMATCH[3]}"$'\n'
+      else
+        problems="${problems}not a drain or kind line: $(printf '%s' "$line" | cut -c1-80)"$'\n'
+      fi
+    done < "$cfg"
+  else
+    IM_BRIEFS="bosun|bosun-,maint-bosun|Run Bosun clean-up as an idle-maintenance lane: this office ($OFFICE_ID) is the Bosun runner until a Bosun home exists, and the lane runs under the standing clean-up approvals in ~/.claude/references/fleet-rules-cleanup.md rules a to g only; anything outside rules a to g stays with Lee."$'\n'
+    IM_BRIEFS="${IM_BRIEFS}linear|linear-triage-,linear-validate-,maint-linear|Run Linear triage and validation as an idle-maintenance lane: triage the open Linear items and validate the recently completed ones against their acceptance."$'\n'
+    IM_BRIEFS="${IM_BRIEFS}sdlc|sdlc-review-,maint-sdlc|Run an SDLC review and sharpening lane: review how delivery went recently and sharpen the rules, checks or skills that slowed work."$'\n'
+  fi
+  [ -n "$IM_PROJECTS" ] || IM_PROJECTS=$(line_field "$OFFICE_LINE" dispatch || true)
+  IM_PROJECTS=${IM_PROJECTS//,/ }
+  if [ -n "$problems" ]; then
+    printf '%s' "$problems" > "$err" 2>/dev/null || true
+  else
+    rm -f "$err" 2>/dev/null || true
+  fi
+}
+
+# idle_lane_live <comma-separated prefixes>: 0 when a live task of this home (fm_office_live_tasks's places) has an id starting with one of them.
+idle_lane_live() {
+  local prefix id
+  for prefix in ${1//,/ }; do
+    for id in ${FM_OFFICE_LIVE_IDS//,/ }; do
+      case "$id" in "$prefix"*) return 0 ;; esac
+    done
+  done
+  return 1
+}
+
+# check_idle_maintenance: the opt-in idle-maintenance source (listed in the office's sources:). When a listed project's
+# PR drain reads "on", forward work is parked, so it enqueues one start request per kind of maintenance lane (Bosun
+# clean-up, Linear triage and validation, SDLC review) into this office's own inbox through fm-inbox.sh note
+# --request-id, for the office to dispatch as ordinary routed work. A kind is skipped when a live task has one of its
+# id prefixes, when its request is still unhandled in the inbox, or when it was already sent in this episode (an episode
+# runs from the first "on" to the next "off"; records: data/office/idle-maintenance.episode and .sent). The drain is read
+# at most every FM_OFFICE_IDLE_MAINT_SECS (default 900); "unknown" and "none" change nothing. It prints nothing (the
+# inbox note wakes the office) and logs each start to data/office/idle-maintenance.log.
+check_idle_maintenance() {
+  local interval=${FM_OFFICE_IDLE_MAINT_SECS:-900} now last ep sent project dir state on_project='' off=0 read=0
+  local brief kind prefixes ask rid first body line
+  local -a drain_cmd
+  case "$interval" in ''|*[!0-9]*) interval=900 ;; esac
+  mkdir -p "$DATA/office" 2>/dev/null || return 0
+  now=$(now_epoch)
+  last=$(cat "$DATA/office/idle-maintenance.try" 2>/dev/null || true)
+  if [[ "$last" =~ ^[0-9]+$ ]] && [ "$now" -ge "$last" ] && [ $((now - last)) -lt "$interval" ]; then return 0; fi
+  printf '%s\n' "$now" > "$DATA/office/idle-maintenance.try" 2>/dev/null || return 0
+  idle_briefs
+  [ -n "$IM_BRIEFS" ] || return 0
+  if [ -n "${FM_OFFICE_DRAIN_CMD:-}" ]; then drain_cmd=("$FM_OFFICE_DRAIN_CMD"); else drain_cmd=(python3 "$SCRIPT_DIR/fm-pr-drain.py"); fi
+  for project in $IM_PROJECTS; do
+    dir="$FM_HOME/projects/$project"
+    [ -d "$dir" ] || continue
+    state=$(bounded 22 "${drain_cmd[@]}" state "$dir" "$project" 2>/dev/null | awk 'NR == 1 { print $1 }')
+    case "$state" in
+      on) on_project=$project; break ;;
+      off) off=$((off + 1)); read=$((read + 1)) ;;
+      *) read=$((read + 1)) ;;
+    esac
+  done
+  if [ -z "$on_project" ]; then
+    # Only a clean read of every listed project ends the episode.
+    if [ "$read" -gt 0 ] && [ "$off" -eq "$read" ]; then rm -f "$DATA/office/idle-maintenance.episode" 2>/dev/null || true; fi
+    return 0
+  fi
+  ep=$(cat "$DATA/office/idle-maintenance.episode" 2>/dev/null || true)
+  [[ "$ep" =~ ^[0-9]+$ ]] || { ep=$now; printf '%s\n' "$ep" > "$DATA/office/idle-maintenance.episode" 2>/dev/null || return 0; }
+  count_live || return 0
+  sent=$(cat "$DATA/office/idle-maintenance.sent" 2>/dev/null || true)
+  while IFS= read -r brief; do
+    [ -n "$brief" ] || continue
+    IFS='|' read -r kind prefixes ask <<EOF
+$brief
+EOF
+    case "
+$sent
+" in *"
+$ep $kind
+"*) continue ;; esac
+    idle_lane_live "$prefixes" && continue
+    # shellcheck disable=SC2144 # the glob matches at most the inbox's own note files
+    grep -ls "^request_id=idle-maint-$kind-" "$STATE"/inbox/*.note >/dev/null 2>&1 && continue
+    rid=$(printf 'idle-maint-%s-%x' "$kind" "$ep")
+    first=${prefixes%%,*}
+    body="Idle maintenance ($kind): forward work is parked (PR drain is on for $on_project), so a maintenance lane runs instead of idling. $ask Dispatch one lane with a task id beginning with $first (lanes are recognised by the prefixes $prefixes). One request per kind per idle episode."
+    if FM_HOME="$FM_HOME" "$SCRIPT_DIR/fm-inbox.sh" note --request-id "$rid" --json -- "$body" >/dev/null 2>&1; then
+      printf '%s %s\n' "$ep" "$kind" >> "$DATA/office/idle-maintenance.sent" 2>/dev/null || true
+      line=$(date -u -d "@$now" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -r "$now" +%Y-%m-%dT%H:%M:%SZ)
+      printf '%s started %s request %s (PR drain on for %s)\n' "$line" "$kind" "$rid" "$on_project" >> "$DATA/office/idle-maintenance.log" 2>/dev/null || true
+    fi
+  done <<EOF
+$IM_BRIEFS
+EOF
+}
+
 check_lane() {  # <officer> <high:0|1>
   local officer=$1 high=$2 n line='' starts
   lane_digest "$officer" || return 0
@@ -1176,6 +1298,7 @@ cmd_check() {
     upstream) check_upstream ;;
     ratchet) check_ratchet ;;
     research) check_research ;;
+    idle-maintenance) check_idle_maintenance ;;
     lane:*:high) officer=${src#lane:}; check_lane "${officer%:high}" 1 ;;
     lane:*) check_lane "${src#lane:}" 0 ;;
   esac
