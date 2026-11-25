@@ -34,6 +34,8 @@
 #                                                                  files modified within N hours.
 #     status:<home id>;regex=<re>[;max-age=<N>h]                   a line of that home's state/*.status matches
 #     none                                                         accepted, always red
+#   A status home id is the home folder's basename. When several homes the officer reads share it, it names the first one
+#   passed, which is the officer's own home when that home is one of them.
 #   Every path and glob is resolved on the machine that runs the officer, so a row's files and logs must be readable there.
 #   The regex is everything between `regex=` and the trailing options, so it may contain `;`. A path holds no `;`.
 #   Logs are read from their last 8 MiB, each line cut to 4000 characters.
