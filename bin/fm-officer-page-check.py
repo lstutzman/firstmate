@@ -458,6 +458,10 @@ def commitment_findings(homes, now):
                                    "commitment %s is unproven" % rid,
                                    friction.scrub("owner %s, recorded in %s; %s" % (owner, hid, "; ".join(reasons)), 400),
                                    COMMITMENT_ROUTE, "high"))
+    # A second mate's parent-channel line sits twice: in the parent's state/<mate>.status and in the mate's own home. The
+    # copy in the home that wrote it counts; the parent's copy of the same (at, text) is skipped. Only a parent file named
+    # after another read home is a copy, so two peer homes that say the same thing still count each.
+    lines = {}
     for hid, root in sorted(roots.items()):
         state = os.path.join(root, "state")
         try:
@@ -467,18 +471,25 @@ def commitment_findings(homes, now):
         for name in names:
             for line in commit.read_lines(os.path.join(state, name)) or []:
                 parsed = friction.parse_status_line(line)
-                if not parsed or parsed[2] is None or not (now - UNRECORDED_WINDOW <= parsed[2] <= now + 3600):
-                    continue
-                phrase = commit.commitment_phrase(parsed[3])
-                marks = commit.MARK_RE.findall(line)
-                if phrase and not any(m in known for m in marks) and not (marks and unread):
-                    task = name[:-len(".status")]
-                    out.append(finding("commitment-unrecorded", COMMITMENT_PAGE, "%s:%s:%d" % (hid, task, parsed[2]),
-                                       "status line of %s says \"%s\" with no recorded commitment" % (task, phrase),
-                                       "home %s, task %s, at %s: the status line says \"%s\" about its own behaviour and carries no "
-                                       "[commitment=<id>] mark naming a recorded row; record it with bin/fm-commitment.sh add" % (
-                                           hid, task, time.strftime("%Y-%m-%d %H:%MZ", time.gmtime(parsed[2])), phrase),
-                                       COMMITMENT_ROUTE))
+                if parsed and parsed[2] is not None:
+                    lines[(hid, name, line)] = parsed
+    written = {(h, parsed[2], " ".join(parsed[3].split())) for (h, _n, _l), parsed in lines.items()}
+    for (hid, name, line), parsed in lines.items():
+        if not (now - UNRECORDED_WINDOW <= parsed[2] <= now + 3600):
+            continue
+        key = (parsed[2], " ".join(parsed[3].split()))
+        mate = name[:-len(".status")]
+        if mate != hid and mate in roots and (mate,) + key in written:
+            continue
+        phrase = commit.commitment_phrase(parsed[3])
+        marks = commit.MARK_RE.findall(line)
+        if phrase and not any(m in known for m in marks) and not (marks and unread):
+            out.append(finding("commitment-unrecorded", COMMITMENT_PAGE, "%s:%s:%d" % (hid, mate, parsed[2]),
+                               "status line of %s says \"%s\" with no recorded commitment" % (mate, phrase),
+                               "home %s, task %s, at %s: the status line says \"%s\" about its own behaviour and carries no "
+                               "[commitment=<id>] mark naming a recorded row; record it with bin/fm-commitment.sh add" % (
+                                   hid, mate, time.strftime("%Y-%m-%d %H:%MZ", time.gmtime(parsed[2])), phrase),
+                               COMMITMENT_ROUTE))
     if not homes:
         unread = True
     return out, rows, coverage, retired, (not unread and bool(registers))

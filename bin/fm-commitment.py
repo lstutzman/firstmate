@@ -257,7 +257,11 @@ def evaluate(row, now, homes):
 
 # ---- unrecorded commitments --------------------------------------------------------------------------------------
 
-QUOTED_RE = re.compile(r'"[^"]*"|`[^`]*`|\u201c[^\u201d]*\u201d')
+# Single quotes only count at a word edge, so an apostrophe (I'll, home's) never opens a span.
+QUOTED_RE = re.compile(r'"[^"]*"|`[^`]*`|\u201c[^\u201d]*\u201d|(?<!\w)\'[^\']*\'(?!\w)|(?<!\w)\u2018[^\u2019]*\u2019(?!\w)')
+# A list of trigger terms joined by "or" ("from now on, every time or standing") names them; it promises nothing.
+_TERM = r"(?:from now on|every time|standing)"
+LISTED_RE = re.compile(r"\b%s(?:\s*,\s*%s)*\s*,?\s+or\s+%s\b" % (_TERM, _TERM, _TERM), re.I)
 PHRASES = (
     ("from now on", re.compile(r"\bfrom now on\b", re.I)),
     # A clause that opens with it, or a first-person promise before it; "fails every time" describes a result.
@@ -269,8 +273,8 @@ PHRASES = (
 
 
 def commitment_phrase(text):
-    """The commitment phrase a status text makes about its own behaviour, or None. Quoted spans are other people's words."""
-    plain = QUOTED_RE.sub(" ", text or "")
+    """The commitment phrase a status text makes about its own behaviour, or None. Quoted spans are other people's words, and trigger terms listed with "or" are only named."""
+    plain = LISTED_RE.sub(" ", QUOTED_RE.sub(" ", text or ""))
     for name, pattern in PHRASES:
         if pattern.search(plain):
             return name
