@@ -827,7 +827,8 @@ commit_world() {
   row r-none-both none none --owner navigator
   printf '#!/bin/sh\nexec gate-ledger.py "$@"\n' > "$t/proof/removed-hook.sh"
   row r-hook-gone "file:$t/proof/removed-hook.sh#contains=gate-ledger.py" "file:$t/proof/receipt-fresh.json"
-  /usr/bin/trash "$t/proof/removed-hook.sh" || fail "could not trash the fixture hook"
+  # Move the hook away (CI runners have no trash tool) so its recorded path is gone.
+  mv "$t/proof/removed-hook.sh" "$t/proof/removed-hook.sh.gone" || fail "could not move the fixture hook away"
   row retired-red none none
   FM_HOME="$home" bash "$ROOT/bin/fm-commitment.sh" retire --id retired-red --reason 'superseded' >/dev/null || fail "could not retire"
   # A hand-edited row whose enforcement spec is malformed.
