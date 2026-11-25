@@ -75,6 +75,7 @@ Each effective `FM_HOME` contains private operational directories.
 - Project and secondmate registries.
 - Captain preferences and optional shared captain preferences.
 - Learnings, backlog, briefs, scout reports, optional task status archives, and the optional per-task no-mistakes pipeline-spend ledger.
+- The standing-commitments register in `data/standing-commitments.json` (`{"version":1,"rows":[...]}`): one row per "from now on", "every time" or "standing" promise a home makes about its own behaviour, with Lee's words, a typed enforcement point and a typed read-only verification; `bin/fm-commitment.sh` owns the row fields and spec grammar, and the page-check officer evaluates every unretired row of every home it reads.
 - Worker complaints in `data/agent-complaints.jsonl`, one JSON line per `bin/fm-complain.sh` call (`bin/fm-complain.sh` owns the fields); the friction officer reads it from each scanned home.
 - Explicitly installed content-addressed extension packages under `data/extensions/packages/`.
 

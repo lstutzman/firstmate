@@ -13,6 +13,11 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 - `stale-card`: a shown card past its snooze date, unanswered for a week (a card in the Later band is parked on purpose and is not aged), already answered, naming a closed PR or a merged PR whose opening ask is to merge, review, approve or release a hold on that PR (not a production or activation action on it, however worded), or whose status line was settled elsewhere.
 - `shown-after-done`: a card shown although its record was settled by a captain answer or is closed in the app's own card record.
 - `page-old`: a page older than its normal cadence allows, a failing job on the Runs page, a Runs job whose latest finished run has no summary (a run still in progress is not itself judged, and a job that never ran is not flagged), or a page that is unreachable, unreadable or never published.
+- `commitment-unproven`: a row in a home's standing-commitments register (`data/standing-commitments.json`, owned by `bin/fm-commitment.sh`) that is not retired and whose enforcement point is missing or is `memory` or `none`, or whose verification finds nothing.
+  A row with only a memory note is not enforced, so it is red.
+  The evidence says which part failed.
+- `commitment-unrecorded`: a status line from the last 48 hours in any read home that says "from now on", "every time" or "standing" about the home's own behaviour (quoted words, "outstanding", the Linear Standing label and a rule id do not count) and carries no `[commitment=<id>]` mark naming a recorded row.
+  Its finding names the home, task and time, never the line's words.
 - Every finding is filed once in Linear, so its found count can grow while nobody fixes it.
 - Not work: a live decision (a card that names a merged PR but asks for something else, such as a Linear status or a production action, or a routing acknowledgement that is not a captain answer), which the officer never flags.
 
@@ -21,7 +26,8 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 | Finding | Linear severity |
 |---|---|
 | A page that is unreachable, unreadable or never published, or an unreadable Runs page or app health | high |
-| A page past its normal cadence, a failing job, a finished run with no summary, a page with no publish time, a card shown after it was settled | medium |
+| A standing commitment with no enforcement or no proof (`commitment-unproven`) | high |
+| A page past its normal cadence, a failing job, a finished run with no summary, a page with no publish time, a card shown after it was settled, a status line that makes a commitment with no recorded row (`commitment-unrecorded`) | medium |
 | A card a rule settles, or any other stale card | low |
 
 - Linear priority follows severity: high is High, medium and low are Medium.
@@ -32,6 +38,7 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 
 ## Where findings are filed
 
+- A commitment finding is filed on the `Standing commitments` page's bundle; its item names the row by home and id and never carries the commitment's text or a status line's words.
 - Team FLEET (fleet work: [contract](contract.md#file)), Type Bug, no Source, area label or project, because team FLEET has none; the officer's identity is in each item's fingerprint marker and description.
 - Each page's findings share one [bundle](contract.md#bundles), grouped by route.
 - Duplicates, a repeat of a closed item or bundle (which files nothing new and never starts it) and the call budget are the shared [filing rules](contract.md#file).
@@ -48,6 +55,7 @@ This is the one close any officer makes (Lee, main chat, 2026-11-12), and [the c
 - Rule (a), card settled: a `standing-rule`, `stale-card` or `shown-after-done` item closes at once when its finding is gone from the check and the Captain's Log no longer shows the card it names.
 - Rule (b), not recurred: any item, a `page-old` one included, closes when its finding was absent from this check and the check before it.
   A check counts only if the page the finding concerns was read in it, so an unreachable app never closes anything, and, for a card finding, every input its kind needs was read too: the standing rules file for `standing-rule`, every PR the cards name for `stale-card`, and the app's card records for `shown-after-done`; a Captain's Log with no card list counts for no card finding.
+  For a commitment finding every local home's register must have been read (a missing register is empty, an unreadable one counts for nothing).
   A check in which the finding is present clears its count, even when filing stopped early.
 - A close whose comment landed but whose move to Done failed retries only the move, so an item never gets a second close comment.
 - A `page-old` item closes on rule (b) only.
@@ -70,6 +78,7 @@ This is the one close any officer makes (Lee, main chat, 2026-11-12), and [the c
 These never start by themselves, whatever the score:
 
 - `standing-rule` and `stale-card` findings: the card is cleared by cl-keeper, and the rule is Lee's, so the officer never starts a fix for either.
+- `commitment-unproven` and `commitment-unrecorded` findings: the owner home enforces, records or retires the commitment, so the route is `owner home: enforce or retire the commitment` and the officer never starts work for either.
 - The seven reserved classes: payments or billing, legal text, product decisions, member-facing copy, credentials, production actions and data-rewriting changes.
   The check judges what the started fix would change, so it reads the finding's own kind, page, evidence and route, and the object id only when the object is the fix target (a page or a Runs job), never a card's id or question:
   a settled card asking for a production deploy that the app re-shows is a fleet-app page fix, and starts like any other.
