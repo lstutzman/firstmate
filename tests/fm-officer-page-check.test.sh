@@ -920,6 +920,11 @@ test_an_unreadable_register_is_a_coverage_note_not_a_close() {  # also: no regis
   json="$home/data/officers/page-check/$KEY.json"
   assert_contains "$(jq -r '.coverage | join("\n")' "$json")" "standing-commitments.json is unreadable" "the digest names the unreadable register"
   assert_equals "" "$(commit_ids "$json" commitment-unproven)" "an unreadable register raises no unproven finding"
+  printf 'working [at=%d] [commitment=lost-row]: from now on landing runs the ledger\n' "$((NOW - 3600))" > "$home/state/marked.status"
+  printf 'working [at=%d]: from now on landing runs the ledger\n' "$((NOW - 3600))" > "$home/state/unmarked.status"
+  officer badreg run page-check --date "$KEY" >/dev/null || fail "an unreadable register must not fail the run"
+  assert_equals "unmarked" "$(jq -r '[.findings[] | select(.kind == "commitment-unrecorded") | .id | split(":")[3]] | join(" ")' "$json")" \
+    "a marked line is not called unrecorded while a register is unreadable; an unmarked one still is"
   pass "fm-officer page-check: an unreadable register is a coverage note"
 }
 

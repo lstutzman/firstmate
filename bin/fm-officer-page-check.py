@@ -436,7 +436,7 @@ def commitment_findings(homes, now):
                     continue
                 phrase = commit.commitment_phrase(parsed[3])
                 marks = commit.MARK_RE.findall(line)
-                if phrase and not any(m in known for m in marks):
+                if phrase and not any(m in known for m in marks) and not (marks and unread):
                     task = name[:-len(".status")]
                     out.append(finding("commitment-unrecorded", COMMITMENT_PAGE, "%s:%s:%d" % (hid, task, parsed[2]),
                                        "status line of %s says \"%s\" with no recorded commitment" % (task, phrase),
