@@ -979,6 +979,27 @@ test_homes_with_one_basename_are_each_read() {
   pass "fm-officer page-check: two homes with one basename are each read"
 }
 
+test_remote_form_homes_are_read_in_place_or_named_as_a_gap() {
+  local home json t="$TMP_ROOT/remotehomes" here md
+  home=$(make_world remotehomes)
+  here="$t/here/slarti"
+  mkdir -p "$here/state" "$here/data"
+  here=$(cd "$here" && pwd -P)
+  printf -- '- slarti - s (host: thishost; root: %s; home: %s; scope: office; projects: none; added 2026-11-04)\n- dt - d (host: otherhost; root: /nowhere/dt; home: /nowhere/dt; scope: office; projects: none; added 2026-11-04)\n' \
+    "$here" "$here" > "$home/data/secondmates.md"
+  FM_HOME="$here" bash "$ROOT/bin/fm-commitment.sh" add --id row-slarti --commitment c --lee-words w --enforcement memory --verify none >/dev/null || fail "could not record row-slarti"
+  status_line "$here" task-s "$((NOW - 3600))" 'from now on landing runs the ledger'
+  officer remotehomes run page-check --date "$KEY" >/dev/null || fail "run must succeed with a remote-form home"
+  json="$home/data/officers/page-check/$KEY.json"
+  md="$home/data/officers/page-check/$KEY.md"
+  assert_equals "row-slarti" "$(jq -r '.commitments | map(.id) | join(" ")' "$json")" "a remote-form home that exists here is read in place"
+  assert_equals "task-s" "$(jq -r '[.findings[] | select(.kind == "commitment-unrecorded") | .id | split(":")[3]] | join(" ")' "$json")" "its unrecorded status line is found"
+  assert_contains "$(jq -r '.coverage | join("\n")' "$json")" "home otherhost:/nowhere/dt is on another host, so its standing commitments were not read" \
+    "a remote-form home that does not exist here is a named gap"
+  assert_contains "$(<"$md")" "otherhost:/nowhere/dt" "the digest names the gap"
+  pass "fm-officer page-check: a remote-form home is read when it is on this machine and named as a gap when it is not"
+}
+
 test_an_unreadable_register_is_a_coverage_note_not_a_close() {  # also: no register at all is an empty section
   local home json
   home=$(make_world badreg)
@@ -1059,6 +1080,7 @@ test_a_log_without_cards_does_not_count
 test_every_spec_type_is_green_or_red_in_the_digest
 test_unrecorded_commitments_match_tightly
 test_homes_with_one_basename_are_each_read
+test_remote_form_homes_are_read_in_place_or_named_as_a_gap
 test_an_unreadable_register_is_a_coverage_note_not_a_close
 test_commitment_findings_are_filed_and_never_started
 test_a_commitment_item_closes_once_its_row_is_retired_but_not_while_unread

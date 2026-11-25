@@ -919,7 +919,7 @@ role_pagecheck() {
   while IFS= read -r home; do
     [ -n "$home" ] && args+=(--home "$home")
   done <<EOF
-$(readable_homes)
+$(friction_homes)
 EOF
   while IFS= read -r home; do
     [ -n "$home" ] && args+=(--start-home "$home")
