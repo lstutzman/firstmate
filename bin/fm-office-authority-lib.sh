@@ -540,6 +540,36 @@ fm_office_inbox_quiet_since() {  # <state-dir> <id> <epoch>
   done
 }
 
+# The modification time of <file> in epoch seconds.
+fm_office_file_mtime() {  # <file>
+  [ -n "${_FM_OFFICE_UNAME_S:-}" ] || _FM_OFFICE_UNAME_S=$(uname -s 2>/dev/null)
+  if [ "$_FM_OFFICE_UNAME_S" = Darwin ]; then
+    LC_ALL=C /usr/bin/stat -f '%m' "$1" 2>/dev/null
+  else
+    LC_ALL=C stat -c '%Y' "$1" 2>/dev/null
+  fi
+}
+
+# 0 when task <id>'s steering inbox holds no unhandled message, and every handled
+# one written after <epoch> was filed at least <window> seconds ago. Taking a
+# steer moves it into handled/ before the worker acts on it, and mv keeps its
+# mtime, so the mtime is when the steer was sent: a taken steer holds the lane
+# for one <window>, then it says nothing more about the PR.
+fm_office_inbox_steer_settled() {  # <state-dir> <id> <epoch> <window>
+  local msg now mtime
+  for msg in "$1/$2.inbox"/*.msg; do
+    [ ! -e "$msg" ] || return 1
+  done
+  now=$(date +%s)
+  for msg in "$1/$2.inbox/handled"/*.msg; do
+    [ -f "$msg" ] || continue
+    fm_office_msg_after "$msg" "$3" || continue
+    mtime=$(fm_office_file_mtime "$msg") || return 1
+    case "$mtime" in ''|*[!0-9]*) return 1 ;; esac
+    [ "$((now - mtime))" -ge "$4" ] || return 1
+  done
+}
+
 # 0 when task <id> is a ship that finished as a pushed ready branch with no PR
 # (bin/fm-ready-branch.sh) and has been left alone since: ready_branch= and no
 # pr= in its record, no open decision, a stamped done line as its latest event,
@@ -634,7 +664,8 @@ fm_office_task_admit_held() {  # <state-dir> <id>
 # 0 when task <id> is a ship whose finished PR waits on something this home's
 # merge poll already watches, and nobody has touched it since: pr= in its record,
 # no open decision, a stamped done line as its latest event (merge-handoff lines
-# apart), no steer since that line, and a merge poll whose published artifacts
+# apart), no unhandled steer and no steer taken since that line within one
+# STALE_ESCALATE_SECS (FLEET-204), and a merge poll whose published artifacts
 # authenticate against the same PR (fm_pr_poll_artifacts_valid in bin/fm-pr-lib.sh;
 # bin/fm-pr-check.sh publishes them). It covers what fm_office_task_landing
 # cannot: a home that is its own merger, where no handoff record exists and a
@@ -674,7 +705,12 @@ EOF
       [ ! -e "$msg" ] || return 1
     done
   else
-    fm_office_inbox_quiet_since "$state" "$id" "$done_at" || return 1
+    # An unhandled steer ends the wait: its worker may yet act. A steer taken
+    # after the done line ends it for one stale window, so a worker that took a
+    # fix steer and wedged before writing a status line still alarms; after that
+    # the lane reads merge-watched again. Work that did change the PR is a later
+    # working, done or decision line (refused above).
+    fm_office_inbox_steer_settled "$state" "$id" "$done_at" "${STALE_ESCALATE_SECS:-240}" || return 1
   fi
   if ! declare -F fm_pr_poll_artifacts_valid >/dev/null; then
     # shellcheck source=bin/fm-pr-lib.sh

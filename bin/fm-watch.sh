@@ -1654,8 +1654,10 @@ wedge_defer_writing() {  # <window> <since-file> <triage-label> <idle-age>
 # landing, shared with an office's wip count; any doubt there keeps the ladder.
 # In an office its id is the merger the PR must not be bound to, and anywhere
 # else that branch of the test is off. Like the other deferrals this restarts
-# the idle timer and leaves the escalation count alone, so a task steered back
-# into fix work stops being landing and alarms within one STALE_ESCALATE_SECS.
+# the idle timer and leaves the escalation count alone. A task steered back
+# into fix work stops being merge-watched while the steer is unhandled, and for
+# one STALE_ESCALATE_SECS after its worker takes it, so it can alarm; with no
+# newer status line by then, it reads merge-watched again.
 wedge_skip_landing() {  # <window> <since-file> <triage-label> <idle-age> <task>
   local win=$1 since_file=$2 label=$3 age=$4 task=$5 office='' why
   [ -n "$task" ] || return 1
