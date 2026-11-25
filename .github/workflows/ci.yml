@@ -90,16 +90,27 @@ jobs:
         partition: [1, 2, 3, 4, 5, 6, 7]
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      # Cache key hashes the installers, which own the archive SHA-256 pins.
+      # The installers skip download (and checksum verification) when the
+      # pinned version is already at the destination, so a pin-only key would
+      # keep a stale binary; changing a checksum in an installer must miss
+      # this cache so the installer re-downloads and re-verifies.
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/fm-ci-tools
+          key: fm-ci-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bin/fm-install-shellcheck.sh', 'bin/fm-install-actionlint.sh') }}
       - name: Install pinned ShellCheck
         run: |
           set -eu
-          bin/fm-install-shellcheck.sh "$RUNNER_TEMP/bin"
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          bin/fm-install-shellcheck.sh "$RUNNER_TEMP/fm-ci-tools"
+          echo "$RUNNER_TEMP/fm-ci-tools" >> "$GITHUB_PATH"
       - name: Install pinned actionlint
         run: |
           set -eu
-          bin/fm-install-actionlint.sh "$RUNNER_TEMP/bin"
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          bin/fm-install-actionlint.sh "$RUNNER_TEMP/fm-ci-tools"
+          echo "$RUNNER_TEMP/fm-ci-tools" >> "$GITHUB_PATH"
       # Result cache: bin/fm-lint.sh owns what a key covers and when a marker
       # is written (only for a root that passed on identical inputs, so a hit is
       # that same pass and a miss runs the full check). The key below only picks
@@ -115,7 +126,9 @@ jobs:
       # Single owner of the lint definition (shell file set, config, version,
       # and GitHub workflow lint). Do not re-spell the checks here; keep CI
       # and the pre-push gate on this script so a self-broken ci.yml still
-      # fails locally before merge.
+      # fails locally before merge. Pull requests lint changed files (full
+      # source-aware analysis); main pushes, lint-tooling diffs, and diffs
+      # that change a sourced helper keep the full canonical gate.
       - name: Lint canonical partition
         env:
           # Fail closed rather than lint uncapped when a configured per-root
@@ -123,11 +136,17 @@ jobs:
           FM_LINT_REQUIRE_BOUNDS: '1'
           FM_LINT_JOBS: '1'
           FM_LINT_CACHE_DIR: ${{ runner.temp }}/fm-lint-cache
+          FM_LINT_CHANGED: ${{ github.event_name == 'pull_request' && '1' || '0' }}
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/fm-lint"
+          extra=()
+          if [ "$FM_LINT_CHANGED" = 1 ]; then
+            extra+=(--changed)
+          fi
           bin/fm-lint.sh --partition "${{ matrix.partition }}of${{ strategy.job-total }}" \
-            --telemetry "$RUNNER_TEMP/fm-lint/partition-${{ matrix.partition }}.tsv"
+            --telemetry "$RUNNER_TEMP/fm-lint/partition-${{ matrix.partition }}.tsv" \
+            "${extra[@]}"
       - name: Upload lint telemetry
         if: always()
         uses: actions/upload-artifact@v4
@@ -167,16 +186,20 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/fm-ci-tools
+          key: fm-ci-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bin/fm-install-shellcheck.sh', 'bin/fm-install-actionlint.sh') }}
       - name: Install pinned ShellCheck
         run: |
           set -eu
-          bin/fm-install-shellcheck.sh "$RUNNER_TEMP/bin"
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          bin/fm-install-shellcheck.sh "$RUNNER_TEMP/fm-ci-tools"
+          echo "$RUNNER_TEMP/fm-ci-tools" >> "$GITHUB_PATH"
       - name: Install pinned actionlint
         run: |
           set -eu
-          bin/fm-install-actionlint.sh "$RUNNER_TEMP/bin"
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          bin/fm-install-actionlint.sh "$RUNNER_TEMP/fm-ci-tools"
+          echo "$RUNNER_TEMP/fm-ci-tools" >> "$GITHUB_PATH"
       # tests/fm-secret-scan.test.sh runs real gitleaks, so every lane that can
       # draw it installs the same pinned build the invariants job uses.
       - name: Install pinned gitleaks
@@ -197,7 +220,6 @@ jobs:
           set -eu
           mkdir -p "$RUNNER_TEMP/fm-test"
           bin/fm-test-run.sh --lane portable-parallel-1 --jobs 2 \
-            --fail-on-gate-skip 'Pi extension typecheck prerequisite not found' \
             --json "$RUNNER_TEMP/fm-test/fm-test-timing-portable-parallel-1.json"
       - name: Upload shard 1 timing artifact
         if: always()
@@ -217,16 +239,20 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/fm-ci-tools
+          key: fm-ci-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bin/fm-install-shellcheck.sh', 'bin/fm-install-actionlint.sh') }}
       - name: Install pinned ShellCheck
         run: |
           set -eu
-          bin/fm-install-shellcheck.sh "$RUNNER_TEMP/bin"
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          bin/fm-install-shellcheck.sh "$RUNNER_TEMP/fm-ci-tools"
+          echo "$RUNNER_TEMP/fm-ci-tools" >> "$GITHUB_PATH"
       - name: Install pinned actionlint
         run: |
           set -eu
-          bin/fm-install-actionlint.sh "$RUNNER_TEMP/bin"
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          bin/fm-install-actionlint.sh "$RUNNER_TEMP/fm-ci-tools"
+          echo "$RUNNER_TEMP/fm-ci-tools" >> "$GITHUB_PATH"
       # tests/fm-secret-scan.test.sh runs real gitleaks, so every lane that can
       # draw it installs the same pinned build the invariants job uses.
       - name: Install pinned gitleaks
@@ -266,16 +292,20 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/fm-ci-tools
+          key: fm-ci-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bin/fm-install-shellcheck.sh', 'bin/fm-install-actionlint.sh') }}
       - name: Install pinned ShellCheck
         run: |
           set -eu
-          bin/fm-install-shellcheck.sh "$RUNNER_TEMP/bin"
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          bin/fm-install-shellcheck.sh "$RUNNER_TEMP/fm-ci-tools"
+          echo "$RUNNER_TEMP/fm-ci-tools" >> "$GITHUB_PATH"
       - name: Install pinned actionlint
         run: |
           set -eu
-          bin/fm-install-actionlint.sh "$RUNNER_TEMP/bin"
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          bin/fm-install-actionlint.sh "$RUNNER_TEMP/fm-ci-tools"
+          echo "$RUNNER_TEMP/fm-ci-tools" >> "$GITHUB_PATH"
       - uses: actions/setup-node@v6
         with:
           node-version: '22.23.5'
@@ -289,6 +319,7 @@ jobs:
           set -eu
           mkdir -p "$RUNNER_TEMP/fm-test"
           bin/fm-test-run.sh --lane portable-parallel-3 --jobs 2 \
+            --fail-on-gate-skip 'Pi extension typecheck prerequisite not found' \
             --json "$RUNNER_TEMP/fm-test/fm-test-timing-portable-parallel-3.json"
       - name: Upload shard 3 timing artifact
         if: always()
@@ -319,16 +350,20 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/fm-ci-tools
+          key: fm-ci-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bin/fm-install-shellcheck.sh', 'bin/fm-install-actionlint.sh') }}
       - name: Install pinned ShellCheck
         run: |
           set -eu
-          bin/fm-install-shellcheck.sh "$RUNNER_TEMP/bin"
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          bin/fm-install-shellcheck.sh "$RUNNER_TEMP/fm-ci-tools"
+          echo "$RUNNER_TEMP/fm-ci-tools" >> "$GITHUB_PATH"
       - name: Install pinned actionlint
         run: |
           set -eu
-          bin/fm-install-actionlint.sh "$RUNNER_TEMP/bin"
-          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+          bin/fm-install-actionlint.sh "$RUNNER_TEMP/fm-ci-tools"
+          echo "$RUNNER_TEMP/fm-ci-tools" >> "$GITHUB_PATH"
       # tests/fm-secret-scan.test.sh runs real gitleaks, so every lane that can
       # draw it installs the same pinned build the invariants job uses.
       - name: Install pinned gitleaks
@@ -601,6 +636,7 @@ jobs:
     # Fast tier: aggregation is seconds of work over lane artifacts.
     timeout-minutes: 5
     needs:
+      - lint
       - tests-portable-parallel-1
       - tests-portable-parallel-2
       - tests-portable-parallel-3
@@ -616,6 +652,12 @@ jobs:
           pattern: fm-test-timing-*
           path: ${{ runner.temp }}/fm-test-aggregate
           merge-multiple: true
+      - name: Download lint telemetry
+        uses: actions/download-artifact@v4
+        with:
+          pattern: fm-lint-telemetry-*
+          path: ${{ runner.temp }}/fm-lint-aggregate
+          merge-multiple: true
       - name: Build aggregate timing summary
         run: |
           set -eu
@@ -629,6 +671,13 @@ jobs:
           bin/fm-test-run.sh --aggregate-json \
             "$RUNNER_TEMP/fm-test/fm-test-timing-aggregate.json" \
             "${inputs[@]}"
+      - name: Warn when a lane exceeds the healthy 20-minute budget
+        if: always()
+        run: |
+          set -eu
+          bin/fm-ci-budget-warn.sh \
+            "$RUNNER_TEMP/fm-test/fm-test-timing-aggregate.json" \
+            "$RUNNER_TEMP/fm-lint-aggregate"
       - name: Upload aggregate timing artifact
         if: always()
         uses: actions/upload-artifact@v4
