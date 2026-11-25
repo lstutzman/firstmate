@@ -86,8 +86,10 @@ is evaluated on each run, page "Standing commitments":
                  verification finds nothing. The evidence says which part failed. A row with only a memory note is red.
   commitment-unrecorded medium. A status line from the last 48 hours in any read home whose text says "from now on",
                  "every time" or "standing" about the home's own behaviour (fm-commitment.py PHRASES: quoted spans,
-                 "outstanding", the Linear Standing label and a rule id do not count) with no [commitment=<id>] mark
-                 naming a row in any read register. The finding names the home, task and time, never the line's words.
+                 trigger terms listed with "or", "outstanding", the Linear Standing label and a rule id do not count)
+                 with no [commitment=<id>] mark naming a row in any read register. A mate's line that its parent also
+                 holds in state/<mate>.status counts once, in the mate's home (commitment_findings). The finding names
+                 the home, task and time, never the line's words.
 
 Both go through the filing, digest and auto-close paths below unchanged, routed `owner home: enforce or retire the
 commitment`, and never start work (neither is in START_SOURCES). The digest ends with a "Standing commitments" section
