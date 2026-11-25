@@ -258,7 +258,8 @@ read_saved() {
   fi
   # One find names every record past the 1 MiB cap. A size probe per file is a
   # process per record, and under host load each process start costs seconds.
-  oversized=$'\n'$(find "$root" -mindepth 2 -maxdepth 2 -name contributions.json -type f -size +1048576c 2>/dev/null)$'\n'
+  oversized=$'\n'
+  [ ! -d "$root" ] || oversized+=$(find "$root" -mindepth 2 -maxdepth 2 -name contributions.json -type f -size +1048576c 2>/dev/null)$'\n'
   for file in "$root"/*/contributions.json; do
     [ -e "$file" ] || [ -L "$file" ] || continue
     fm_dirname_to dir "$file"
