@@ -945,6 +945,33 @@ test_unrecorded_commitments_match_tightly() {
   pass "fm-officer page-check: an unrecorded commitment is matched tightly (outstanding, the Linear label, quotes, a rule id and results are not)"
 }
 
+test_a_parent_channel_line_is_counted_once_and_listed_terms_are_not_commitments() {
+  local home json t="$TMP_ROOT/parentcopy" m recent=$((NOW - 3600)) ids
+  home=$(make_world parentcopy)
+  m="$t/homes/mate"
+  mkdir -p "$m/state" "$m/data"
+  m=$(cd "$m" && pwd -P)
+  printf -- '- mate - m (home: %s; scope: office; projects: none; added 2026-11-04)\n' "$m" > "$home/data/secondmates.md"
+  # One promise written in the mate's own home and copied into the main home's state/mate.status: counted once, in the mate's home.
+  status_line "$m" parent-replies "$recent" 'from now on landing runs the ledger'
+  status_line "$home" mate "$recent" 'from now on landing runs the ledger'
+  # A parent copy whose own-home line differs, or is missing, still counts.
+  status_line "$home" mate "$((recent + 1))" 'from now on only the parent wrote this'
+  # Descriptive lines that only name the trigger phrases.
+  status_line "$home" neg-list "$recent" "the check flags a line that says from now on, every time or standing about the home's own behaviour"
+  status_line "$home" neg-single "$recent" "the check looks for 'from now on' in status lines"
+  # Plain commitments still count.
+  status_line "$home" pos-applied "$recent" 'applied from now on'
+  status_line "$home" pos-own "$recent" "from now on every line this home writes to main carries [at=$recent]"
+  status_line "$home" pos-apostrophe "$recent" "I'll run it every time; the home's rule is from now on"
+  officer parentcopy run page-check --date "$KEY" >/dev/null || fail "run must succeed"
+  json="$home/data/officers/page-check/$KEY.json"
+  ids=$(jq -r '[.findings[] | select(.kind == "commitment-unrecorded") | (.id | split(":")[3])] | sort | join(" ")' "$json")
+  assert_equals "mate parent-replies pos-apostrophe pos-applied pos-own" "$ids" \
+    "the parent copy of a mate's line is dropped (the mate's own copy and the parent-only line count), listed and single-quoted terms are not commitments, plain ones are"
+  pass "fm-officer page-check: a parent-channel copy is counted once and listed or quoted trigger terms are not commitments"
+}
+
 test_homes_with_one_basename_are_each_read() {
   local home json t="$TMP_ROOT/samename" a b
   home=$(make_world samename)
@@ -1079,6 +1106,7 @@ test_a_recurrence_in_a_blocked_check_resets_the_count
 test_a_log_without_cards_does_not_count
 test_every_spec_type_is_green_or_red_in_the_digest
 test_unrecorded_commitments_match_tightly
+test_a_parent_channel_line_is_counted_once_and_listed_terms_are_not_commitments
 test_homes_with_one_basename_are_each_read
 test_remote_form_homes_are_read_in_place_or_named_as_a_gap
 test_an_unreadable_register_is_a_coverage_note_not_a_close

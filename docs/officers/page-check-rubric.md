@@ -16,7 +16,8 @@ The reserved classes below are fixed in the code, so no line here can admit one.
 - `commitment-unproven`: a row in a home's standing-commitments register (`data/standing-commitments.json`, owned by `bin/fm-commitment.sh`) that is not retired and whose enforcement point is missing or is `memory` or `none`, or whose verification finds nothing.
   A row with only a memory note is not enforced, so it is red.
   The evidence says which part failed.
-- `commitment-unrecorded`: a status line from the last 48 hours in any read home that says "from now on", "every time" or "standing" about the home's own behaviour (quoted words, "outstanding", the Linear Standing label and a rule id do not count) and carries no `[commitment=<id>]` mark naming a recorded row.
+- `commitment-unrecorded`: a status line from the last 48 hours in any read home that says "from now on", "every time" or "standing" about the home's own behaviour (quoted words, a list of the trigger terms joined by "or", "outstanding", the Linear Standing label and a rule id do not count) and carries no `[commitment=<id>]` mark naming a recorded row.
+  A second mate's line copied into its parent's `state/<mate>.status` counts once, in the mate's own home.
   Its finding names the home, task and time, never the line's words.
 - Every finding is filed once in Linear, so its found count can grow while nobody fixes it.
 - Not work: a live decision (a card that names a merged PR but asks for something else, such as a Linear status or a production action, or a routing acknowledgement that is not a captain answer), which the officer never flags.
