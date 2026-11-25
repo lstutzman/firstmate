@@ -935,6 +935,170 @@ test_ratchet_names_the_next_file_once_a_day() {
   pass 'the ratchet source names the next listed file once per UTC day'
 }
 
+# idle_world <name>: source_world with the idle-maintenance source listed (the opt-in) and a stub drain reader whose
+# answer is <world>/drain.state; the navigator dispatches PropertyCompass2, so that is the project whose drain it reads.
+idle_world() {
+  local w
+  w=$(source_world "idle-$1")
+  sed -i.bak 's/sources: tick,lane:progress,lane:surgeon:high;/sources: tick,lane:progress,lane:surgeon:high,idle-maintenance;/' "$w/data/offices.md" && rm -f "$w/data/offices.md.bak"
+  mkdir -p "$w/navigator/projects/PropertyCompass2"
+  cat > "$w/drain-stub.sh" <<'EOF'
+#!/usr/bin/env bash
+cat "$(dirname "$0")/drain.state"
+EOF
+  chmod +x "$w/drain-stub.sh"
+  printf 'off lstutzman/PropertyCompass2 3\n' > "$w/drain.state"
+  printf '%s\n' "$w"
+}
+
+# idle_check <world> [epoch]: the office's idle-maintenance check with the stub drain reader.
+idle_check() {
+  FM_OFFICE_DRAIN_CMD="$1/drain-stub.sh" FM_OFFICE_NOW=${2:-$SRC_NOW} FM_HOME="$1/navigator" bash "$OFFICE" check idle-maintenance
+}
+
+# idle_requests <world>: the idle-maintenance request kinds in the pending and handled inbox notes, one per line, sorted.
+idle_requests() {
+  cat "$1/navigator/state/inbox/"*.note "$1/navigator/state/inbox/handled/"*.note 2>/dev/null | sed -n 's/^request_id=idle-maint-\([a-z]*\)-[0-9a-f]*$/\1/p' | sort
+}
+
+drain_on() { printf 'on lstutzman/PropertyCompass2 26\n' > "$1/drain.state"; }
+drain_off() { printf 'off lstutzman/PropertyCompass2 3\n' > "$1/drain.state"; }
+
+test_idle_maintenance_drain_on_enqueues_one_request_per_missing_kind() {
+  local w notes
+  w=$(idle_world on)
+  drain_on "$w"
+  assert_equals "" "$(idle_check "$w")" "the check prints nothing; the inbox notes wake the office"
+  assert_equals "$(printf 'bosun\nlinear\nsdlc')" "$(idle_requests "$w")" "one request per missing kind"
+  notes=$(cat "$w"/navigator/state/inbox/*.note)
+  assert_contains "$notes" "fleet-rules-cleanup.md rules a to g only" "Bosun's ask quotes the standing clean-up approvals it runs under"
+  assert_contains "$notes" "this office (navigator) is the Bosun runner until a Bosun home exists" "Bosun's ask names the office as the runner until a Bosun home exists"
+  assert_contains "$notes" "task id beginning with bosun-" "the note names the lane's task id prefix"
+  assert_contains "$(cat "$w/navigator/data/office/idle-maintenance.log")" " started bosun " "a first real start leaves a log line"
+  pass 'drain on with no maintenance lane enqueues one request per missing kind into the office inbox'
+}
+
+test_idle_maintenance_drain_off_or_unreadable_enqueues_none() {
+  local w
+  w=$(idle_world off)
+  idle_check "$w" >/dev/null
+  assert_equals "" "$(idle_requests "$w")" "drain off starts none"
+  printf 'unknown lstutzman/PropertyCompass2 github unreachable\n' > "$w/drain.state"
+  idle_check "$w" $((SRC_NOW + 1800)) >/dev/null
+  assert_equals "" "$(idle_requests "$w")" "an unreadable drain starts none"
+  printf 'none\n' > "$w/drain.state"
+  idle_check "$w" $((SRC_NOW + 3600)) >/dev/null
+  assert_equals "" "$(idle_requests "$w")" "a project off github starts none"
+  pass 'drain off, unknown or none enqueues nothing'
+}
+
+test_idle_maintenance_is_off_unless_the_source_is_listed() {
+  local w
+  w=$(idle_world optin)
+  drain_on "$w"
+  sed -i.bak 's/,idle-maintenance;/;/' "$w/data/offices.md" && rm -f "$w/data/offices.md.bak"
+  idle_check "$w" >/dev/null
+  assert_equals "" "$(idle_requests "$w")" "an office that did not list the source starts nothing"
+  pass 'idle maintenance is off unless the office lists the idle-maintenance source'
+}
+
+test_idle_maintenance_in_flight_lane_suppresses_its_kind() {
+  local w s
+  w=$(idle_world flight)
+  s="$w/navigator/state"
+  drain_on "$w"
+  printf 'kind=ship\nproject=x\n' > "$s/bosun-sweep-1.meta"
+  printf 'kind=scout\nproject=x\n' > "$s/maint-linear-2.meta"
+  idle_check "$w" >/dev/null
+  assert_equals "sdlc" "$(idle_requests "$w")" "bosun- and maint-linear lanes suppress their kinds"
+  pass 'an in-flight lane by the kind prefixes suppresses that kind'
+}
+
+test_idle_maintenance_one_request_per_kind_per_episode() {
+  local w
+  w=$(idle_world episode)
+  drain_on "$w"
+  idle_check "$w" >/dev/null
+  assert_equals 3 "$(idle_requests "$w" | wc -l | tr -d ' ')" "first check enqueues three"
+  idle_check "$w" $((SRC_NOW + 1800)) >/dev/null
+  assert_equals 3 "$(idle_requests "$w" | wc -l | tr -d ' ')" "a later check in the same episode enqueues nothing new"
+  mkdir -p "$w/navigator/state/inbox/handled"
+  mv "$w"/navigator/state/inbox/*.note "$w/navigator/state/inbox/handled/"
+  idle_check "$w" $((SRC_NOW + 3600)) >/dev/null
+  assert_equals 3 "$(idle_requests "$w" | wc -l | tr -d ' ')" "handled requests are not re-sent within the episode"
+  drain_off "$w"
+  idle_check "$w" $((SRC_NOW + 5400)) >/dev/null
+  drain_on "$w"
+  idle_check "$w" $((SRC_NOW + 7200)) >/dev/null
+  assert_equals 6 "$(idle_requests "$w" | wc -l | tr -d ' ')" "a new episode (drain off, then on) enqueues again"
+  pass 'at most one request per kind per idle episode'
+}
+
+test_idle_maintenance_unhandled_request_suppresses_a_new_episode() {
+  local w
+  w=$(idle_world pending)
+  drain_on "$w"
+  idle_check "$w" >/dev/null
+  drain_off "$w"
+  idle_check "$w" $((SRC_NOW + 1800)) >/dev/null
+  drain_on "$w"
+  idle_check "$w" $((SRC_NOW + 3600)) >/dev/null
+  assert_equals 3 "$(idle_requests "$w" | wc -l | tr -d ' ')" "requests still unhandled in the inbox are not duplicated by a new episode"
+  pass 'an unhandled request suppresses its kind'
+}
+
+test_idle_maintenance_reads_the_drain_at_most_every_interval() {
+  local w
+  w=$(idle_world rate)
+  drain_on "$w"
+  cat > "$w/drain-stub.sh" <<'EOF'
+#!/usr/bin/env bash
+echo x >> "$(dirname "$0")/calls"
+cat "$(dirname "$0")/drain.state"
+EOF
+  idle_check "$w" >/dev/null
+  idle_check "$w" $((SRC_NOW + 60)) >/dev/null
+  assert_equals 1 "$(wc -l < "$w/calls" | tr -d ' ')" "a second sweep inside the interval does not read GitHub again"
+  idle_check "$w" $((SRC_NOW + 1000)) >/dev/null
+  assert_equals 2 "$(wc -l < "$w/calls" | tr -d ' ')" "the next sweep after the interval reads again"
+  pass 'the check reads the drain at most once per interval'
+}
+
+test_idle_maintenance_project_off_github_does_not_hold_the_episode_open() {
+  local w
+  w=$(idle_world mixed)
+  sed -i.bak 's/dispatch: PropertyCompass2;/dispatch: PropertyCompass2,skills;/' "$w/data/offices.md" && rm -f "$w/data/offices.md.bak"
+  mkdir -p "$w/navigator/projects/skills"
+  cat > "$w/drain-stub.sh" <<'EOF'
+#!/usr/bin/env bash
+case "$3" in
+  skills) echo none ;;
+  *) cat "$(dirname "$0")/drain.state" ;;
+esac
+EOF
+  drain_on "$w"
+  idle_check "$w" >/dev/null
+  assert_equals 3 "$(idle_requests "$w" | wc -l | tr -d ' ')" "first episode enqueues three"
+  mkdir -p "$w/navigator/state/inbox/handled"
+  mv "$w"/navigator/state/inbox/*.note "$w/navigator/state/inbox/handled/"
+  drain_off "$w"
+  idle_check "$w" $((SRC_NOW + 1800)) >/dev/null
+  assert_absent "$w/navigator/data/office/idle-maintenance.episode" "off on one project and none on the other ends the episode"
+  drain_on "$w"
+  idle_check "$w" $((SRC_NOW + 3600)) >/dev/null
+  assert_equals 6 "$(idle_requests "$w" | wc -l | tr -d ' ')" "a new episode enqueues again"
+  pass 'a project that reads none does not hold an idle episode open'
+}
+
+test_idle_maintenance_source_registers_and_validates() {
+  local w
+  w=$(idle_world reg)
+  FM_HOME="$w/navigator" bash "$OFFICE" register-sources >/dev/null || fail "register-sources must accept the idle-maintenance source"
+  assert_present "$w/navigator/state/office-idle-maintenance.check.sh" "the source gets its own check shim"
+  assert_contains "$(FM_HOME="$w" FM_DATA_OVERRIDE="$w/data" bash "$OFFICE" list)" "navigator navigator ok" "the registry accepts the source"
+  pass 'the idle-maintenance source registers a check shim'
+}
+
 test_quartermaster_tick_wakes_once_a_day_for_heavy_sessions() {
   local w ps out
   w=$(source_world weight)
@@ -1573,3 +1737,12 @@ test_starts_handled_reads_only_acknowledged_requests
 test_lane_check_delivers_in_rank_order_and_skips_a_bad_request
 test_lane_check_never_delivers_a_stale_digest
 test_quartermaster_tick_wakes_once_a_day_for_heavy_sessions
+test_idle_maintenance_drain_on_enqueues_one_request_per_missing_kind
+test_idle_maintenance_drain_off_or_unreadable_enqueues_none
+test_idle_maintenance_is_off_unless_the_source_is_listed
+test_idle_maintenance_in_flight_lane_suppresses_its_kind
+test_idle_maintenance_one_request_per_kind_per_episode
+test_idle_maintenance_unhandled_request_suppresses_a_new_episode
+test_idle_maintenance_reads_the_drain_at_most_every_interval
+test_idle_maintenance_project_off_github_does_not_hold_the_episode_open
+test_idle_maintenance_source_registers_and_validates
