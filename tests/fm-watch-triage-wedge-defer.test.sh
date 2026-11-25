@@ -1361,8 +1361,13 @@ test_merge_watched_survives_a_handled_steer_after_the_done_line() {
     "$(iso_utc_at "$(( $(date +%s) - 60 ))")" > "$state/wedge.inbox/handled/001.msg"
   # shellcheck source=/dev/null
   . "$ROOT/bin/fm-office-authority-lib.sh"
-  fm_office_task_merge_watched "$state" wedge \
-    || fail "a handled steer after the done line ended merge-watched status"
+  touch "$state/wedge.inbox/handled/001.msg"
+  ! STALE_ESCALATE_SECS=240 fm_office_task_merge_watched "$state" wedge \
+    || fail "a steer taken within the stale window after the done line was merge-watched"
+  TZ=UTC touch -t "$(date -u -r "$(( $(date +%s) - 3600 ))" +%Y%m%d%H%M.%S 2>/dev/null || date -u -d "@$(($(date +%s) - 3600))" +%Y%m%d%H%M.%S)" \
+    "$state/wedge.inbox/handled/001.msg"
+  STALE_ESCALATE_SECS=240 fm_office_task_merge_watched "$state" wedge \
+    || fail "a steer taken more than a stale window ago ended merge-watched status"
   n=1
   while [ "$n" -le 3 ]; do
     wedge_threshold_round "$state" "$fakebin" "$out" "$capture" "$window" "$working" absorb \
@@ -1387,7 +1392,7 @@ test_merge_watched_survives_a_handled_steer_after_the_done_line() {
   printf 'done [at=%s]: PR %s checks green\n' "$(( at + 5 ))" "$url" >> "$state/wedge.status"
   fm_office_task_merge_watched "$state" wedge \
     || fail "a newer done line with the poll still armed was not merge-watched"
-  pass "a handled steer after the done line keeps a lane merge-watched; an unhandled steer, a resumed lane or an open decision ends it"
+  pass "a steer taken after the done line holds a lane out of merge-watched for one stale window only; an unhandled steer or a resumed lane ends it"
 }
 
 # The predicate itself, for the cases the watcher reaches by another route (an
