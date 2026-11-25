@@ -7,7 +7,8 @@
 # SessionStart hook; session start reclaims the dead owner; at least two
 # tokenless auto-arm and rewake cycles then complete with zero model-issued arm
 # commands; and the cooperative guard consumes no forced continuation while the
-# hook's launch is healthy.
+# hook's launch is healthy; and on every real Stop the auto-arm runs as a
+# sibling of the turn-end guard under one parent (FLEET-199).
 # The project and FM_HOME are isolated; Claude keeps using its existing managed
 # authentication. No live fleet home, worktree, or session is touched.
 # shellcheck disable=SC2016 # the model, not this test shell, reads the prompt text
@@ -45,8 +46,9 @@ cp -R "$ROOT/bin/." "$PROJECT/bin/"
 cp "$ROOT/.claude/settings.json" "$PROJECT/.claude/settings.json"
 # The lab keeps the real tracked .claude/settings.json SessionStart run hook,
 # Stop guard, and asyncRewake auto-arm registration.
-# The only local hook records model-issued Bash calls without acquiring the
-# session lock or otherwise changing lifecycle behavior.
+# The local hooks record model-issued Bash calls and the Stop hook process
+# tree without acquiring the session lock or otherwise changing lifecycle
+# behavior.
 cat > "$PROJECT/.claude/settings.local.json" <<'JSON'
 {
   "hooks": {
@@ -57,10 +59,37 @@ cat > "$PROJECT/.claude/settings.local.json" <<'JSON'
           { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/bin/tool-logger.sh" }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/stop-sibling-probe.sh", "timeout": 10 }
+        ]
+      }
     ]
   }
 }
 JSON
+
+# FLEET-199 sibling probe: registered in the same exec form as the tracked
+# turn-end guard, it records, per real Stop, its own parent and every live
+# auto-arm and guard process with its parent, so the test can prove the guard's
+# sibling assumption against the real harness instead of a fixture tree.
+cat > "$PROJECT/bin/stop-sibling-probe.sh" <<'SH'
+#!/usr/bin/env bash
+cat >/dev/null 2>&1 || true
+i=0
+while :; do
+  SNAP=$(ps -eo pid=,ppid=,args= 2>/dev/null | awk -v proj="$CLAUDE_PROJECT_DIR/bin/" 'index($0, proj) && /fm-claude-stop-autoarm\.sh|fm-turnend-guard\.sh/ && !/awk/')
+  printf '%s\n' "$SNAP" | awk -v p="$PPID" '$2 == p && /fm-claude-stop-autoarm\.sh/ {f=1} END {exit !f}' && break
+  [ "$i" -ge 50 ] && break
+  i=$((i + 1))
+  sleep 0.1
+done
+{ printf 'probe ppid=%s\n' "$PPID"; printf '%s\n' "$SNAP"; printf 'end\n'; } >> "$FM_HOME/state/stop-siblings.log"
+exit 0
+SH
+chmod +x "$PROJECT/bin/stop-sibling-probe.sh"
 
 cat > "$PROJECT/bin/tool-logger.sh" <<'SH'
 #!/usr/bin/env bash
@@ -117,6 +146,32 @@ PROMPT='After reading the complete session-start digest, reply with exactly CYCL
     --effort low --output-format stream-json --verbose
 ) > "$TRANSCRIPT" 2>&1 || fail "Claude credentialed auto-arm session failed: $(tail -20 "$TRANSCRIPT")"
 
+# FLEET-199: bin/fm-turnend-guard.sh waits for an auto-arm that is a live
+# sibling under its own parent whose ps args name fm-claude-stop-autoarm.sh.
+# On every real Stop, the auto-arm must be a child of the probe's parent, and
+# any guard caught alive must be a child of that same parent.
+[ -s "$HOME_DIR/state/stop-siblings.log" ] || fail "the Stop sibling probe recorded no Stop event"
+awk '
+  /^probe ppid=/ { split($2, kv, "="); parent = kv[2]; arm = 0; bad = ""; next }
+  /^end$/ {
+    events++
+    if (!arm) { print "no auto-arm sibling under parent " parent; failed = 1 }
+    if (bad != "") { print "guard under another parent: " bad; failed = 1 }
+    next
+  }
+  {
+    is_arm = 0; is_guard = 0
+    for (i = 3; i <= NF; i++) {
+      n = split($i, part, "/")
+      if (part[n] == "fm-claude-stop-autoarm.sh") is_arm = 1
+      if (part[n] == "fm-turnend-guard.sh") is_guard = 1
+    }
+    if (is_arm && $2 == parent) arm = 1
+    if (is_guard && $2 != parent) bad = $0
+  }
+  END { if (!events) { print "no complete probe record"; failed = 1 } exit failed }
+' "$HOME_DIR/state/stop-siblings.log" >"$LAB/siblings.verdict" \
+  || fail "Stop auto-arm is not a sibling of the turn-end guard: $(cat "$LAB/siblings.verdict"); log: $(cat "$HOME_DIR/state/stop-siblings.log")"
 ARM_RUNS=$(wc -l < "$HOME_DIR/state/arm-ran" 2>/dev/null | tr -d ' ')
 [ "$ARM_RUNS" = 2 ] || fail "expected exactly 2 hook-owned arm cycles, got $ARM_RUNS: $(cat "$HOME_DIR/state/arm-ran" 2>/dev/null)"
 DRAIN_RUNS=$(wc -l < "$HOME_DIR/state/drain-ran" 2>/dev/null | tr -d ' ')

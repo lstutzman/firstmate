@@ -1196,3 +1196,17 @@ Afterward `herdr session list --json` showed the lab session gone and the `defau
   The lab primary had none, and the shipped path reads the transcript's age at every tick, so such a write only postpones a compaction.
 - Whether Claude sends TERM to async hooks at some other point of a compaction, such as a compaction that fails or runs longer than the 12 seconds observed.
 - The default thresholds (`idle-seconds=2700`, `min-context-tokens=80000`); the run used 45 seconds and 5000 tokens.
+
+## Claude Stop hooks share one parent (2026-11-25)
+
+The turn-end guard waits for a Stop auto-arm that is a live sibling under its own parent (FLEET-199).
+The live check ran on 2026-11-25 with Claude Code 2.1.331 and the tracked Stop hook registration.
+
+```sh
+FM_CLAUDE_LIVE_E2E=1 bash tests/fm-claude-stop-autoarm-live-e2e.test.sh
+```
+
+A probe Stop hook, registered in the same `exec` form as the guard, recorded the process tree on each real Stop.
+On both Stops, `fm-turnend-guard.sh --claude` and `fm-claude-stop-autoarm.sh` ran as `bash <project>/bin/<script>` under the same parent PID as the probe, and the sibling assertion passed.
+The run then failed the existing check `expected exactly 2 hook-owned arm cycles, got 4`.
+That failure also occurs with the unmodified test and with the guard from before FLEET-199, so it is not caused by this change.

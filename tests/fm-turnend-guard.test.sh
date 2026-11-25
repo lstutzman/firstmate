@@ -2493,7 +2493,7 @@ test_hook_claude_mode_ignores_autoarm_of_another_parent() {
   local dir sib out status
   dir=$(make_primary_dir "$TMP_ROOT/hook-claude-foreign-parent-sibling")
   : > "$dir/state/task1.meta"
-  sib=$(make_fake_autoarm_sibling "$dir" sib 1 30)
+  sib=$(make_fake_autoarm_sibling "$dir" sib 5 30)
   FM_HOME="$(cd "$dir" && pwd)" bash "$sib" </dev/null >/dev/null 2>&1 &
   printf '%s\n' "$!" > "$dir/sibling.pid"
   out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 FM_CLAUDE_AUTOARM_DUE_WAIT_MS=8000 run_hook_claude "$dir" true); status=$?
@@ -2508,8 +2508,8 @@ test_hook_claude_mode_ignores_lingering_older_autoarm() {
   local dir sib out status
   dir=$(make_primary_dir "$TMP_ROOT/hook-claude-older-sibling")
   : > "$dir/state/task1.meta"
-  sib=$(make_fake_autoarm_sibling "$dir" sib 5 30)
-  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 FM_CLAUDE_AUTOARM_DUE_WAIT_MS=12000 FM_CLAUDE_AUTOARM_DUE_SLACK=0 run_hook_claude_beside_sibling "$dir" "$sib" 3); status=$?
+  sib=$(make_fake_autoarm_sibling "$dir" sib 14 30)
+  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 FM_CLAUDE_AUTOARM_DUE_WAIT_MS=12000 run_hook_claude_beside_sibling "$dir" "$sib" 8); status=$?
   stop_fake_sibling "$dir"
   expect_code 2 "$status" "an auto-arm started well before this guard belongs to an earlier Stop event"
   assert_contains "$out" "TURN WOULD END BLIND" "older-sibling block must carry the blind-turn banner"
