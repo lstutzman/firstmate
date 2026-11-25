@@ -312,7 +312,7 @@ test_parks_a_steered_handed_lane_whose_merge_poll_is_armed() {
 
   dir=$(make_lab handed-steered-open-decision)
   arm_merge_poll "$dir" || fail "handed-steered-open-decision: could not arm the merge poll"
-  printf 'needs-decision [at=1700000150] [key=q1]: which way\n' >> "$dir/home/state/$ID.status"
+  printf 'needs-decision [at=1700000150] [key=q1]\n' >> "$dir/home/state/$ID.status"
   mkdir -p "$dir/home/state/$ID.inbox/handled"
   printf 'schema=fm-task-inbox.v1\nat=%s\n--\nhanded\n' "$(date -u -d '@1700000200' +%Y-%m-%dT%H:%M:%SZ)" > "$dir/home/state/$ID.inbox/handled/0001.msg"
   park "$dir" >/dev/null 2>&1 && fail "handed-steered-open-decision: an armed, handed lane with an open decision was parked"
