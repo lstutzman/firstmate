@@ -1208,5 +1208,6 @@ FM_CLAUDE_LIVE_E2E=1 bash tests/fm-claude-stop-autoarm-live-e2e.test.sh
 
 A probe Stop hook, registered in the same `exec` form as the guard, recorded the process tree on each real Stop.
 On both Stops, `fm-turnend-guard.sh --claude` and `fm-claude-stop-autoarm.sh` ran as `bash <project>/bin/<script>` under the same parent PID as the probe, and the sibling assertion passed.
+That assertion requires at least one Stop to catch the guard and the auto-arm together under that parent, so a missing guard fails it.
 The run then failed the existing check `expected exactly 2 hook-owned arm cycles, got 4`.
 That failure also occurs with the unmodified test and with the guard from before FLEET-199, so it is not caused by this change.

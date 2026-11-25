@@ -81,7 +81,7 @@ cat >/dev/null 2>&1 || true
 i=0
 while :; do
   SNAP=$(ps -eo pid=,ppid=,args= 2>/dev/null | awk -v proj="$CLAUDE_PROJECT_DIR/bin/" 'index($0, proj) && /fm-claude-stop-autoarm\.sh|fm-turnend-guard\.sh/ && !/awk/')
-  printf '%s\n' "$SNAP" | awk -v p="$PPID" '$2 == p && /fm-claude-stop-autoarm\.sh/ {f=1} END {exit !f}' && break
+  printf '%s\n' "$SNAP" | awk -v p="$PPID" '$2 == p && /fm-claude-stop-autoarm\.sh/ {a=1} $2 == p && /fm-turnend-guard\.sh/ {g=1} END {exit !(a && g)}' && break
   [ "$i" -ge 50 ] && break
   i=$((i + 1))
   sleep 0.1
@@ -148,15 +148,17 @@ PROMPT='After reading the complete session-start digest, reply with exactly CYCL
 
 # FLEET-199: bin/fm-turnend-guard.sh waits for an auto-arm that is a live
 # sibling under its own parent whose ps args name fm-claude-stop-autoarm.sh.
-# On every real Stop, the auto-arm must be a child of the probe's parent, and
-# any guard caught alive must be a child of that same parent.
+# On every real Stop, the auto-arm must be a child of the probe's parent and
+# any guard caught alive must be a child of that same parent; at least one Stop
+# must catch the guard and the auto-arm together under that parent.
 [ -s "$HOME_DIR/state/stop-siblings.log" ] || fail "the Stop sibling probe recorded no Stop event"
 awk '
-  /^probe ppid=/ { split($2, kv, "="); parent = kv[2]; arm = 0; bad = ""; next }
+  /^probe ppid=/ { split($2, kv, "="); parent = kv[2]; arm = 0; guard = 0; bad = ""; next }
   /^end$/ {
     events++
     if (!arm) { print "no auto-arm sibling under parent " parent; failed = 1 }
     if (bad != "") { print "guard under another parent: " bad; failed = 1 }
+    if (arm && guard) paired++
     next
   }
   {
@@ -167,9 +169,14 @@ awk '
       if (part[n] == "fm-turnend-guard.sh") is_guard = 1
     }
     if (is_arm && $2 == parent) arm = 1
+    if (is_guard && $2 == parent) guard = 1
     if (is_guard && $2 != parent) bad = $0
   }
-  END { if (!events) { print "no complete probe record"; failed = 1 } exit failed }
+  END {
+    if (!events) { print "no complete probe record"; failed = 1 }
+    if (!paired) { print "no Stop caught the guard and the auto-arm under one parent"; failed = 1 }
+    exit failed
+  }
 ' "$HOME_DIR/state/stop-siblings.log" >"$LAB/siblings.verdict" \
   || fail "Stop auto-arm is not a sibling of the turn-end guard: $(cat "$LAB/siblings.verdict"); log: $(cat "$HOME_DIR/state/stop-siblings.log")"
 ARM_RUNS=$(wc -l < "$HOME_DIR/state/arm-ran" 2>/dev/null | tr -d ' ')
