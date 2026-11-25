@@ -220,7 +220,7 @@ A rules file with no such line is a coverage note in the digest, because the `st
 The two commitment kinds read each local `--home`'s `data/standing-commitments.json`, which `bin/fm-commitment.sh` writes; its header owns the row fields and the enforcement and verification specs.
 The officer only evaluates typed specs (a file, a log line or a status line); it never runs a command from a row.
 The digest ends with a "Standing commitments" section that lists every unretired row, green or red, with the reason, so the digest shows the whole register and not only new findings.
-An unreadable register is a coverage note and counts for no auto-close, and neither kind ever starts work.
+An unreadable register is a coverage note and counts for no auto-close, and while any register is unread a status line with a `[commitment=<id>]` mark is not flagged `commitment-unrecorded`; neither kind ever starts work.
 
 The run keeps `state.json` in its lane, when each finding was last reported.
 Its digest line counts only findings not reported in the last `remind-hours`, so an unchanged page set is silent every slot while a finding nobody fixed returns daily.

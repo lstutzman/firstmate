@@ -90,7 +90,8 @@ is evaluated on each run, page "Standing commitments":
 Both go through the filing, digest and auto-close paths below unchanged, routed `owner home: enforce or retire the
 commitment`, and never start work (neither is in START_SOURCES). The digest ends with a "Standing commitments" section
 listing every row, green or red, with the reason. An unreadable register is a coverage note and stops its rows' findings
-from counting toward an auto-close.
+from counting toward an auto-close; while any register is unread, a status line that carries a [commitment=<id>] mark is
+not flagged commitment-unrecorded, because its row may be in the register that was not read.
 
 Linear. With --writes linear (the registry's `writes: linear`) the officer follows the
 shared officer contract (docs/officers/contract.md; bin/fm-officer-linear.py owns the
