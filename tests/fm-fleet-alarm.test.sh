@@ -895,6 +895,24 @@ edit_mate_summary "value['holds'][0]['state']='blocked'; value['decisions_open']
 assert_contains "$(run_alarm check)" 'holding work silent' 'a blocked child with an open status decision still alarms'
 mate 0 0 0
 run_alarm check >/dev/null
+# FLEET-217, Deep Thought's shape: a declared pause with its until time ahead, and a parked child
+# whose status-source asks the mate holds for the captain under another task id.
+pause_shape() { # until-offset-seconds child-state
+  mate 0 0 3601
+  set_mate_work 2 0 1 1 1
+  edit_mate_summary "value['counts']['decisions_open']=5; value['holds']=[dict(id='pc-1468-mobile-rest',source='child-state',state='parked')]; value['endpoints']=[dict(id='pc-1468-mobile-rest',kind='ship',state='$2')]; value['counts']['endpoints']=1; value['decisions_open']=[dict(id='pc1468-native-calls-call',key='pc1468-native-calls-call',verb='captain-hold',source='backlog')]+[dict(id='pc-1468-mobile-rest',key=k,verb=v,source='status') for k,v in (('pc1468-native-bearer-access','needs-decision'),('pc1468-auth0-native-changes','needs-decision'),('pc1468-device-token-privacy','needs-decision'),('pc1468-apns-signing-key','blocked'))]"
+  printf 'paused [cause=external] [at=%s]: waiting on vendor; until %s\n' "$((now - 36000))" "$(date -u -d "@$((now + $1))" +%Y-%m-%dT%H:%MZ)" > "$HOME_FIX/state/mate.status"
+}
+pause_shape 3000 parked
+[ -z "$(run_alarm check)" ] || fail 'a parked child asking under a declared pause with a future until is not silent'
+pause_shape -7200 parked
+assert_contains "$(run_alarm check)" 'holding work silent' 'the same pause with its until more than the window past alarms'
+mate 0 0 0
+run_alarm check >/dev/null
+pause_shape 3000 working
+assert_contains "$(run_alarm check)" 'holding work silent' 'a live child asking under a future-until pause still alarms'
+mate 0 0 0
+run_alarm check >/dev/null
 mate 0 0 3601
 set_mate_work 2 0 20 1 1
 edit_mate_summary "value['counts']['decisions_open']=21; value['omitted']=[dict(surface='decisions_open',count=1)]"

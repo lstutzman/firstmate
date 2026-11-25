@@ -37,8 +37,9 @@ resolves when the condition clears.
 A secondmate whose own latest line is `working`, or `paused` with no `until` time, younger than
 working_ceiling_multiple (6) times silent_minutes, or `paused` with an `until` time less than
 silent_minutes past, while it holds work (in flight, an active child or a parked child; a queued backlog item that is merely held is not work), has asked main
-nothing open (a `needs-decision [key=merge-handoff-<n>]` whose text starts `[handoff=<home>]` is not a question to main), and has no status-source ask (one on a task it also holds as a captain-hold row
-does not count) and a complete decision list, is working a long task and
+nothing open (a `needs-decision [key=merge-handoff-<n>]` whose text starts `[handoff=<home>]` is not a question to main), and has no status-source ask (one on a task it also holds as a captain-hold row,
+or, under a `paused` line whose `until` time is not more than silent_minutes past, one from a child whose
+endpoint state is parked, does not count) and a complete decision list, is working a long task and
 is not silent either. A `paused [cause=external]` line with no `until` time is a declared wait
 that counts instead while younger than external_wait_ceiling_hours (24), then alarms again; only an
 `until <YYYY-MM-DDTHH:MMZ>` token, or a `[until=<YYYY-MM-DDTHH:MMZ>]` tag before the first colon, is read as its `until` time, never a date-only phrase.
@@ -291,7 +292,7 @@ def read_json(path, limit=262144):
     return json.loads(content)
 
 
-def child_asking(summary, counts):
+def child_asking(summary, counts, parked_pause=False):
     # A child asking its second mate (a status-source row), or a decision list too short to tell.
     # A status-source ask on a task the mate also holds as a captain-hold row is the mate waiting
     # on the captain, so it is not the child asking the mate; row ids decide, never hold reasons.
@@ -300,6 +301,13 @@ def child_asking(summary, counts):
         return True
     rows = [row for row in decisions if isinstance(row, dict)]
     held = {row.get('id') for row in rows if row.get('verb') == 'captain-hold'}
+    if parked_pause:
+        # The mate's own deciding line is a declared pause with its until time still ahead: a child the
+        # summary's endpoints list as parked is waiting, so its status asks are not the child asking the
+        # mate. A row whose endpoint is missing or in any other state still counts.
+        endpoints = summary.get('endpoints', [])
+        if isinstance(endpoints, list):
+            held |= {row.get('id') for row in endpoints if isinstance(row, dict) and row.get('state') == 'parked'}
     return any(row.get('source') == 'status' and row.get('id') not in held for row in rows)
 
 
@@ -399,11 +407,12 @@ def working_on_task(summary, counts, open_decisions, last_verb, paused_until, ag
     # other line once it is older than working_ceiling_multiple silence windows. A pause may sit
     # behind the mate's own plain needs-decision asks; a blocked line or a [handoff= ask still counts.
     waiting = int(open_decisions) - (int(plain_asks) if last_verb == 'paused' else 0)
-    if last_verb not in ('working', 'paused') or waiting != 0 or child_asking(summary, counts):
+    window = cfg['silent_minutes'] * 60
+    pause_ahead = last_verb == 'paused' and bool(paused_until) and time.time() <= int(paused_until) + window
+    if last_verb not in ('working', 'paused') or waiting != 0 or child_asking(summary, counts, pause_ahead):
         return False
     if not (counts.get('in_flight', 0) or counts['active_children'] or held_work(summary, counts)):
         return False
-    window = cfg['silent_minutes'] * 60
     if paused_until:
         return time.time() <= int(paused_until) + window
     ceiling = cfg['working_ceiling_multiple'] * window
