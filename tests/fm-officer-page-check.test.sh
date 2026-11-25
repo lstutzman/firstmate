@@ -210,6 +210,40 @@ test_findings_of_every_kind() {
   pass "fm-officer page-check: each finding kind is raised for the right object"
 }
 
+test_a_new_hold_on_the_same_task_is_not_shown_after_done() {
+  local home pages json
+  home=$(make_world rehold)
+  pages="$TMP_ROOT/rehold/pages"
+  cat > "$home/state/task-ra.status" <<STATUS
+needs-decision [at=$((E - 600))] [key=captain-hold-rehold-a-1]: first ask
+resolved [at=$((E + 60))] [key=captain-hold-rehold-a-1]: answered: Lee chose
+needs-decision [at=$((E + 3600))] [key=captain-hold-rehold-a-2]: second ask
+STATUS
+  cat > "$home/state/task-rb.status" <<STATUS
+needs-decision [at=$((E - 600))] [key=captain-hold-rehold-b-1]: first ask
+resolved [at=$((E + 60))] [key=captain-hold-rehold-b-1]: answered: Lee chose
+STATUS
+  cat > "$home/state/task-rc.status" <<STATUS
+needs-decision [at=$((E - 600))] [key=captain-hold-rehold-c-1]: first ask
+resolved [at=$((E + 60))] [key=captain-hold-rehold-c-1]: answered: Lee chose
+needs-decision [at=$((E + 600))] [key=captain-hold-rehold-c-2]: second ask
+resolved [at=$((E + 1200))] [key=captain-hold-rehold-c-2]: answered: Lee chose again
+STATUS
+  jq '.value.cards += [
+    {id: "rehold-a", band: "now", question: "Second ask", advice: "a", replies: ["a"], asked: "2026-10-31T10:30:00Z", state: "asked"},
+    {id: "rehold-b", band: "now", question: "Re-raised ask", advice: "a", replies: ["a"], asked: "2026-10-31T10:30:00Z", state: "asked"},
+    {id: "rehold-c", band: "now", question: "Shown after both answered", advice: "a", replies: ["a"], asked: "2026-10-31T11:00:00Z", state: "asked"}]' \
+    "$pages/_api_captains-log" > "$pages/log.tmp" && mv "$pages/log.tmp" "$pages/_api_captains-log"
+  officer rehold run page-check --date "$KEY" >/dev/null || fail "run must succeed"
+  json="$home/data/officers/page-check/$KEY.json"
+  assert_equals "" "$(jq -r '[.findings[] | select(.id | test("rehold-a")) | .id] | join(" ")' "$json")" \
+    "a new hold (-2) opened after the first (-1) was resolved leaves the card open, not shown after done"
+  assert_equals "shown-after-done:Captain's Log:rehold-b shown-after-done:Captain's Log:rehold-c" \
+    "$(jq -r '[.findings[] | select(.kind == "shown-after-done" and (.id | test("rehold-[bc]"))) | .id] | sort | join(" ")' "$json")" \
+    "the same key resolved then shown again is flagged, and so is a card whose newest hold is also resolved"
+  pass "fm-officer page-check: a new hold on the same task reopens its card instead of flagging it"
+}
+
 test_live_decisions_are_not_stale() {
   local home json k3 k4 k5 k6 pages
   home=$(make_world live)
@@ -784,6 +818,7 @@ test_a_failed_move_is_retried_without_a_second_comment() {
 
 test_registry_needs_an_https_app
 test_findings_of_every_kind
+test_a_new_hold_on_the_same_task_is_not_shown_after_done
 test_live_decisions_are_not_stale
 test_bosun_rules_and_unexpected_shapes
 test_unchanged_pages_stay_quiet_until_the_reminder
