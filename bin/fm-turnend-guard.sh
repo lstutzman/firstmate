@@ -79,6 +79,12 @@
 #      without consuming a continuation, so one event epoch yields exactly one recovery turn;
 #      the first fresh exhausted-failure epoch preserves the bounded progression,
 #      while later fresh failed epochs consume it instead of resetting it;
+#      If neither shows within that window but an auto-arm process of this same
+#      Stop event is still alive (a sibling under this guard's own parent,
+#      autoarm_sibling_due), keep polling for it, bounded by
+#      FM_CLAUDE_AUTOARM_DUE_WAIT_MS (default 30000), so a heavily loaded host
+#      is not told supervision is off before the auto-arm has claimed
+#      (FLEET-199); the wait ends the moment it claims or exits unclaimed;
 #   4. only when neither materializes is the auto-arm genuinely absent: re-block
 #      with the repair banner, bounded to FM_CLAUDE_TURNEND_BLOCK_BUDGET
 #      (default 3) consecutive blocks per session - safely below Claude Code's
@@ -104,6 +110,9 @@ AGY_MODE=0
 SYNC_WAIT_MS=${FM_CLAUDE_AUTOARM_SYNC_WAIT_MS:-800}
 EPOCH_FRESH=${FM_CLAUDE_AUTOARM_EPOCH_FRESH:-15}
 BLOCK_BUDGET=${FM_CLAUDE_TURNEND_BLOCK_BUDGET:-3}
+DUE_WAIT_MS=${FM_CLAUDE_AUTOARM_DUE_WAIT_MS:-30000}
+DUE_SLACK=5
+case "$DUE_WAIT_MS" in ''|*[!0-9]*) DUE_WAIT_MS=30000 ;; esac
 case "$SYNC_WAIT_MS" in ''|*[!0-9]*) SYNC_WAIT_MS=800 ;; esac
 case "$EPOCH_FRESH" in ''|*[!0-9]*|0) EPOCH_FRESH=15 ;; esac
 case "$BLOCK_BUDGET" in ''|*[!0-9]*|0) BLOCK_BUDGET=3 ;; esac
@@ -544,6 +553,49 @@ failure_episode_verified() {
   esac
 }
 
+# fm_etime_seconds: ps's [[dd-]hh:]mm:ss elapsed time as whole seconds.
+fm_etime_seconds() {  # <etime>
+  local t=${1//[[:space:]]/} d=0 h=0 m=0 s=0 a b c
+  case "$t" in
+    *-*) d=${t%%-*}; t=${t#*-} ;;
+  esac
+  IFS=: read -r a b c <<EOF
+$t
+EOF
+  if [ -n "${c:-}" ]; then h=$a m=$b s=$c; else m=${a:-0} s=${b:-0}; fi
+  printf '%s' $((10#${d:-0} * 86400 + 10#${h:-0} * 3600 + 10#${m:-0} * 60 + 10#${s:-0})) 2>/dev/null
+}
+
+# autoarm_sibling_due: succeeds while an auto-arm process of THIS Stop event is
+# alive and may still claim the home (FLEET-199). Claude Code fires the guard
+# and bin/fm-claude-stop-autoarm.sh together for one Stop, both `exec`ed by the
+# hook command, so the auto-arm is a live sibling under the guard's own parent.
+# On a host at load 140 to 165 it needs longer than SYNC_WAIT_MS to publish its
+# claim, and an unclaimed-yet auto-arm is not an absent one. An auto-arm
+# started more than DUE_SLACK seconds before this guard belongs to an earlier
+# Stop (a parked arm that lost its claim), so it does not count. Any failure to
+# list processes answers "not due", which is the pre-existing behavior.
+autoarm_sibling_due() {
+  local self_age cand sibling_age
+  self_age=$(ps -o etime= -p "$$" 2>/dev/null) || return 1
+  self_age=$(fm_etime_seconds "$self_age") || return 1
+  [ -n "$self_age" ] || return 1
+  while read -r cand; do
+    [ -n "$cand" ] || continue
+    sibling_age=$(fm_etime_seconds "$cand") || continue
+    [ -n "$sibling_age" ] || continue
+    [ "$sibling_age" -le $((self_age + DUE_SLACK)) ] && return 0
+  done <<EOF
+$(ps -eo pid=,ppid=,etime=,args= 2>/dev/null | awk -v me="$$" -v parent="$PPID" '
+    $1 != me && $2 == parent {
+      line = $0
+      sub(/^[ \t]*[0-9]+[ \t]+[0-9]+[ \t]+[^ \t]+[ \t]+/, "", line)
+      if (line ~ /(^|[ \t\/])fm-claude-stop-autoarm\.sh([ \t]|$)/) print $3
+    }')
+EOF
+  return 1
+}
+
 i=0
 while [ "$i" -lt $((SYNC_WAIT_MS / 100)) ]; do
   if autoarm_owns_recovery; then
@@ -554,6 +606,26 @@ while [ "$i" -lt $((SYNC_WAIT_MS / 100)) ]; do
   fi
   sleep 0.1
   i=$((i + 1))
+done
+if autoarm_owns_recovery; then
+  if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
+    fm_failure_episode_reset "$STATE" || exit 2
+  fi
+  exit 0
+fi
+
+# Not claimed within the short wait. While an auto-arm of this Stop event is
+# still alive, it is due rather than absent: keep polling, bounded by
+# DUE_WAIT_MS, and leave as soon as it claims or exits unclaimed.
+due_deadline=$((SECONDS + DUE_WAIT_MS / 1000))
+while [ "$SECONDS" -lt "$due_deadline" ] && autoarm_sibling_due; do
+  sleep 1
+  if autoarm_owns_recovery; then
+    if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then
+      fm_failure_episode_reset "$STATE" || exit 2
+    fi
+    exit 0
+  fi
 done
 if autoarm_owns_recovery; then
   if fm_watcher_healthy "$STATE" "$WATCH" "$GRACE" "$FM_HOME"; then

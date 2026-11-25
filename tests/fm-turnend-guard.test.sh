@@ -2407,6 +2407,115 @@ test_hook_claude_mode_waits_for_late_claim() {
   pass "fm-turnend-guard --claude: bounded claim wait avoids a token-consuming forced continuation"
 }
 
+# FLEET-199: on a host at load 140 to 165 the Stop auto-arm needs longer than the
+# short claim wait to reach its generation claim, and the guard reported SUPERVISION
+# IS OFF for an arm that was about to claim. The guard now also recognises an
+# auto-arm process of this same Stop event (a live sibling under the guard's own
+# parent, fired together with it) and keeps waiting, bounded, while it is alive.
+# These cases fire the guard and a fake auto-arm from one parent shell, the shape
+# Claude Code gives the two Stop hooks.
+make_fake_autoarm_sibling() {  # <dir> <name> <ledger-delay-seconds|never> <lifetime-seconds>
+  local dir=$1 name=$2 delay=$3 life=$4 script
+  script="$dir/$name/bin/fm-claude-stop-autoarm.sh"
+  mkdir -p "$dir/$name/bin"
+  cat > "$script" <<SH
+#!/usr/bin/env bash
+if [ "$delay" != never ]; then
+  sleep "$delay"
+  printf 'epoch=3 owner_pid=%s outcome=rewake updated_at=%s\n' "\$\$" "\$(date +%s)" > "\$FM_HOME/state/.claude-autoarm-epoch"
+fi
+sleep "$life"
+SH
+  printf '%s\n' "$script"
+}
+
+# Start the sibling and the guard as children of one parent shell, the guard
+# starting <guard-delay> seconds after the sibling.
+run_hook_claude_beside_sibling() {  # <dir> <sibling-script> <guard-delay>
+  local dir=$1 sib=$2 guard_delay=${3:-0} home
+  home=$(cd "$dir" && pwd)
+  CLAUDECODE=1 FM_HOME="$home" SIB="$sib" GUARD_DELAY="$guard_delay" GUARD="$dir/bin/fm-turnend-guard.sh" bash -c '
+    bash "$SIB" </dev/null >/dev/null 2>&1 &
+    printf "%s\n" "$!" > "$FM_HOME/sibling.pid"
+    [ "$GUARD_DELAY" = 0 ] || sleep "$GUARD_DELAY"
+    printf "{\"stop_hook_active\":true,\"session_id\":\"sess-claude-mode\"}" | bash "$GUARD" --claude 2>&1
+    rc=$?
+    exit "$rc"
+  ' 2>&1
+}
+
+stop_fake_sibling() {  # <dir>
+  local pid
+  pid=$(cat "$1/sibling.pid" 2>/dev/null || true)
+  [ -z "$pid" ] || { pkill -P "$pid" 2>/dev/null || true; kill "$pid" 2>/dev/null || true; }
+  return 0
+}
+
+test_hook_claude_mode_waits_for_due_autoarm_sibling() {
+  local dir sib out status
+  dir=$(make_primary_dir "$TMP_ROOT/hook-claude-due-sibling")
+  : > "$dir/state/task1.meta"
+  sib=$(make_fake_autoarm_sibling "$dir" sib 2 30)
+  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 FM_CLAUDE_AUTOARM_DUE_WAIT_MS=15000 run_hook_claude_beside_sibling "$dir" "$sib" 0); status=$?
+  stop_fake_sibling "$dir"
+  expect_code 0 "$status" "--claude must not report supervision off while this event's auto-arm is alive and about to claim"
+  [ -z "$out" ] || fail "--claude due-sibling wait produced output: $out"
+  pass "fm-turnend-guard --claude: waits for a live auto-arm of the same Stop event (FLEET-199)"
+}
+
+test_hook_claude_mode_blocks_when_due_sibling_never_claims() {
+  local dir sib out status
+  dir=$(make_primary_dir "$TMP_ROOT/hook-claude-hung-sibling")
+  : > "$dir/state/task1.meta"
+  sib=$(make_fake_autoarm_sibling "$dir" sib never 30)
+  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 FM_CLAUDE_AUTOARM_DUE_WAIT_MS=1500 run_hook_claude_beside_sibling "$dir" "$sib" 0); status=$?
+  stop_fake_sibling "$dir"
+  expect_code 2 "$status" "an auto-arm that never claims within the bounded wait must still be reported"
+  assert_contains "$out" "TURN WOULD END BLIND" "hung-sibling block must carry the blind-turn banner"
+  pass "fm-turnend-guard --claude: a live auto-arm that never claims is still reported after the bounded wait"
+}
+
+test_hook_claude_mode_blocks_promptly_when_due_sibling_exits_unclaimed() {
+  local dir sib out status started
+  dir=$(make_primary_dir "$TMP_ROOT/hook-claude-exited-sibling")
+  : > "$dir/state/task1.meta"
+  sib=$(make_fake_autoarm_sibling "$dir" sib never 1)
+  started=$SECONDS
+  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 FM_CLAUDE_AUTOARM_DUE_WAIT_MS=20000 run_hook_claude_beside_sibling "$dir" "$sib" 0); status=$?
+  stop_fake_sibling "$dir"
+  expect_code 2 "$status" "an auto-arm that exited without claiming must be reported"
+  [ $((SECONDS - started)) -lt 12 ] || fail "guard kept waiting after the auto-arm exited ($((SECONDS - started))s)"
+  assert_contains "$out" "TURN WOULD END BLIND" "exited-sibling block must carry the blind-turn banner"
+  pass "fm-turnend-guard --claude: an auto-arm that exited unclaimed ends the wait and is reported"
+}
+
+test_hook_claude_mode_ignores_autoarm_of_another_parent() {
+  local dir sib out status
+  dir=$(make_primary_dir "$TMP_ROOT/hook-claude-foreign-parent-sibling")
+  : > "$dir/state/task1.meta"
+  sib=$(make_fake_autoarm_sibling "$dir" sib 5 30)
+  FM_HOME="$(cd "$dir" && pwd)" bash "$sib" </dev/null >/dev/null 2>&1 &
+  printf '%s\n' "$!" > "$dir/sibling.pid"
+  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 FM_CLAUDE_AUTOARM_DUE_WAIT_MS=8000 run_hook_claude "$dir" true); status=$?
+  stop_fake_sibling "$dir"
+  wait 2>/dev/null || true
+  expect_code 2 "$status" "an auto-arm under a different parent is not this Stop event's"
+  assert_contains "$out" "TURN WOULD END BLIND" "foreign-parent block must carry the blind-turn banner"
+  pass "fm-turnend-guard --claude: ignores an auto-arm process that is not a sibling under the guard's parent"
+}
+
+test_hook_claude_mode_ignores_lingering_older_autoarm() {
+  local dir sib out status
+  dir=$(make_primary_dir "$TMP_ROOT/hook-claude-older-sibling")
+  : > "$dir/state/task1.meta"
+  sib=$(make_fake_autoarm_sibling "$dir" sib 14 30)
+  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 FM_CLAUDE_AUTOARM_DUE_WAIT_MS=12000 run_hook_claude_beside_sibling "$dir" "$sib" 8); status=$?
+  stop_fake_sibling "$dir"
+  expect_code 2 "$status" "an auto-arm started well before this guard belongs to an earlier Stop event"
+  assert_contains "$out" "TURN WOULD END BLIND" "older-sibling block must carry the blind-turn banner"
+  pass "fm-turnend-guard --claude: ignores a lingering auto-arm older than this Stop event"
+}
+
 test_hook_claude_mode_secondmate_reblocks_like_primary() {
   local dir pid out status
   dir=$(make_secondmate_dir "$TMP_ROOT/hook-claude-sm-reblock")
@@ -2746,6 +2855,11 @@ test_hook_claude_mode_fail_open_requires_notice_and_failure_epoch
 test_hook_claude_mode_away_mode_never_uses_stop_autoarm_fail_open
 test_hook_claude_mode_allow_resets_budget
 test_hook_claude_mode_waits_for_late_claim
+test_hook_claude_mode_waits_for_due_autoarm_sibling
+test_hook_claude_mode_blocks_when_due_sibling_never_claims
+test_hook_claude_mode_blocks_promptly_when_due_sibling_exits_unclaimed
+test_hook_claude_mode_ignores_autoarm_of_another_parent
+test_hook_claude_mode_ignores_lingering_older_autoarm
 test_hook_claude_mode_secondmate_reblocks_like_primary
 test_hook_away_daemon_allows_between_watcher_cycles
 test_hook_away_daemon_allows_over_dead_watcher_lock
