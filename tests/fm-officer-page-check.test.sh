@@ -945,6 +945,28 @@ test_unrecorded_commitments_match_tightly() {
   pass "fm-officer page-check: an unrecorded commitment is matched tightly (outstanding, the Linear label, quotes, a rule id and results are not)"
 }
 
+test_homes_with_one_basename_are_each_read() {
+  local home json t="$TMP_ROOT/samename" a b
+  home=$(make_world samename)
+  a="$t/copy1/mate"
+  b="$t/copy2/mate"
+  mkdir -p "$a/state" "$a/data" "$b/state" "$b/data"
+  a=$(cd "$a" && pwd -P)
+  b=$(cd "$b" && pwd -P)
+  printf -- '- mate-a - a (home: %s; scope: office; projects: none; added 2026-11-04)\n- mate-b - b (home: %s; scope: office; projects: none; added 2026-11-04)\n' "$a" "$b" > "$home/data/secondmates.md"
+  FM_HOME="$a" bash "$ROOT/bin/fm-commitment.sh" add --id row-a --commitment c --lee-words w --enforcement memory --verify none >/dev/null || fail "could not record row-a"
+  FM_HOME="$b" bash "$ROOT/bin/fm-commitment.sh" add --id row-b --commitment c --lee-words w --enforcement memory --verify none >/dev/null || fail "could not record row-b"
+  status_line "$a" task-a "$((NOW - 3600))" 'from now on landing runs the ledger'
+  status_line "$b" task-b "$((NOW - 3600))" 'from now on landing runs the ledger'
+  officer samename run page-check --date "$KEY" >/dev/null || fail "run must succeed"
+  json="$home/data/officers/page-check/$KEY.json"
+  assert_equals "2" "$(jq '.commitments | length' "$json")" "both same-named homes' register rows are read"
+  assert_equals "task-a task-b" "$(jq -r '[.findings[] | select(.kind == "commitment-unrecorded") | .id | split(":")[3]] | sort | join(" ")' "$json")" \
+    "both same-named homes' unrecorded status lines are found"
+  assert_equals "2" "$(jq '[.findings[] | select(.kind == "commitment-unproven") | .id] | unique | length' "$json")" "each row is its own finding"
+  pass "fm-officer page-check: two homes with one basename are each read"
+}
+
 test_an_unreadable_register_is_a_coverage_note_not_a_close() {  # also: no register at all is an empty section
   local home json
   home=$(make_world badreg)
@@ -1024,6 +1046,7 @@ test_a_recurrence_in_a_blocked_check_resets_the_count
 test_a_log_without_cards_does_not_count
 test_every_spec_type_is_green_or_red_in_the_digest
 test_unrecorded_commitments_match_tightly
+test_homes_with_one_basename_are_each_read
 test_an_unreadable_register_is_a_coverage_note_not_a_close
 test_commitment_findings_are_filed_and_never_started
 test_a_commitment_item_closes_once_its_row_is_retired_but_not_while_unread

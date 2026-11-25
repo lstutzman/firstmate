@@ -201,6 +201,8 @@ def check_verify(parsed, now, homes):
         return True, "newest file matching %s is %sh old" % (parsed["path"], _hours(now - newest))
     if kind == "status":
         root = homes.get(parsed["home"])
+        if root is None and parsed["home"] in homes:
+            return False, "home name %s is ambiguous: more than one home read has it" % parsed["home"]
         if root is None:
             return False, "home %s is not read by this officer" % parsed["home"]
         state = os.path.join(root, "state")

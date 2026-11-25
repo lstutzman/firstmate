@@ -382,19 +382,47 @@ def home_id(path):
     return os.path.basename(path.rstrip("/").rsplit(":", 1)[-1])
 
 
+def display_ids(paths):
+    """{path: id}: the basename while it is unique among paths, otherwise the fewest trailing path parts, joined with '-',
+    that tell the homes apart. An id never repeats within the run."""
+    parts = {p: [x for x in p.split("/") if x] or [p] for p in paths}
+    out, used = {}, set()
+    for base in sorted({v[-1] for v in parts.values()}):
+        group = sorted(p for p, v in parts.items() if v[-1] == base)
+        k = 1
+        while True:
+            ids = ["-".join(parts[p][-k:]) for p in group]
+            if len(set(ids)) == len(ids) and not used.intersection(ids) or all(k >= len(parts[p]) for p in group):
+                break
+            k += 1
+        for p, i in zip(group, ids):
+            while i in used:
+                i += "-"
+            out[p] = i
+            used.add(i)
+    return out
+
+
 def commitment_findings(homes, now):
     """(findings, rows, coverage, retired, complete): the unproven and unrecorded commitments of every local --home.
     rows: one dict per unretired register row, green or red with its reasons, for the digest; retired counts the skipped
     rows. complete is False when a home or register could not be read, so no commitment finding counts toward an auto-close."""
     out, rows, coverage = [], [], []
-    roots = {}
+    paths = {}
     for h in homes:
         if ":" in h.split("/", 1)[0]:
             coverage.append("home %s is on another host, so its standing commitments were not read" % h)
             continue
-        roots[home_id(h)] = triage.Home(h).root
+        root = triage.Home(h).root
+        paths[os.path.realpath(root)] = root
+    # Homes are keyed by resolved path: two homes with one basename (a main home and its worktree copies) never collide.
+    ids = display_ids(list(paths))
+    roots = {ids[p]: paths[p] for p in paths}
+    for base in {os.path.basename(p) for p in paths}:
+        if base not in roots:
+            roots[base] = None  # ambiguous: more than one home has this basename
     registers, unread = {}, False
-    for hid, root in sorted(roots.items()):
+    for hid, root in sorted((i, r) for i, r in roots.items() if r is not None):
         if not os.path.isdir(root):
             coverage.append("home %s is not readable, so its standing commitments were not read" % hid)
             unread = True
@@ -424,7 +452,7 @@ def commitment_findings(homes, now):
                                    "commitment %s is unproven" % rid,
                                    friction.scrub("owner %s, recorded in %s; %s" % (owner, hid, "; ".join(reasons)), 400),
                                    COMMITMENT_ROUTE, "high"))
-    for hid, root in sorted(roots.items()):
+    for hid, root in sorted((i, r) for i, r in roots.items() if r is not None):
         state = os.path.join(root, "state")
         try:
             names = sorted(n for n in os.listdir(state) if n.endswith(".status") and not n.startswith("."))
