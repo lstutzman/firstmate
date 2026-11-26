@@ -72,8 +72,11 @@
 # because launchd can restart that server and a mate can create a pane in it at
 # any moment; it only records ownership and starts a stopped server, and
 # reports everything else as an operator action. It may adopt a legacy owner
-# only when its launch-agent guard proves the current root, and that adoption
-# writes metadata without restarting the service. It also writes and reloads
+# only when its launch-agent guard proves the current root (darwin), or, on
+# Linux, when the running server is the host's only fm-remote server, the
+# entrypoint symlink resolves to this code root, and no other code root has
+# recorded an owner; that adoption writes metadata without restarting the
+# service. Without --fix the check only reports the adoptable state. It also writes and reloads
 # the owned Aqua agents,
 # starts the Linux workers where no Aqua agent applies, starts a persistent rex
 # server when that backend needs one and none answers, recreates the entrypoint
@@ -963,6 +966,23 @@ check_launch_agent_loaded() { # <resolved-login-shell>
     "close the login-session gap first; a launch agent can only be bootstrapped into an existing GUI session"
 }
 
+# A running Linux server with no owner record, such as one a systemd user unit
+# started, is adoptable only when nothing is ambiguous: it is the host's only
+# fm-remote server, the account's entrypoint resolves to this code root, and no
+# other code root has recorded an owner of its own. Process lookups go through
+# pgrep so the proof reads the host's live processes, never the server itself.
+linux_owner_adoptable() {
+  local servers
+  [ "$PLATFORM" = linux ] && [ "$HERDR_SESSION_NAME" = fm-remote ] || return 1
+  [ -L "$ENTRYPOINT_LINK" ] \
+    && [ "$(readlink -f -- "$ENTRYPOINT_LINK" 2>/dev/null)" = "$FM_ROOT/bin/fm-remote-entrypoint.sh" ] || return 1
+  compgen -G "$HERDR_OWNER_DIR/remote-herdr-owner-*" >/dev/null && return 1
+  servers=$(pgrep -af 'herdr server --session fm-remote' 2>/dev/null | sed 's/^[0-9]* //' || true)
+  case "$servers" in *$'\n'*|'') return 1 ;; esac
+  case "$servers" in *'--session fm-remote') return 0 ;; *'--session fm-remote '*) return 0 ;; esac
+  return 1
+}
+
 check_herdr_server() {
   if ! herdr_cli_available; then
     record herdr-server "human: herdr server status cannot be read without both herdr and jq on the runtime PATH" \
@@ -970,9 +990,15 @@ check_herdr_server() {
     return 0
   fi
   if herdr_server_running; then
+    if [ -z "$HERDR_OWNER_ROOT" ] && [ ! -e "$HERDR_OWNER_FILE" ] && [ ! -L "$HERDR_OWNER_FILE" ] && linux_owner_adoptable; then
+      record herdr-owner "fixable: session $HERDR_SESSION_NAME is the only fm-remote server on this host and $ENTRYPOINT_LINK resolves to $FM_ROOT, but it has no durable owner record" \
+        "bin/fm-on.sh <route> fm-remote-doctor.sh --fix records $FM_ROOT as owner without restarting the server"
+      record herdr-server "ok: session $HERDR_SESSION_NAME is running"
+      return 0
+    fi
     if [ -z "$HERDR_OWNER_ROOT" ]; then
       record herdr-server "human: session $HERDR_SESSION_NAME is running but its Firstmate code-root owner cannot be proven; leaving the legacy service untouched" \
-        "identify the code root that owns this Herdr service before attempting a repair"
+        "identify the code root that owns this Herdr service before attempting a repair; on Linux, once it is the only fm-remote server and the entrypoint resolves to the owning root, write that root to $HERDR_OWNER_FILE once"
       return 0
     fi
     # A legacy service is adopted only when its launch-agent guard proves this

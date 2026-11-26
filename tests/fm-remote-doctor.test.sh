@@ -124,6 +124,13 @@ new_case() {
 printf '%s\n' '$platform'
 SH
 
+  # The host's process list for the Linux adoption proof; a case fills ps.out.
+  cat > "$CASE_BIN/pgrep" <<'SH'
+#!/usr/bin/env bash
+sed "s/^/4242 /" "$FM_FAKE_STATE/ps.out" 2>/dev/null
+SH
+  chmod +x "$CASE_BIN/pgrep"
+
   cat > "$CASE_BIN/launchctl" <<'SH'
 #!/usr/bin/env bash
 set -u
@@ -1163,6 +1170,58 @@ assert_not_contains "$DOCTOR_OUT" 'fix herdr-server=applied:' "the doctor took o
 assert_absent "$CASE_HOME/.firstmate/remote-herdr-owner" "the doctor claimed an unproven legacy server"
 [ "$(cat "$CASE_HERDR_RUNNING")" = true ] || fail "the doctor changed the legacy server state"
 pass "a legacy service without a provable owner is reported and never taken over"
+
+# --- a running linux server with no owner record is adopted when unambiguous --
+
+adoptable_linux_case() { # <ps-lines>
+  new_case Linux with-herdr no-gui
+  rm -f "$CASE_HOME/.firstmate/remote-herdr-owner"
+  printf 'true\n' > "$CASE_HERDR_RUNNING"
+  mkdir -p "$CASE_HOME/.local/bin"
+  ln -s "$ROOT/bin/fm-remote-entrypoint.sh" "$CASE_HOME/.local/bin/fm-remote-entrypoint.sh"
+  printf '%s\n' "$1" > "$CASE_STATE/ps.out"
+}
+SERVER_PS='/home/u/.local/bin/herdr server --session fm-remote'
+
+adoptable_linux_case "$SERVER_PS"
+doctor
+expect_code 1 "$DOCTOR_RC" "an owner-less linux server was reported ready"
+assert_contains "$DOCTOR_OUT" 'check herdr-owner=fixable: session fm-remote is the only fm-remote server' \
+  "the adoptable linux server was not reported fixable"
+assert_contains "$DOCTOR_OUT" '--fix records' "the adoptable state did not name the --fix command"
+assert_absent "$CASE_HOME/.firstmate/remote-herdr-owner" "the read-only check wrote the owner record"
+doctor --fix --automatic
+expect_code 0 "$DOCTOR_RC" "the adoptable linux server was not adopted"
+assert_contains "$DOCTOR_OUT" 'fix herdr-owner=applied:' "the linux adoption was not reported"
+[ "$(cat "$CASE_HOME/.firstmate/remote-herdr-owner")" = "$ROOT" ] || fail "the adopted owner record is not this code root"
+[ "$(cat "$CASE_HERDR_RUNNING")" = true ] || fail "adoption changed the running server"
+assert_not_contains "$DOCTOR_OUT" 'fix herdr-server=' "adoption touched the server"
+pass "a running linux server with no owner record is adopted as metadata only"
+
+adoptable_linux_case "$SERVER_PS
+/home/u/.local/bin/herdr server --session fm-remote-0123456789abcdef"
+doctor --fix
+expect_code 1 "$DOCTOR_RC" "two fm-remote servers were treated as unambiguous"
+assert_contains "$DOCTOR_OUT" 'owner cannot be proven' "the two-server refusal was not reported"
+assert_absent "$CASE_HOME/.firstmate/remote-herdr-owner" "ambiguous servers were adopted"
+
+adoptable_linux_case "$SERVER_PS"
+ln -sfn "$CASE_DIR/other-root/bin/fm-remote-entrypoint.sh" "$CASE_HOME/.local/bin/fm-remote-entrypoint.sh"
+doctor --fix
+expect_code 1 "$DOCTOR_RC" "an entrypoint pointing at another root was adopted"
+assert_absent "$CASE_HOME/.firstmate/remote-herdr-owner" "a foreign entrypoint was adopted"
+
+adoptable_linux_case "$SERVER_PS"
+printf '/other/root\n' > "$CASE_HOME/.firstmate/remote-herdr-owner-0123456789abcdef"
+doctor --fix
+expect_code 1 "$DOCTOR_RC" "a host where another root has an owner record was adopted"
+assert_absent "$CASE_HOME/.firstmate/remote-herdr-owner" "another root's claim was ignored"
+
+adoptable_linux_case ""
+doctor --fix
+expect_code 1 "$DOCTOR_RC" "a server no process shows was adopted"
+assert_absent "$CASE_HOME/.firstmate/remote-herdr-owner" "an unseen server was adopted"
+pass "an ambiguous linux server is still refused with its record left unwritten"
 
 # --- linux has no launch agent, and --fix starts the server directly ---------
 
