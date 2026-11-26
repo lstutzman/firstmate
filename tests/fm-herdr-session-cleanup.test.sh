@@ -373,6 +373,60 @@ reset_finished; fm_herdr_session_cleanup >/dev/null 2>&1
 [ ! -s "$CLOSE_LOG" ] || fail "restored-shell pass closed a workspace whose task record exists"
 pass "restored-shell pass still preserves every workspace with a task record"
 
+# Scale: a home with many journals and many candidate workspaces (the Navigator
+# stalled session start at 219 journals and 93 records). Validation work must
+# grow with candidates, not candidates times journals, so count journal
+# validations rather than time them.
+(
+  reset_fixture
+  rm -f "$FM_STATE_OVERRIDE/$ID.herdr-presentation"
+  JOURNALS=219 CANDIDATES=93 SNAP_COUNT="$TMP_ROOT/snapshot-count"
+  : > "$SNAP_COUNT"
+  workspaces='' n=1
+  while [ "$n" -le "$JOURNALS" ]; do
+    tok=$(printf '%022d' "$n")
+    write_v1 "s$n" "$tok"
+    if [ "$n" -le "$CANDIDATES" ]; then
+      label=$(fm_backend_herdr_projection_workspace_label "s$n" "$tok")
+      workspaces="$workspaces${workspaces:+,}{\"workspace_id\":\"w$((n + 10))\",\"label\":\"$label\"}"
+      printf 'window=test:w%s:p1\nkind=ship\nbackend=herdr\nherdr_session=test\nherdr_workspace_id=w%s\nherdr_tab_id=w%s:t1\nherdr_pane_id=w%s:p1\n' \
+        "$((n + 10))" "$((n + 10))" "$((n + 10))" "$((n + 10))" > "$FM_STATE_OVERRIDE/s$n.finished-meta"
+    fi
+    n=$((n + 1))
+  done
+  # shellcheck disable=SC2329 # invoked indirectly by the cleanup passes.
+  fm_backend_herdr_cli() {
+    [ "${2:-} ${3:-}" = "workspace list" ] || return 1
+    printf '{"result":{"workspaces":[%s]}}\n' "$workspaces"
+  }
+  real_snapshot=$(declare -f fm_backend_herdr_projection_journal_snapshot)
+  eval "real_$real_snapshot"
+  # shellcheck disable=SC2329 # invoked indirectly by the cleanup passes.
+  fm_backend_herdr_projection_journal_snapshot() {
+    printf x >> "$SNAP_COUNT"
+    real_fm_backend_herdr_projection_journal_snapshot "$@"
+  }
+  fm_herdr_session_cleanup >/dev/null 2>&1
+  restored=$(wc -c < "$SNAP_COUNT" | tr -d ' ')
+  [ "$restored" -le $((CANDIDATES * 2)) ] \
+    || fail "restored-shell pass validated $restored journals for $CANDIDATES candidates among $JOURNALS journals"
+  : > "$SNAP_COUNT"
+  n=1
+  while [ "$n" -le "$CANDIDATES" ]; do
+    mv "$FM_STATE_OVERRIDE/s$n.finished-meta" "$FM_STATE_OVERRIDE/s$n.meta"
+    printf 'done [at=1000]: PR https://github.com/o/r/pull/7 ready\n' > "$FM_STATE_OVERRIDE/s$n.status"
+    sed -i 's|^pr=.*||' "$FM_STATE_OVERRIDE/s$n.meta"
+    printf 'pr=https://github.com/o/r/pull/7\n' >> "$FM_STATE_OVERRIDE/s$n.meta"
+    n=$((n + 1))
+  done
+  fm_herdr_finished_cleanup >/dev/null 2>&1
+  finished=$(wc -c < "$SNAP_COUNT" | tr -d ' ')
+  [ "$finished" -le $((CANDIDATES * 2)) ] \
+    || fail "finished pass validated $finished journals for $CANDIDATES tasks among $JOURNALS journals"
+  [ "$restored" -gt 0 ] && [ "$finished" -gt 0 ] || fail "scale scenario validated no journals"
+) || exit 1
+pass "journal validation grows with candidates, not candidates times journals"
+
 INTEGRATION_ROOT="$TMP_ROOT/bootstrap-integration"
 mkdir -p "$INTEGRATION_ROOT/home/state" "$INTEGRATION_ROOT/home/data" "$INTEGRATION_ROOT/home/config"
 cp -R "$ROOT/bin" "$INTEGRATION_ROOT/bin"
