@@ -115,6 +115,10 @@
 # cap back; bin/fm-fleet-alarm.py announces P > S. Ready PRs of a remote home's
 # ships that wait for the captain's merge word stay out of the slots too (Remote homes, below).
 #
+# PR drain off: config/pr-drain-off (one project name per line, same config
+# directory and inheritance as ci-slots) switches bin/fm-pr-drain.py state off for
+# the listed project; fm-project-mode.sh --pr-drain-off reads it back.
+#
 # Open-PR cap: config/open-pr-cap, same format and inheritance, holds one
 # `<project-name> <cap>` line; a project that declares S and no cap line gets
 # min(2 x S, FM_OPEN_PR_CAP_MAX) (Lee 2026-11-21: 2 x S, max 16). The cap counts open
@@ -262,6 +266,39 @@ fm_ci_slots_lookup() {  # <config-dir> <project-name>
   FM_CI_SLOTS=$FM_DECLARED
   FM_CI_SLOTS_ERROR=$FM_DECLARED_ERROR
   return "$rc"
+}
+
+# Read config/pr-drain-off, one registered project name per line ('#' comments
+# and blank lines skipped), the same config directory and inheritance as ci-slots.
+# Sets FM_PR_DRAIN_OFF to 1 when <project-name> is listed, else empty, and
+# FM_PR_DRAIN_OFF_ERROR; returns 1 when the file is unreadable or names a project twice.
+fm_pr_drain_off_lookup() {  # <config-dir> <project-name>
+  local file=$1/pr-drain-off name=$2 line seen='|'
+  FM_PR_DRAIN_OFF=
+  FM_PR_DRAIN_OFF_ERROR=
+  if [ ! -e "$file" ] && [ ! -L "$file" ]; then
+    return 0
+  fi
+  if [ ! -f "$file" ] || [ ! -r "$file" ]; then
+    FM_PR_DRAIN_OFF_ERROR="$file is not a readable regular file"
+    return 1
+  fi
+  while IFS= read -r line || [ -n "$line" ]; do
+    line=${line%$'\r'}
+    line=${line#"${line%%[![:space:]]*}"}
+    line=${line%"${line##*[![:space:]]}"}
+    case "$line" in '' | '#'*) continue ;; esac
+    case "$seen" in
+      *"|$line|"*)
+        FM_PR_DRAIN_OFF=
+        FM_PR_DRAIN_OFF_ERROR="$file names $line a second time"
+        return 1
+        ;;
+    esac
+    seen="$seen$line|"
+    [ "$line" != "$name" ] || FM_PR_DRAIN_OFF=1
+  done < "$file"
+  return 0
 }
 
 # The open-PR cap for a project that declares CI slots: its line in

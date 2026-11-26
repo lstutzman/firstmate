@@ -740,6 +740,27 @@ PY2
   pass "drain's walk-back counts each pile member on its own until its pile was created"
 }
 
+test_config_pr_drain_off_switches_only_the_drain_off() {
+  local i args=()
+  for ((i = 0; i < 96; i++)); do args+=(3); done
+  timeline "${args[@]}" --
+  rm -f "$GATE_HOME/config/ci-slots"
+  assert_equals "on o/r 96" "$(state_r)" "96 eligible PRs did not read on with no file"
+  printf '%s\n' '# the drain is off here' 'other' 'r' > "$GATE_HOME/config/pr-drain-off"
+  assert_equals "off o/r 96 (drain off by config/pr-drain-off)" "$(state_r)" "a listed project did not read off at 96 eligible PRs"
+  printf '%s\n' 'other' > "$GATE_HOME/config/pr-drain-off"
+  assert_equals "on o/r 96" "$(state_r)" "an unlisted project changed"
+  printf '%s\n' 'r' 'r' > "$GATE_HOME/config/pr-drain-off"
+  assert_contains "$(state_r)" "on o/r 96 (config/pr-drain-off is malformed and ignored:" "a malformed file did not leave the state as before and name itself"
+  assert_contains "$(state_r)" "names r a second time" "a malformed file's cause was not named"
+  printf '%s\n' 'r' > "$GATE_HOME/config/pr-drain-off"
+  printf '%s\n' 'r 4' > "$GATE_HOME/config/ci-slots"
+  assert_equals "open o/r 96" "$(FM_HOME="$GATE_HOME" "$DRAIN" open "$PROJECT")" "the file changed the CI-slot count"
+  assert_contains "$(gate)" "hold o/r open-PR cap reached" "the file loosened the gate"
+  rm -f "$GATE_HOME/config/pr-drain-off" "$GATE_HOME/config/ci-slots"
+  pass "config/pr-drain-off switches the drain off for a listed project only; a malformed file is named and ignored; gate and open are unchanged"
+}
+
 test_unreadable_s_makes_drain_unknown() {
   printf '%s\n' 'r four' > "$GATE_HOME/config/ci-slots"
   peak_then 3
@@ -808,6 +829,7 @@ fm_test_run \
   test_drain_walk_back_leaves_record_held_pile_members_out \
   test_drain_leaves_label_held_prs_out \
   test_unreadable_s_makes_drain_unknown \
+  test_config_pr_drain_off_switches_only_the_drain_off \
   test_brief_carries_the_ci_slots_gate_only_when_slots_are_declared \
   test_slots_classes_are_the_urgent_and_landing_ones \
   test_lee_explicit_evidence_needs_a_quote_and_a_timestamp \

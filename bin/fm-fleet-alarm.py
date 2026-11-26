@@ -828,7 +828,8 @@ def collect(cfg):
             unread.append(project.name)
             continue
         if len(verdict) == 3 and verdict[0] in ('on', 'off'):
-            drain[verdict[1]] = (verdict[0], verdict[2])
+            count, _, why = verdict[2].partition(' ')
+            drain[verdict[1]] = (verdict[0], count, why == '(drain off by config/pr-drain-off)')
         elif verdict[:1] not in (['none'], ['unknown']) or verdict[-1].startswith('GitHub unreadable'):
             unread.append(project.name)
     # CI slots: a clone with a declared S (bin/fm-project-mode.sh --ci-slots) is compared with its
@@ -975,13 +976,15 @@ def check(channel):
                 print(text)
         announced = dict(stored.get('drain', {}).get(channel, {}))
         changes = []
-        for repo, (side, count) in sorted(drain.items()):
+        for repo, (side, count, by_config) in sorted(drain.items()):
             if side == announced.get(repo, 'off'):
                 continue
             announced[repo] = side
             changes.append((f'pr-drain-{repo}', side == 'on', f'PR drain {side}: {repo} has {count} eligible open PRs '
                             + ('(24 or more); only exempt work and PR landing may run there until it is back to its CI slots S or fewer'
-                               if side == 'on' else '(back to S or fewer); ordinary ship work may resume there')
+                               if side == 'on' else '(switched off by config/pr-drain-off)' if by_config
+                               else '(back to S or fewer)')
+                            + ('' if side == 'on' else '; ordinary ship work may resume there')
                             + f'; relay drain-{side} to every home'))
         # CI slots: announce only a change between over (open PRs P above the slots S) and within.
         slots_announced = dict(stored.get('ci_slots', {}).get(channel, {}))

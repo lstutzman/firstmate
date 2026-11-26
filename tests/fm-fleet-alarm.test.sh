@@ -1862,6 +1862,16 @@ drain 'off o/r 0'
 assert_contains "$(run_alarm check)" 'PR drain off: o/r has 0 eligible open PRs' 'reaching 0 eligible open PRs must announce drain-off'
 [ -z "$(run_alarm check)" ] || fail 'a second poll at 0 must be quiet'
 pass 'check announces drain-on and drain-off once each, and an unknown read keeps the state'
+drain 'on o/r 96'
+run_alarm check >/dev/null
+drain 'off o/r 96 (drain off by config/pr-drain-off)'
+out=$(run_alarm check)
+assert_contains "$out" 'PR drain off: o/r has 96 eligible open PRs (switched off by config/pr-drain-off); ordinary ship work may resume there' \
+  'a drain switched off by config must say so and keep the count a bare number'
+case "$out" in *'back to S or fewer'*) fail "a config-off drain must not claim the count fell: $out" ;; esac
+drain 'off o/r 0'
+[ -z "$(run_alarm check)" ] || fail 'a config-off drain falling to 0 must stay quiet'
+pass 'a drain switched off by config/pr-drain-off is announced as switched off, not as back to S or fewer'
 before=$(wc -l < "$HOME_FIX/state/fleet-alarm.status")
 drain 'on o/r 25'
 run_alarm timer >/dev/null

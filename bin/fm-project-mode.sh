@@ -210,7 +210,7 @@
 # to the forge binding, so it prints even when the forge token is malformed;
 # every path that reads the forge binding (default, --forge, and spawn's
 # forge-agreement check) still refuses.
-# Usage: fm-project-mode.sh [--raw|--branch-prefix|--forge|--pr|--merger|--merge-method|--landing-lag|--ci-slots|--open-pr-cap|--admission|--ready-evidence|--hooks] <project-name>
+# Usage: fm-project-mode.sh [--raw|--branch-prefix|--forge|--pr|--merger|--merge-method|--landing-lag|--ci-slots|--open-pr-cap|--pr-drain-off|--admission|--ready-evidence|--hooks] <project-name>
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -226,6 +226,7 @@ WANT_MERGE_METHOD=0
 WANT_LANDING_LAG=0
 WANT_CI_SLOTS=0
 WANT_OPEN_PR_CAP=0
+WANT_PR_DRAIN_OFF=0
 WANT_ADMISSION=0
 WANT_EVIDENCE=0
 WANT_PR=0
@@ -239,12 +240,13 @@ case "${1:-}" in
   --landing-lag) WANT_LANDING_LAG=1; shift ;;
   --ci-slots) WANT_CI_SLOTS=1; shift ;;
   --open-pr-cap) WANT_OPEN_PR_CAP=1; shift ;;
+  --pr-drain-off) WANT_PR_DRAIN_OFF=1; shift ;;
   --admission) WANT_ADMISSION=1; shift ;;
   --ready-evidence) WANT_EVIDENCE=1; shift ;;
   --pr) WANT_PR=1; shift ;;
   --hooks) WANT_HOOKS=1; shift ;;
 esac
-NAME=${1:?usage: fm-project-mode.sh [--raw|--branch-prefix|--forge|--pr|--merger|--merge-method|--landing-lag|--ci-slots|--open-pr-cap|--admission|--ready-evidence|--hooks] <project-name>}
+NAME=${1:?usage: fm-project-mode.sh [--raw|--branch-prefix|--forge|--pr|--merger|--merge-method|--landing-lag|--ci-slots|--open-pr-cap|--pr-drain-off|--admission|--ready-evidence|--hooks] <project-name>}
 
 if [ "$WANT_CI_SLOTS" -eq 1 ]; then
   # shellcheck source=bin/fm-project-capacity-lib.sh
@@ -265,6 +267,17 @@ if [ "$WANT_OPEN_PR_CAP" -eq 1 ]; then
     exit 3
   }
   [ -z "$FM_OPEN_PR_CAP" ] || echo "$FM_OPEN_PR_CAP"
+  exit 0
+fi
+
+if [ "$WANT_PR_DRAIN_OFF" -eq 1 ]; then
+  # shellcheck source=bin/fm-project-capacity-lib.sh
+  . "$SCRIPT_DIR/fm-project-capacity-lib.sh"
+  fm_pr_drain_off_lookup "${FM_CONFIG_OVERRIDE:-$FM_HOME/config}" "$NAME" || {
+    echo "refused: the PR drain off declaration is unreadable ($FM_PR_DRAIN_OFF_ERROR); write one project name per line, or remove the file" >&2
+    exit 3
+  }
+  [ -z "$FM_PR_DRAIN_OFF" ] || echo off
   exit 0
 fi
 
