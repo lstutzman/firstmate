@@ -74,7 +74,11 @@ git -C "$FM_ROOT" ls-files --error-unmatch "bin/$COMMAND" >/dev/null 2>&1 \
   || die "remote command is not tracked by this Firstmate checkout: $COMMAND"
 [ -f "$REG" ] && [ ! -L "$REG" ] || die "no safe secondmate registry at $REG"
 
-MATCHES=0
+ID_MATCHES=0
+HOST_MATCHES=0
+ID_HOST=
+ID_ROOT=
+ID_HOME=
 HOST=
 ROOT=
 HOME_PATH=
@@ -82,13 +86,28 @@ while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in '- '*) ;; *) continue ;; esac
   secondmate_registry_parse_line "$line" || die "malformed secondmate registry entry: $line"
   [ "$SECONDMATE_REGISTRY_REMOTE" -eq 1 ] || continue
-  if [ "$SECONDMATE_REGISTRY_ID" = "$ROUTE" ] || [ "$SECONDMATE_REGISTRY_HOST" = "$ROUTE" ]; then
-    MATCHES=$((MATCHES + 1))
+  if [ "$SECONDMATE_REGISTRY_ID" = "$ROUTE" ]; then
+    ID_MATCHES=$((ID_MATCHES + 1))
+    ID_HOST=$SECONDMATE_REGISTRY_HOST
+    ID_ROOT=$SECONDMATE_REGISTRY_ROOT
+    ID_HOME=$SECONDMATE_REGISTRY_HOME
+  fi
+  if [ "$SECONDMATE_REGISTRY_HOST" = "$ROUTE" ]; then
+    HOST_MATCHES=$((HOST_MATCHES + 1))
     HOST=$SECONDMATE_REGISTRY_HOST
     ROOT=$SECONDMATE_REGISTRY_ROOT
     HOME_PATH=$SECONDMATE_REGISTRY_HOME
   fi
 done < "$REG"
+# An exact secondmate id wins; an SSH alias is only the fallback when no id matches.
+if [ "$ID_MATCHES" -gt 0 ]; then
+  MATCHES=$ID_MATCHES
+  HOST=$ID_HOST
+  ROOT=$ID_ROOT
+  HOME_PATH=$ID_HOME
+else
+  MATCHES=$HOST_MATCHES
+fi
 [ "$MATCHES" -gt 0 ] || die "no remote secondmate or SSH alias matches '$ROUTE'"
 [ "$MATCHES" -eq 1 ] || die "remote route '$ROUTE' is ambiguous across $MATCHES configured secondmates; use a secondmate id"
 case "$HOST" in ''|-*|*[!A-Za-z0-9._-]*) die "configured SSH alias is unsafe: $HOST" ;; esac

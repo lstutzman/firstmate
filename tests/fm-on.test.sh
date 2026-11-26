@@ -99,7 +99,7 @@ done
 host=$1
 entry=$2
 shift 2
-[ "$host" = remote-mac ] || exit 91
+case "$host" in remote-mac|deepthought|shared-box) ;; *) exit 91 ;; esac
 [ "$entry" = fm-remote-entrypoint.sh ] || exit 92
 case "${FM_FAKE_SSH_MODE:-normal}" in
   unreachable) exit 255 ;;
@@ -547,5 +547,23 @@ set -e
 [ "$(cat "$SSH_COUNT")" -eq 1 ] || fail "ambiguous completion was retried"
 [ "$(grep -c mutation "$REMOTE_HOME/mutations")" -eq 1 ] || fail "ambiguous mutation did not execute exactly once"
 pass "unreachable and ambiguous transport failures are surfaced without retry"
+
+mkdir -p "$TMP_ROOT/dt-home" "$TMP_ROOT/librarian-home"
+cat > "$LOCAL_HOME/data/secondmates.md" <<EOF
+- deepthought - deepthought delivery (host: deepthought; root: $REMOTE_ROOT; home: $TMP_ROOT/dt-home; scope: dt work; projects: alpha; added 2026-08-02)
+- librarian - librarian office (host: deepthought; root: $REMOTE_ROOT; home: $TMP_ROOT/librarian-home; scope: library work; projects: beta; added 2026-08-02)
+EOF
+out=$(fm_on deepthought fm-probe-two.sh 2>&1) || fail "an id equal to a shared SSH alias was refused: $out"
+assert_contains "$out" "home=$TMP_ROOT/dt-home" "the exact id did not win over alias matching"
+out=$(fm_on librarian fm-probe-two.sh 2>&1) || fail "the librarian id was refused: $out"
+assert_contains "$out" "home=$TMP_ROOT/librarian-home" "the librarian id routed to the wrong home"
+cat > "$LOCAL_HOME/data/secondmates.md" <<EOF
+- alpha - alpha delivery (host: shared-box; root: $REMOTE_ROOT; home: $TMP_ROOT/dt-home; scope: a; projects: alpha; added 2026-08-02)
+- beta - beta delivery (host: shared-box; root: $REMOTE_ROOT; home: $TMP_ROOT/librarian-home; scope: b; projects: beta; added 2026-08-02)
+EOF
+out=$(fm_on shared-box fm-probe-two.sh 2>&1) && fail "an alias-only route with two mates was accepted"
+assert_contains "$out" "ambiguous" "alias-only ambiguity lost its error"
+write_registry
+pass "an exact secondmate id wins over a shared SSH alias; alias-only matches stay ambiguous"
 
 echo "ALL TESTS PASSED"
