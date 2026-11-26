@@ -27,16 +27,17 @@ test_mixed_fixture_output_is_unchanged() {
   out="$dir/drain.out"
   for i in 1 2 3 4 5 6; do
     f="$state/t$i.status"
-    : > "$f"
-    printf 'working: routine line 1\nworking: routine line 2\n\n   \n' >> "$f"
-    printf 'note: heads up from t%s\n' "$i" >> "$f"
-    printf 'needs-decision [key=k%s]: choose A or B for t%s\n' "$i" "$i" >> "$f"
-    case "$i" in
-      2) printf 'resolved [key=k2]: picked A\n' >> "$f" ;;
-      3) printf 'blocked [key=b3]: waiting on tool\n' >> "$f" ;;
-      4) printf 'notebook working: not a note\n' >> "$f" ;;
-      5) printf 'working: tail with no newline' >> "$f" ;;
-    esac
+    {
+      printf 'working: routine line 1\nworking: routine line 2\n\n   \n'
+      printf 'note: heads up from t%s\n' "$i"
+      printf 'needs-decision [key=k%s]: choose A or B for t%s\n' "$i" "$i"
+      case "$i" in
+        2) printf 'resolved [key=k2]: picked A\n' ;;
+        3) printf 'blocked [key=b3]: waiting on tool\n' ;;
+        4) printf 'notebook working: not a note\n' ;;
+        5) printf 'working: tail with no newline' ;;
+      esac
+    } > "$f"
   done
 
   FM_STATE_OVERRIDE="$state" "$DRAIN" --summary > "$out" 2>/dev/null \
@@ -68,8 +69,9 @@ EXP
   printf 'note: later\n' >> "$state/t1.status"
   FM_STATE_OVERRIDE="$state" "$DRAIN" --summary > "$out" 2>/dev/null \
     || fail "second drain failed on the mixed fixture"
-  [ "$(grep -c '^t[0-9]* note:' "$out")" = 1 ] && grep -qxF 't1 note: later' "$out" \
-    || fail "second drain did not show exactly the one new note: $(cat "$out")"
+  if ! { [ "$(grep -c '^t[0-9]* note:' "$out")" = 1 ] && grep -qxF 't1 note: later' "$out"; }; then
+    fail "second drain did not show exactly the one new note: $(cat "$out")"
+  fi
   grep -qxF 't3 [key=b3] blocked: waiting on tool' "$out" \
     || fail "second drain dropped an open decision: $(cat "$out")"
   pass "a mixed fixture drains to the recorded sections, then shows only the new note"
