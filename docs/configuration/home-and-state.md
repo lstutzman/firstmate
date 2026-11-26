@@ -177,7 +177,7 @@ The receipt prevents accidental publication through supported paths; it proves c
 ## Treehouse pool report (config/treehouse-pool-report)
 
 The optional local, gitignored `config/treehouse-pool-report` presence flag opts this home into a read-only Treehouse pool hygiene report at bootstrap.
-With the flag present and the Treehouse state directory and `jq` available, bootstrap prints `TREEHOUSE_POOL_REPORT:` findings for pools with unavailable project paths, unowned slots older than `FM_POOL_ORPHAN_DAYS`, duplicate-origin project clones, and `project-*` or `scratch-project-*` pools without an active owner or lease; the `treehouse` executable is not required.
+With the flag present and the Treehouse state directory and `jq` available, bootstrap prints `TREEHOUSE_POOL_REPORT:` findings, covering the default pools and each local secondmate home's own pools under `fm-secondmate/`, for pools with unavailable project paths, unowned slots older than `FM_POOL_ORPHAN_DAYS`, duplicate-origin project clones (a secondmate home's own pool is never counted as a duplicate), and `project-*` or `scratch-project-*` pools without an active owner or lease; the `treehouse` executable is not required.
 The report never changes a pool or slot; pruning or other pool cleanup remains an explicit operator action.
 With the file absent, bootstrap reads no Treehouse state and prints no pool report.
 Only the file's presence is read, at each bootstrap run.
