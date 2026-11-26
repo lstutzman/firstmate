@@ -104,9 +104,17 @@ fm_herdr_cleanup_home_identity() {
 }
 
 fm_herdr_cleanup_journal_matches() { # <title> <session> <home-real>
-  local title=$1 session=$2 home_real=$3 journal id expected journal_home
+  local title=$1 session=$2 home_real=$3 journal id expected journal_home token candidates
   [ -d "$STATE" ] && [ ! -L "$STATE" ] || return 1
-  for journal in "$STATE"/*"$FM_BACKEND_HERDR_PRESENTATION_JOURNAL_SUFFIX"; do
+  # A journal can only match when its own projection_id line is this title's
+  # token (the expected label ends in p:<token>), so one grep leaves just those
+  # to the full per-journal validation instead of validating every journal for
+  # every candidate workspace.
+  token=$(fm_herdr_cleanup_title_token "$title") || return 1
+  candidates=$(grep -l -x -F -s -e "projection_id=$token" -- \
+    "$STATE"/*"$FM_BACKEND_HERDR_PRESENTATION_JOURNAL_SUFFIX") || candidates=
+  while IFS= read -r journal; do
+    [ -n "$journal" ] || continue
     [ -f "$journal" ] && [ ! -L "$journal" ] || continue
     id=$(basename "$journal" "$FM_BACKEND_HERDR_PRESENTATION_JOURNAL_SUFFIX")
     fm_task_id_creation_valid "$id" || continue
@@ -121,7 +129,7 @@ fm_herdr_cleanup_journal_matches() { # <title> <session> <home-real>
       "$id" "$FM_BACKEND_HERDR_JOURNAL_PROJECTION_ID")
     [ "$expected" = "$title" ] || continue
     printf '%s\t%s\t%s\n' "$journal" "$id" "$FM_BACKEND_HERDR_JOURNAL_PROJECTION_ID"
-  done
+  done <<< "$candidates"
 }
 
 fm_herdr_cleanup_unique_match() { # <title> <session> <home-real>
@@ -400,6 +408,8 @@ fm_herdr_cleanup_task_still_bound() { # <task-id> <session> <workspace> <pane>
     && [ "$FM_HERDR_CLEANUP_TASK_PANE" = "$4" ]
 }
 
+FM_HERDR_CLEANUP_LIST_SESSION=
+FM_HERDR_CLEANUP_LIST=
 FM_HERDR_CLEANUP_HELD=()
 fm_herdr_cleanup_release_all() {
   local i
@@ -425,7 +435,13 @@ fm_herdr_cleanup_finished_one() { # <task-id> <home-real>
   pane=$FM_HERDR_CLEANUP_TASK_PANE
   # A stopped server or a workspace already gone leaves nothing to close; a read
   # against a stopped session never starts it.
-  list=$(fm_backend_herdr_cli "$session" workspace list 2>/dev/null) || return 0
+  # One list read per session per pass finds each candidate; every mutation
+  # prerequisite is still re-read under the locks.
+  if [ "$FM_HERDR_CLEANUP_LIST_SESSION" != "$session" ]; then
+    FM_HERDR_CLEANUP_LIST=$(fm_backend_herdr_cli "$session" workspace list 2>/dev/null) || return 0
+    FM_HERDR_CLEANUP_LIST_SESSION=$session
+  fi
+  list=$FM_HERDR_CLEANUP_LIST
   title=$(printf '%s' "$list" | jq -er --arg workspace "$workspace" '
     [.result.workspaces[]? | select(.workspace_id == $workspace)]
     | select(length == 1) | .[0].label
@@ -519,6 +535,7 @@ fm_herdr_cleanup_finished_one() { # <task-id> <home-real>
 fm_herdr_finished_cleanup() {
   local home_real meta id
   FM_HERDR_CLEANUP_MODE=finished
+  FM_HERDR_CLEANUP_LIST_SESSION=
   [ -d "$STATE" ] && [ ! -L "$STATE" ] || return 0
   command -v herdr >/dev/null 2>&1 \
     && command -v jq >/dev/null 2>&1 || return 0
