@@ -467,7 +467,8 @@ cmd_unpark() {
   # records still name and claim, so get cannot hand out and reset one of them.
   fm_treehouse_lease_recorded_slots "$PARK_PROJ" "$STATE"/*.meta \
     || die "could not lease the pool slots this home's task records still name ($FM_TREEHOUSE_SLOT_LEASE_ERROR); $ID stays parked"
-  UNPARK_WT=$(cd "$PARK_PROJ" && treehouse get --lease --lease-holder "$ID" 2>/dev/null) && [ -n "$UNPARK_WT" ] \
+  UNPARK_ROOT=$(fm_treehouse_spawn_root "$FM_HOME") || die "could not resolve which Treehouse pool this home's clone of $PARK_PROJ uses"
+  UNPARK_WT=$(cd "$PARK_PROJ" && treehouse ${UNPARK_ROOT:+--root "$UNPARK_ROOT"} get --lease --lease-holder "$ID" 2>/dev/null) && [ -n "$UNPARK_WT" ] \
     || { UNPARK_WT=; die "treehouse get --lease could not lease a fresh copy for $ID from $PARK_PROJ"; }
   fm_treehouse_pool_slot "$PARK_PROJ" "$UNPARK_WT" || unpark_refuse "the leased copy for $ID is not a pool slot of $PARK_PROJ"
   fm_treehouse_slot_owner_claim "$UNPARK_WT" "$ID" "$FM_HOME" || unpark_refuse "could not claim the fresh copy for $ID"

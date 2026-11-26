@@ -1980,16 +1980,18 @@ fm_local_firstmate_state_dirs() {  # <first-state>
   done
 }
 
-# The one lock serializing Treehouse slot allocation and return for a project,
-# and project capacity admission (bin/fm-project-capacity-lib.sh), which a
-# fresh spawn evaluates under it on every backend.
+# The one lock serializing Treehouse slot allocation and return within
+# whichever pool a home uses, and project capacity admission across homes
+# (bin/fm-project-capacity-lib.sh). A fresh spawn evaluates both under it on
+# every backend that takes a Treehouse slot; capacity admission uses it on
+# every backend.
 #
 # It is anchored in the local root home's state directory so that every home on
-# this machine that can reach the same pool - the root, and each secondmate home
-# below it, including a remote-seeded home and its own local descendants -
-# derives the identical path. Its identity is the project's resolved origin, so
-# separate clones of one origin share a single lock; an origin-less local-only
-# project falls back to its own worktree top instead of failing to resolve.
+# this machine - the root, and each secondmate home below it, including a
+# remote-seeded home and its own local descendants - derives the identical
+# path. Its identity is the project's resolved origin, so separate clones of
+# one origin share a single lock; an origin-less local-only project falls back
+# to its own worktree top instead of failing to resolve.
 fm_treehouse_project_lock_path() {  # <project-dir>
   local project=$1 root origin identity hash top
   [ -d "$project" ] || return 1
@@ -2010,6 +2012,45 @@ fm_treehouse_project_lock_path() {  # <project-dir>
   hash=$(printf '%s' "$identity" | git hash-object --stdin 2>/dev/null) || return 1
   [ -d "$root/state" ] || return 1
   printf '%s/.treehouse-project-%s.lock\n' "$root/state" "$hash"
+}
+
+# The Treehouse root a task spawn from <home> passes to `treehouse get`, or
+# nothing for Treehouse's own default root.
+#
+# Treehouse names a pool from the repository basename and its origin URL alone,
+# so every clone of one origin on this machine resolves to the same default
+# pool, and each slot in it is a linked worktree of whichever clone grew it. A
+# secondmate home keeps standalone clones of its projects (bin/fm-home-seed.sh),
+# so a slot from that shared pool is a worktree of another home's clone, and the
+# spawn's worktree-of-project checks correctly refuse it. The root home keeps
+# the default pool unchanged; every other local home roots its pools at
+# ${TREEHOUSE_ROOT:-$HOME/.treehouse}/fm-secondmate/<home-id>, outside the
+# Firstmate home, so a slot's ancestors never include that home's CLAUDE.md or
+# AGENTS.md. A relative TREEHOUSE_ROOT is ignored in favor of $HOME/.treehouse;
+# a root equal to the home, or under it, is refused. <home-id> is the git
+# object id of the resolved home path. A remote home is the root of its own
+# machine and keeps the default.
+fm_treehouse_spawn_root() {  # <home>
+  local home=$1 resolved root id base printed
+  resolved=$(CDPATH='' cd -- "$home" 2>/dev/null && pwd -P) || return 1
+  root=$(fm_firstmate_root_home "$resolved") || return 1
+  [ "$root" != "$resolved" ] || return 0
+  id=$(printf '%s' "$resolved" | git hash-object --stdin 2>/dev/null) || return 1
+  [ -n "$id" ] || return 1
+  base=
+  case "${TREEHOUSE_ROOT:-}" in
+    /*) base=$TREEHOUSE_ROOT ;;
+  esac
+  [ -n "$base" ] || [ -z "${HOME:-}" ] || base=$HOME/.treehouse
+  [ -n "$base" ] || return 1
+  if [ -d "$base" ]; then
+    base=$(CDPATH='' cd -- "$base" && pwd -P) || return 1
+  fi
+  printed="$base/fm-secondmate/$id"
+  case "$printed" in
+    "$resolved"|"$resolved"/*) return 1 ;;
+  esac
+  printf '%s\n' "$printed"
 }
 
 # A Treehouse slot has the managed pool's fixed <pool>/<slot>/<repo> layout.
@@ -2136,6 +2177,21 @@ fm_treehouse_slot_owner_release() {  # <worktree> <task-id>
 # directory's own name; it resolves against the pool of the project it runs
 # from, as the pane's `treehouse get` did. Treehouse's diagnostic, if any, is
 # left in FM_TREEHOUSE_SLOT_LEASE_ERROR.
+# The `--root <dir>` a `treehouse` call from <project> needs to reach the pool
+# that holds <worktree>, printed as two lines, or nothing for the default pool.
+# A secondmate home's pool (fm_treehouse_spawn_root) is
+# <root>/.treehouse/<pool>/<slot>/<repo> under <root> = .../fm-secondmate/<id>,
+# and `treehouse lease <name>` and `treehouse status` resolve a pool from the
+# root, not from the slot path.
+fm_treehouse_slot_root() {  # <worktree>
+  local slot pool
+  slot=$(CDPATH='' cd -- "$1" 2>/dev/null && pwd -P) || return 0
+  pool=$(dirname "$(dirname "$slot")")
+  case "$pool" in
+    */fm-secondmate/*/.treehouse/*) printf '%s\n' "$(dirname "$(dirname "$pool")")" ;;
+  esac
+}
+
 # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
 fm_treehouse_slot_lease() {  # <project-dir> <worktree> <holder>
   local project=$1 worktree=$2 holder=$3 slot
@@ -2144,8 +2200,12 @@ fm_treehouse_slot_lease() {  # <project-dir> <worktree> <holder>
     FM_TREEHOUSE_SLOT_LEASE_ERROR="worktree $worktree cannot be resolved"
     return 1
   }
+  local pool_root
+  local -a root=()
+  pool_root=$(fm_treehouse_slot_root "$slot")
+  [ -z "$pool_root" ] || root=(--root "$pool_root")
   FM_TREEHOUSE_SLOT_LEASE_ERROR=$( (CDPATH='' cd -- "$project" &&
-    treehouse lease "$(basename "$(dirname "$slot")")" --lease-holder "$holder") 2>&1 >/dev/null) ||
+    treehouse lease "$(basename "$(dirname "$slot")")" --lease-holder "$holder" "${root[@]}") 2>&1 >/dev/null) ||
     return 1
   FM_TREEHOUSE_SLOT_LEASE_ERROR=
 }
@@ -2158,7 +2218,8 @@ fm_treehouse_slot_lease() {  # <project-dir> <worktree> <holder>
 # FM_TREEHOUSE_SLOT_LEASE_ERROR when the pool cannot be read or a lease fails.
 # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
 fm_treehouse_lease_recorded_slots() {  # <project-dir> <task-record>...
-  local project=$1 meta wt id slot status leased='' listed=0 path
+  local project=$1 meta wt id slot status leased='' listed_root='' listed=0 path pool_root
+  local -a root
   shift
   FM_TREEHOUSE_SLOT_LEASE_ERROR=
   for meta in "$@"; do
@@ -2169,17 +2230,21 @@ fm_treehouse_lease_recorded_slots() {  # <project-dir> <task-record>...
     id=$(basename "$meta" .meta)
     fm_treehouse_slot_owner_state "$wt" "$id"
     [ "$FM_TREEHOUSE_SLOT_OWNER" = mine ] || continue
-    if [ "$listed" = 0 ]; then
+    pool_root=$(fm_treehouse_slot_root "$wt")
+    if [ "$listed" = 0 ] || [ "$listed_root" != "$pool_root" ]; then
       if ! command -v jq >/dev/null 2>&1; then
         FM_TREEHOUSE_SLOT_LEASE_ERROR="jq is required to read treehouse status --json but is not on PATH"
         return 1
       fi
-      if ! status=$( (CDPATH='' cd -- "$project" && treehouse status --json) 2>/dev/null) ||
+      root=()
+      [ -z "$pool_root" ] || root=(--root "$pool_root")
+      if ! status=$( (CDPATH='' cd -- "$project" && treehouse status --json "${root[@]}") 2>/dev/null) ||
         ! leased=$(printf '%s' "$status" | jq -r '.[]? | select(.status == "leased") | .path' 2>/dev/null); then
         FM_TREEHOUSE_SLOT_LEASE_ERROR="treehouse status --json for $project could not be read"
         return 1
       fi
       listed=1
+      listed_root=$pool_root
     fi
     slot=$(CDPATH='' cd -- "$wt" 2>/dev/null && pwd -P) || continue
     while IFS= read -r path; do

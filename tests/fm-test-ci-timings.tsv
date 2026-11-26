@@ -336,6 +336,7 @@ tests/fm-spawn-home-summary.test.sh	6200
 tests/fm-spawn-manual-pr-text.test.sh	10177
 tests/fm-spawn-orca-worktree.test.sh	62375
 tests/fm-spawn-pool-base-freshen.test.sh	264249
+tests/fm-spawn-secondmate-pool.test.sh	3798
 tests/fm-spawn-project-root.test.sh	8000
 tests/fm-spawn-setup.test.sh	39482
 tests/fm-spawn-worktree-settle.test.sh	47430

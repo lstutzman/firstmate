@@ -418,6 +418,7 @@ family_for_basename() {
     fm-git-strip-ai-trailers.test.sh|\
     fm-spawn-setup.test.sh|fm-spawn-project-root.test.sh|fm-trace-context-spawn.test.sh|fm-spawn-worktree-settle.test.sh|\
     fm-spawn-claude-launch-doorbell.test.sh|\
+    fm-spawn-secondmate-pool.test.sh|\
     fm-spawn-compact-adviser-disable.test.sh|\
     fm-spawn-compact-adviser-disable-remote.test.sh|\
     fm-gate-grant.test.sh|\
