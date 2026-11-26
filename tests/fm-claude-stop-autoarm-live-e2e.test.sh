@@ -194,6 +194,9 @@ ARM_RUNS=$(wc -l < "$HOME_DIR/state/arm-ran" 2>/dev/null | tr -d ' ')
 [ "$ARM_RUNS" = 2 ] || fail "expected exactly 2 hook-owned arm cycles, got $ARM_RUNS: $(cat "$HOME_DIR/state/arm-ran" 2>/dev/null)"
 SUCCESSOR_RUNS=$(wc -l < "$HOME_DIR/state/successor-ran" 2>/dev/null | tr -d ' ')
 [ "$SUCCESSOR_RUNS" = 2 ] || fail "expected exactly one handling successor per actionable close (2), got ${SUCCESSOR_RUNS:-0}: $(cat "$HOME_DIR/state/successor-ran" 2>/dev/null)"
+ARM_PIDS=$(sed -n 's/.* pid=\([0-9]*\)$/\1/p' "$HOME_DIR/state/arm-ran" | sort)
+PREDECESSOR_PIDS=$(sed -n 's/.* predecessor=\([0-9]*\)$/\1/p' "$HOME_DIR/state/successor-ran" | sort)
+[ "$PREDECESSOR_PIDS" = "$ARM_PIDS" ] || fail "expected each handling successor to name one closed arm as its predecessor; arms: $(cat "$HOME_DIR/state/arm-ran"); successors: $(cat "$HOME_DIR/state/successor-ran")"
 DRAIN_RUNS=$(wc -l < "$HOME_DIR/state/drain-ran" 2>/dev/null | tr -d ' ')
 [ "$DRAIN_RUNS" = 3 ] || fail "expected one session-start drain plus two model wake drains, got $DRAIN_RUNS drains"
 REWAKES=$(jq -r '
