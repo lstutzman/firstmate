@@ -1217,3 +1217,4 @@ The count was therefore one foreground cycle plus one successor on Stop 1, and o
 The successor's extra count pushed Stop 2 past the fixture's clean-close threshold.
 The fixture now records a call carrying `FM_WATCH_PREDECESSOR_ARM_PID` to `state/successor-ran`, the test asserts exactly two successors, and `claude -p` reads stdin from `/dev/null` so its stderr warning no longer breaks the transcript parse.
 With those changes the same command passed on Claude Code 2.1.332 with two foreground cycles and two successors.
+A rerun of that command at 2a03b5e5 also passed the check that each successor names its closed arm's pid as its predecessor.
