@@ -102,4 +102,40 @@ test_hundred_task_home_drains_within_the_bound() {
   pass "a 100-task home drains in ${cpu}s CPU, within the ${bound}s bound"
 }
 
-fm_test_run test_mixed_fixture_output_is_unchanged test_hundred_task_home_drains_within_the_bound
+# The repeat drain every later session start runs reads the presentation
+# manifest the first drain wrote. Rereading that manifest once per task made
+# the repeat drain quadratic in the task count: with 150 short logs it cost
+# about three times the first drain. Without the rereads both drains read the
+# same files, so the repeat may cost at most twice the first plus 2s.
+test_repeat_drain_costs_about_the_first() {
+  local dir state out i j f cold warm
+  dir=$(make_case repeat-drain)
+  state="$dir/state"
+  out="$dir/drain.out"
+  for i in $(seq 1 150); do
+    f="$state/task$i.status"
+    {
+      printf 'needs-decision [key=k%s]: pick option %s\n' "$i" "$i"
+      for j in $(seq 1 10); do printf 'working: routine filler line %s of task %s\n' "$j" "$i"; done
+    } > "$f"
+  done
+
+  local TIMEFORMAT='%U %S'
+  cold=$( { time FM_STATE_OVERRIDE="$state" "$DRAIN" --summary > "$out" 2>/dev/null; } 2>&1 ) \
+    || fail "first drain failed on the 150-task home"
+  cold=$(printf '%s\n' "$cold" | awk '{ printf "%d", $1 + $2 }')
+  [ -f "$state/.status-presentation-cursor" ] \
+    || fail "the first drain wrote no presentation manifest"
+
+  for i in $(seq 1 150); do printf 'note: second pass %s\n' "$i" >> "$state/task$i.status"; done
+  warm=$( { time FM_STATE_OVERRIDE="$state" "$DRAIN" --summary > "$out" 2>/dev/null; } 2>&1 ) \
+    || fail "repeat drain failed on the 150-task home"
+  warm=$(printf '%s\n' "$warm" | awk '{ printf "%d", $1 + $2 }')
+  [ "$(grep -c '^task[0-9]* note: second pass' "$out")" = 150 ] \
+    || fail "repeat drain did not show the 150 new notes: $(head -5 "$out")"
+  [ "$warm" -le "$((cold * 2 + 2))" ] \
+    || fail "repeat drain of 150 tasks took ${warm}s CPU after a ${cold}s first drain, over twice plus 2s (per-task manifest rereads are back)"
+  pass "a 150-task home redrains in ${warm}s CPU after a ${cold}s first drain"
+}
+
+fm_test_run test_mixed_fixture_output_is_unchanged test_hundred_task_home_drains_within_the_bound test_repeat_drain_costs_about_the_first

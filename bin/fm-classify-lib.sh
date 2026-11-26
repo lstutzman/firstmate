@@ -2418,34 +2418,78 @@ status_snapshot_latest_event() {  # <status-file> <captured-endpoint> <captured-
   FM_STATUS_SNAPSHOT_EVENT_ENDPOINT=$event_endpoint
 }
 
+# Validate the presentation manifest once and set _FM_PM_ROWS to one
+# "<task>\t<ident>\t<offset>\t<backstop>" row per task row, wrapped in newlines so a task
+# is found with one pattern match. Returns 1 when any row is malformed.
+_fm_presentation_manifest_parse() {  # <manifest>
+  local manifest=$1 data row_task ident legacy backstop extra rows=$'\n'
+  [ -f "$manifest" ] && [ -r "$manifest" ] && [ ! -L "$manifest" ] || return 1
+  data=$(LC_ALL=C command cat "$manifest" 2>/dev/null) || return 1
+  while IFS=$(printf '\t') read -r row_task ident legacy backstop extra; do
+    [ -n "$row_task" ] || continue
+    [ -z "$extra" ] || return 1
+    case "$legacy:$backstop" in *[!0-9:]*) return 1 ;; esac
+    [ -n "$legacy" ] && [ -n "$ident" ] || return 1
+    rows="$rows$row_task"$'\t'"$ident"$'\t'"$legacy"$'\t'"$backstop"$'\n'
+  done <<EOF
+$data
+EOF
+  _FM_PM_ROWS=$rows
+}
+
+# Find <task>'s first row in parsed manifest <rows> and set _FM_PM_ROW to the
+# fields after the task id. Returns 1 when there is no row, 2 when there is a
+# second row for the task. The split uses %% because a leading-star # removal
+# is quadratic in the manifest size on bash.
+_fm_presentation_manifest_row() {  # <rows> <task>
+  local rows=$1 key=$'\n'"$2"$'\t' head rest
+  head=${rows%%"$key"*}
+  [ "${#head}" -lt "${#rows}" ] || return 1
+  rest=${rows:$((${#head} + ${#key}))}
+  _FM_PM_ROW=${rest%%$'\n'*}
+  case "$rest" in *"$key"*) return 2 ;; esac
+  return 0
+}
+
+# Parse the manifest of <state> once for a per-task scan. The caller declares
+# _FM_PM_STATE, _FM_PM_CACHE and _FM_PM_BAD local, so the parse lives only for
+# that scan and status_presentation_cursor_offset reuses it instead of
+# rereading the manifest for every task (FLEET-235: that was quadratic).
+_fm_presentation_manifest_preload() {  # <state>
+  local manifest="$1/.status-presentation-cursor" _FM_PM_ROWS=''
+  _FM_PM_STATE='' _FM_PM_CACHE='' _FM_PM_BAD=''
+  [ -e "$manifest" ] || [ -L "$manifest" ] || return 0
+  _FM_PM_STATE=$1
+  if _fm_presentation_manifest_parse "$manifest"; then
+    _FM_PM_CACHE=$_FM_PM_ROWS
+  else
+    _FM_PM_BAD=1
+  fi
+}
+
 status_presentation_cursor_offset() {  # <status-file>
-  local f=$1 state task manifest data row_task offset ident backstop extra cur_ident size legacy
+  local f=$1 state task manifest offset ident cur_ident size legacy row cached=false _FM_PM_ROWS='' _FM_PM_ROW=''
   [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 1
   state=${f%/*}
   task=${f##*/}; task=${task%.status}
   manifest="$state/.status-presentation-cursor"
-  if [ -e "$manifest" ] || [ -L "$manifest" ]; then
-    [ -f "$manifest" ] && [ -r "$manifest" ] && [ ! -L "$manifest" ] || return 1
-    data=$(LC_ALL=C command cat "$manifest" 2>/dev/null) || return 1
-    offset=
-    while IFS=$(printf '\t') read -r row_task ident legacy backstop extra; do
-      [ -n "$row_task" ] || continue
-      [ -z "$extra" ] || return 1
-      case "$legacy:$backstop" in *[!0-9:]*) return 1 ;; esac
-      [ -n "$legacy" ] && [ -n "$ident" ] || return 1
-      if [ "$row_task" = "$task" ]; then
-        [ -z "$offset" ] || return 1
-        offset=$legacy
-        cur_ident=$ident
-      fi
-    done <<EOF
-$data
-EOF
-    if [ -z "$offset" ]; then
+  [ -n "${_FM_PM_STATE:-}" ] && [ "$_FM_PM_STATE" = "$state" ] && cached=true
+  if [ "$cached" = true ] || [ -e "$manifest" ] || [ -L "$manifest" ]; then
+    if [ "$cached" = true ]; then
+      [ -z "${_FM_PM_BAD:-}" ] || return 1
+      _FM_PM_ROWS=$_FM_PM_CACHE
+    else
+      _fm_presentation_manifest_parse "$manifest" || return 1
+    fi
+    # A second row for the same task is malformed state, as before.
+    _fm_presentation_manifest_row "$_FM_PM_ROWS" "$task" || {
+      [ "$?" -eq 1 ] || return 1
       printf '0'
       return 0
-    fi
-    ident=$cur_ident
+    }
+    row=$_FM_PM_ROW
+    ident=${row%%$'\t'*}
+    offset=${row#*$'\t'}; offset=${offset%%$'\t'*}
   else
     legacy=$(_fm_open_decisions_cursor_path "$f")
     if [ -e "$legacy" ] || [ -L "$legacy" ]; then
@@ -2463,12 +2507,29 @@ EOF
 }
 
 status_outcome_backstop_cursor_offset() {  # <status-file>
-  local f=$1 state task manifest data row_task ident presented row_backstop backstop extra current size
+  local f=$1 state task manifest data row_task ident presented row_backstop backstop extra current size _FM_PM_ROW=''
   [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 1
   state=${f%/*}
   task=${f##*/}; task=${task%.status}
   manifest="$state/.status-presentation-cursor"
   [ -e "$manifest" ] || { printf '0'; return 0; }
+  # A valid preloaded manifest answers without a reread; a malformed one takes
+  # the row-by-row path below, which stops at the first matching row.
+  if [ -n "${_FM_PM_STATE:-}" ] && [ "$_FM_PM_STATE" = "$state" ] && [ -z "${_FM_PM_BAD:-}" ]; then
+    _fm_presentation_manifest_row "$_FM_PM_CACHE" "$task" || [ "$?" -eq 2 ] \
+      || { printf '0'; return 0; }
+    data=$_FM_PM_ROW
+    ident=${data%%$'\t'*}
+    row_backstop=${data##*$'\t'}
+    _fm_status_read_ident_size "$f" || return 1
+    current=$_FM_STAT_IDENTITY size=${_FM_STAT_SIZE//[[:space:]]/}
+    case "$size" in ''|*[!0-9]*) return 1 ;; esac
+    [ "$ident" = "$current" ] || { printf '0'; return 0; }
+    backstop=${row_backstop:-0}
+    [ "$backstop" -le "$size" ] || backstop=0
+    printf '%s' "$backstop"
+    return 0
+  fi
   [ -f "$manifest" ] && [ -r "$manifest" ] && [ ! -L "$manifest" ] || return 1
   data=$(LC_ALL=C command cat "$manifest" 2>/dev/null) || return 1
   backstop=0
@@ -2735,6 +2796,8 @@ EOF
 
 status_acknowledge_presented_snapshot() {  # <state> <snapshot> [<fully-presented-task-ids>]
   local state=$1 snapshot=$2 fully_presented=${3:-} task endpoint ident f offset lines line safe
+  local _FM_PM_STATE _FM_PM_CACHE _FM_PM_BAD
+  _fm_presentation_manifest_preload "$state"
   while IFS=$(printf '\t') read -r task endpoint ident; do
     [ -n "$task" ] || continue
     safe=false
@@ -2770,6 +2833,8 @@ EOF
 
 status_commit_presentation_snapshot() {  # <state> <snapshot>
   local state=$1 snapshot=$2 task endpoint ident f cur_ident size tmp backstop acknowledged_task acknowledged_endpoint
+  local _FM_PM_STATE _FM_PM_CACHE _FM_PM_BAD
+  _fm_presentation_manifest_preload "$state"
   tmp="$state/.status-presentation-cursor.tmp.$$"
   : > "$tmp" || return 1
   while IFS=$(printf '\t') read -r task endpoint ident; do
@@ -3006,6 +3071,8 @@ EOF
 
 scan_unread_surface_snapshot() {  # <state> <task-and-endpoint-snapshot>
   local state=$1 snapshot=$2 task endpoint ident f lines line
+  local _FM_PM_STATE _FM_PM_CACHE _FM_PM_BAD
+  _fm_presentation_manifest_preload "$state"
   while IFS=$(printf '\t') read -r task endpoint ident; do
     [ -n "$task" ] || continue
     f="$state/$task.status"
