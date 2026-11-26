@@ -5,9 +5,10 @@
 #   fm-on.sh [--stdin] <secondmate-id|unambiguous-ssh-alias> <fm-command> [args...]
 #
 # Routes come only from remote records in data/secondmates.md. A record names an
-# SSH config alias, remote Firstmate code root, and remote FM_HOME. A host alias
-# may be used directly only when exactly one record selects it; an ambiguous
-# alias is refused. The command must be a genuine executable in this checkout's
+# SSH config alias, remote Firstmate code root, and remote FM_HOME. An exact
+# secondmate id match wins, even when that id also equals another record's SSH
+# alias. Only when no id matches may a host alias be used directly, and only
+# when exactly one record selects it; an ambiguous alias is refused. The command must be a genuine executable in this checkout's
 # bin/fm-*.sh namespace. No per-command table exists.
 #
 # argv is encoded as one NUL-delimited stream and passed through the fixed
