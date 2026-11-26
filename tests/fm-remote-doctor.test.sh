@@ -127,7 +127,9 @@ SH
   # The host's process list for the Linux adoption proof; a case fills ps.out.
   cat > "$CASE_BIN/pgrep" <<'SH'
 #!/usr/bin/env bash
-sed "s/^/4242 /" "$FM_FAKE_STATE/ps.out" 2>/dev/null
+for pattern in "$@"; do :; done
+matches=$(grep -E -- "$pattern" "$FM_FAKE_STATE/ps.out" 2>/dev/null) || exit 1
+printf '%s\n' "$matches" | sed "s/^/4242 /"
 SH
   chmod +x "$CASE_BIN/pgrep"
 
@@ -1216,6 +1218,11 @@ printf '/other/root\n' > "$CASE_HOME/.firstmate/remote-herdr-owner-0123456789abc
 doctor --fix
 expect_code 1 "$DOCTOR_RC" "a host where another root has an owner record was adopted"
 assert_absent "$CASE_HOME/.firstmate/remote-herdr-owner" "another root's claim was ignored"
+
+adoptable_linux_case '/home/u/.local/bin/herdr --session=fm-remote server'
+doctor --fix
+expect_code 1 "$DOCTOR_RC" "a server whose argv is not the fm-remote server form was adopted"
+assert_absent "$CASE_HOME/.firstmate/remote-herdr-owner" "a differently shaped server argv was adopted"
 
 adoptable_linux_case ""
 doctor --fix
