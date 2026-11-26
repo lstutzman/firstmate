@@ -1905,7 +1905,7 @@ scan_open_decisions() {  # <state>
   for f in "$state"/*.status; do
     [ -e "$f" ] || continue
     [ "$f" = "$exclude" ] && continue
-    task=$(basename "$f"); task="${task%.status}"
+    task=${f##*/}; task="${task%.status}"
     open=$(status_open_decisions "$f") || continue
     [ -n "$open" ] || continue
     while IFS= read -r line; do
@@ -1982,8 +1982,13 @@ EOF
 # re-derives from whatever offset actually landed on disk.
 _fm_open_decisions_cursor_path() {  # <status-file>
   local f=$1 dir base
-  dir=$(dirname "$f")
-  base=$(basename "$f")
+  # Parameter expansion, not dirname/basename: this runs several times per task
+  # on the drain's hot path and each fork was paid per task.
+  f=${f%"${f##*[!/]}"}
+  case "$f" in
+    */*) dir=${f%/*}; base=${f##*/}; dir=${dir%"${dir##*[!/]}"}; [ -n "$dir" ] || dir=/ ;;
+    *) dir=. base=$f ;;
+  esac
   printf '%s/.%s.open-decisions-cursor' "$dir" "${base%.status}"
 }
 
@@ -2311,7 +2316,7 @@ scan_open_decisions_incremental() {  # <state>
   for f in "$state"/*.status; do
     [ -e "$f" ] || continue
     [ "$f" = "$exclude" ] && continue
-    task=$(basename "$f"); task="${task%.status}"
+    task=${f##*/}; task="${task%.status}"
     open=$(status_open_decisions_incremental_complete "$f") || continue
     [ -n "$open" ] || continue
     while IFS= read -r line; do
@@ -2331,10 +2336,9 @@ status_presentation_snapshot() {  # <state>
     [ -e "$f" ] || continue
     [ "$f" = "$exclude" ] && continue
     [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || continue
-    task=$(basename "$f"); task="${task%.status}"
-    size=$(_fm_status_file_size "$f") || return 1
-    size=${size//[[:space:]]/}
-    ident=$(_fm_open_decisions_file_ident "$f") || return 1
+    task=${f##*/}; task="${task%.status}"
+    _fm_status_read_ident_size "$f" || return 1
+    size=${_FM_STAT_SIZE//[[:space:]]/} ident=$_FM_STAT_IDENTITY
     case "$size" in ''|*[!0-9]*) return 1 ;; esac
     [ -n "$ident" ] || return 1
     printf '%s\t%s\t%s\n' "$task" "$size" "$ident" || return 1
@@ -2741,6 +2745,7 @@ $fully_presented
       f="$state/$task.status"
       offset=$(status_presentation_cursor_offset "$f") || return 1
       lines=$(status_new_lines_since_cursor "$f" "$endpoint") || return 1
+      lines=$(_fm_unread_surface_prefilter "$lines")
       # Once any informational line in this span is presented fleet-wide, the
       # contiguous cursor may advance through the captured endpoint. Routine
       # lines remain unacknowledged only while they are the sole unread content,
@@ -2926,11 +2931,9 @@ status_new_lines_since_cursor() {  # <status-file> [<captured-end-offset>]
   [ "$offset" -lt "$size" ] || return 0
   _fm_status_read_span "$f" "$offset" "$((size - offset))" > "$chunk_file" 2>/dev/null \
     || { rm -f "$chunk_file"; return 1; }
-  while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in
-      *[![:space:]]*) printf '%s\n' "$line" || { rc=1; break; } ;;
-    esac
-  done < "$chunk_file"
+  # One grep keeps the non-blank lines (and ends an unterminated last line);
+  # exit 1 only means the span held no such line.
+  LC_ALL=C grep -a '[^[:space:]]' "$chunk_file" || [ "$?" -eq 1 ] || rc=1
   rm -f "$chunk_file"
   return "$rc"
 }
@@ -2941,7 +2944,9 @@ status_new_lines_since_cursor() {  # <status-file> [<captured-end-offset>]
 status_line_is_unread_surface() {  # <status-line>
   local line=$1 verb key note resolve held prefix
   [ -n "$line" ] || return 1
-  verb=$(status_line_verb "$line")
+  # Out-var form: this runs once per unread line on the drain's hot path, and a
+  # command substitution here forked per line.
+  status_line_verb "$line" verb
   [ "$verb" = note ] && return 0
   resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
   held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
@@ -2962,6 +2967,17 @@ status_line_is_unread_surface() {  # <status-line>
   return 1
 }
 
+# Keep only the lines that can pass status_line_is_unread_surface: its verb must
+# be note or the resolve or captain-held verb, and a verb is always a substring
+# of its line. One grep replaces a per-line bash verb parse for the routine
+# lines that make up almost every status log; the exact check still decides.
+_fm_unread_surface_prefilter() {  # <lines>
+  local resolve held
+  resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
+  held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
+  printf '%s\n' "$1" | LC_ALL=C grep -F -e note -e "$resolve" -e "$held" || true
+}
+
 # Fleet-wide unread informational lines: one "<task>\t<status-line>" row per
 # still-unread `note:` or pending-reply resolution, in glob (task id) order.
 # Prints nothing when none are unread. Directory scan rejects status symlinks
@@ -2972,8 +2988,10 @@ scan_unread_surface_lines() {  # <state>
   for f in "$state"/*.status; do
     [ -e "$f" ] || continue
     [ "$f" = "$exclude" ] && continue
-    task=$(basename "$f"); task="${task%.status}"
+    task=${f##*/}; task="${task%.status}"
     lines=$(status_new_lines_since_cursor "$f") || return 1
+    [ -n "$lines" ] || continue
+    lines=$(_fm_unread_surface_prefilter "$lines")
     [ -n "$lines" ] || continue
     while IFS= read -r line; do
       [ -n "$line" ] || continue
@@ -2992,6 +3010,8 @@ scan_unread_surface_snapshot() {  # <state> <task-and-endpoint-snapshot>
     [ -n "$task" ] || continue
     f="$state/$task.status"
     lines=$(status_new_lines_since_cursor "$f" "$endpoint") || return 1
+    [ -n "$lines" ] || continue
+    lines=$(_fm_unread_surface_prefilter "$lines")
     [ -n "$lines" ] || continue
     while IFS= read -r line; do
       [ -n "$line" ] || continue
