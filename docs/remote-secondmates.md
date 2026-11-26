@@ -275,7 +275,9 @@ The Herdr agent applies only to the herdr backend; a rex-verified host needs onl
 The primary Firstmate code root keeps the `fm-remote` session and `dev.firstmate.herdr.fm-remote` launch-agent label.
 The doctor records that root as the service owner, and a different code root on the same account receives a separate, root-derived Herdr session and launch-agent label.
 [`bin/fm-remote-herdr-identity-lib.sh`](../bin/fm-remote-herdr-identity-lib.sh) owns that resolution, so readiness, launch, relaunch, and endpoint validation all name the same session for a code root.
-A legacy service without an owner record is adopted only when its existing launch-agent guard proves the current root owns it; otherwise the doctor leaves it alone and reports the ownership gap.
+A legacy service without an owner record is adopted on darwin only when its existing launch-agent guard proves the current root owns it.
+On Linux, where a systemd user unit may have started the server, the doctor adopts it only when it is the host's only fm-remote server, `~/.local/bin/fm-remote-entrypoint.sh` resolves to the current root, and no other code root has recorded an owner; the check reports it as fixable and `--fix` writes the record without touching the server.
+Otherwise the doctor leaves the service alone and reports the ownership gap.
 An operator's `--fix` refuses to rewrite, reload, or restart a Herdr service owned by another code root, one whose owner cannot be proven, or one whose pane list shows live panes or cannot be read; it reports the service and its owner instead.
 Readiness runs its unattended repair as `--fix --automatic`, which never stops, boots out, replaces, reloads, or takes over a running Herdr server or a loaded Herdr launch agent, because launchd can restart that server and a mate can create a pane in it at any moment.
 It can record ownership, install and bootstrap an unloaded agent for a stopped server, or start a stopped server through an already matching loaded agent; destructive Herdr repairs remain operator actions.
