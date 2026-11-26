@@ -1905,7 +1905,7 @@ scan_open_decisions() {  # <state>
   for f in "$state"/*.status; do
     [ -e "$f" ] || continue
     [ "$f" = "$exclude" ] && continue
-    task=$(basename "$f"); task="${task%.status}"
+    task=${f##*/}; task="${task%.status}"
     open=$(status_open_decisions "$f") || continue
     [ -n "$open" ] || continue
     while IFS= read -r line; do
@@ -1982,8 +1982,13 @@ EOF
 # re-derives from whatever offset actually landed on disk.
 _fm_open_decisions_cursor_path() {  # <status-file>
   local f=$1 dir base
-  dir=$(dirname "$f")
-  base=$(basename "$f")
+  # Parameter expansion, not dirname/basename: this runs several times per task
+  # on the drain's hot path and each fork was paid per task.
+  f=${f%"${f##*[!/]}"}
+  case "$f" in
+    */*) dir=${f%/*}; base=${f##*/}; dir=${dir%"${dir##*[!/]}"}; [ -n "$dir" ] || dir=/ ;;
+    *) dir=. base=$f ;;
+  esac
   printf '%s/.%s.open-decisions-cursor' "$dir" "${base%.status}"
 }
 
@@ -2311,7 +2316,7 @@ scan_open_decisions_incremental() {  # <state>
   for f in "$state"/*.status; do
     [ -e "$f" ] || continue
     [ "$f" = "$exclude" ] && continue
-    task=$(basename "$f"); task="${task%.status}"
+    task=${f##*/}; task="${task%.status}"
     open=$(status_open_decisions_incremental_complete "$f") || continue
     [ -n "$open" ] || continue
     while IFS= read -r line; do
@@ -2331,10 +2336,9 @@ status_presentation_snapshot() {  # <state>
     [ -e "$f" ] || continue
     [ "$f" = "$exclude" ] && continue
     [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || continue
-    task=$(basename "$f"); task="${task%.status}"
-    size=$(_fm_status_file_size "$f") || return 1
-    size=${size//[[:space:]]/}
-    ident=$(_fm_open_decisions_file_ident "$f") || return 1
+    task=${f##*/}; task="${task%.status}"
+    _fm_status_read_ident_size "$f" || return 1
+    size=${_FM_STAT_SIZE//[[:space:]]/} ident=$_FM_STAT_IDENTITY
     case "$size" in ''|*[!0-9]*) return 1 ;; esac
     [ -n "$ident" ] || return 1
     printf '%s\t%s\t%s\n' "$task" "$size" "$ident" || return 1
@@ -2414,34 +2418,78 @@ status_snapshot_latest_event() {  # <status-file> <captured-endpoint> <captured-
   FM_STATUS_SNAPSHOT_EVENT_ENDPOINT=$event_endpoint
 }
 
+# Validate the presentation manifest once and set _FM_PM_ROWS to one
+# "<task>\t<ident>\t<offset>\t<backstop>" row per task row, wrapped in newlines so a task
+# is found with one pattern match. Returns 1 when any row is malformed.
+_fm_presentation_manifest_parse() {  # <manifest>
+  local manifest=$1 data row_task ident legacy backstop extra rows=$'\n'
+  [ -f "$manifest" ] && [ -r "$manifest" ] && [ ! -L "$manifest" ] || return 1
+  data=$(LC_ALL=C command cat "$manifest" 2>/dev/null) || return 1
+  while IFS=$(printf '\t') read -r row_task ident legacy backstop extra; do
+    [ -n "$row_task" ] || continue
+    [ -z "$extra" ] || return 1
+    case "$legacy:$backstop" in *[!0-9:]*) return 1 ;; esac
+    [ -n "$legacy" ] && [ -n "$ident" ] || return 1
+    rows="$rows$row_task"$'\t'"$ident"$'\t'"$legacy"$'\t'"$backstop"$'\n'
+  done <<EOF
+$data
+EOF
+  _FM_PM_ROWS=$rows
+}
+
+# Find <task>'s first row in parsed manifest <rows> and set _FM_PM_ROW to the
+# fields after the task id. Returns 1 when there is no row, 2 when there is a
+# second row for the task. The split uses %% because a leading-star # removal
+# is quadratic in the manifest size on bash.
+_fm_presentation_manifest_row() {  # <rows> <task>
+  local rows=$1 key=$'\n'"$2"$'\t' head rest
+  head=${rows%%"$key"*}
+  [ "${#head}" -lt "${#rows}" ] || return 1
+  rest=${rows:$((${#head} + ${#key}))}
+  _FM_PM_ROW=${rest%%$'\n'*}
+  case "$rest" in *"$key"*) return 2 ;; esac
+  return 0
+}
+
+# Parse the manifest of <state> once for a per-task scan. The caller declares
+# _FM_PM_STATE, _FM_PM_CACHE and _FM_PM_BAD local, so the parse lives only for
+# that scan and status_presentation_cursor_offset reuses it instead of
+# rereading the manifest for every task (FLEET-235: that was quadratic).
+_fm_presentation_manifest_preload() {  # <state>
+  local manifest="$1/.status-presentation-cursor" _FM_PM_ROWS=''
+  _FM_PM_STATE='' _FM_PM_CACHE='' _FM_PM_BAD=''
+  [ -e "$manifest" ] || [ -L "$manifest" ] || return 0
+  _FM_PM_STATE=$1
+  if _fm_presentation_manifest_parse "$manifest"; then
+    _FM_PM_CACHE=$_FM_PM_ROWS
+  else
+    _FM_PM_BAD=1
+  fi
+}
+
 status_presentation_cursor_offset() {  # <status-file>
-  local f=$1 state task manifest data row_task offset ident backstop extra cur_ident size legacy
+  local f=$1 state task manifest offset ident cur_ident size legacy row cached=false _FM_PM_ROWS='' _FM_PM_ROW=''
   [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 1
   state=${f%/*}
   task=${f##*/}; task=${task%.status}
   manifest="$state/.status-presentation-cursor"
-  if [ -e "$manifest" ] || [ -L "$manifest" ]; then
-    [ -f "$manifest" ] && [ -r "$manifest" ] && [ ! -L "$manifest" ] || return 1
-    data=$(LC_ALL=C command cat "$manifest" 2>/dev/null) || return 1
-    offset=
-    while IFS=$(printf '\t') read -r row_task ident legacy backstop extra; do
-      [ -n "$row_task" ] || continue
-      [ -z "$extra" ] || return 1
-      case "$legacy:$backstop" in *[!0-9:]*) return 1 ;; esac
-      [ -n "$legacy" ] && [ -n "$ident" ] || return 1
-      if [ "$row_task" = "$task" ]; then
-        [ -z "$offset" ] || return 1
-        offset=$legacy
-        cur_ident=$ident
-      fi
-    done <<EOF
-$data
-EOF
-    if [ -z "$offset" ]; then
+  [ -n "${_FM_PM_STATE:-}" ] && [ "$_FM_PM_STATE" = "$state" ] && cached=true
+  if [ "$cached" = true ] || [ -e "$manifest" ] || [ -L "$manifest" ]; then
+    if [ "$cached" = true ]; then
+      [ -z "${_FM_PM_BAD:-}" ] || return 1
+      _FM_PM_ROWS=$_FM_PM_CACHE
+    else
+      _fm_presentation_manifest_parse "$manifest" || return 1
+    fi
+    # A second row for the same task is malformed state, as before.
+    _fm_presentation_manifest_row "$_FM_PM_ROWS" "$task" || {
+      [ "$?" -eq 1 ] || return 1
       printf '0'
       return 0
-    fi
-    ident=$cur_ident
+    }
+    row=$_FM_PM_ROW
+    ident=${row%%$'\t'*}
+    offset=${row#*$'\t'}; offset=${offset%%$'\t'*}
   else
     legacy=$(_fm_open_decisions_cursor_path "$f")
     if [ -e "$legacy" ] || [ -L "$legacy" ]; then
@@ -2459,12 +2507,29 @@ EOF
 }
 
 status_outcome_backstop_cursor_offset() {  # <status-file>
-  local f=$1 state task manifest data row_task ident presented row_backstop backstop extra current size
+  local f=$1 state task manifest data row_task ident presented row_backstop backstop extra current size _FM_PM_ROW=''
   [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 1
   state=${f%/*}
   task=${f##*/}; task=${task%.status}
   manifest="$state/.status-presentation-cursor"
   [ -e "$manifest" ] || { printf '0'; return 0; }
+  # A valid preloaded manifest answers without a reread; a malformed one takes
+  # the row-by-row path below, which stops at the first matching row.
+  if [ -n "${_FM_PM_STATE:-}" ] && [ "$_FM_PM_STATE" = "$state" ] && [ -z "${_FM_PM_BAD:-}" ]; then
+    _fm_presentation_manifest_row "$_FM_PM_CACHE" "$task" || [ "$?" -eq 2 ] \
+      || { printf '0'; return 0; }
+    data=$_FM_PM_ROW
+    ident=${data%%$'\t'*}
+    row_backstop=${data##*$'\t'}
+    _fm_status_read_ident_size "$f" || return 1
+    current=$_FM_STAT_IDENTITY size=${_FM_STAT_SIZE//[[:space:]]/}
+    case "$size" in ''|*[!0-9]*) return 1 ;; esac
+    [ "$ident" = "$current" ] || { printf '0'; return 0; }
+    backstop=${row_backstop:-0}
+    [ "$backstop" -le "$size" ] || backstop=0
+    printf '%s' "$backstop"
+    return 0
+  fi
   [ -f "$manifest" ] && [ -r "$manifest" ] && [ ! -L "$manifest" ] || return 1
   data=$(LC_ALL=C command cat "$manifest" 2>/dev/null) || return 1
   backstop=0
@@ -2731,6 +2796,8 @@ EOF
 
 status_acknowledge_presented_snapshot() {  # <state> <snapshot> [<fully-presented-task-ids>]
   local state=$1 snapshot=$2 fully_presented=${3:-} task endpoint ident f offset lines line safe
+  local _FM_PM_STATE _FM_PM_CACHE _FM_PM_BAD
+  _fm_presentation_manifest_preload "$state"
   while IFS=$(printf '\t') read -r task endpoint ident; do
     [ -n "$task" ] || continue
     safe=false
@@ -2741,6 +2808,7 @@ $fully_presented
       f="$state/$task.status"
       offset=$(status_presentation_cursor_offset "$f") || return 1
       lines=$(status_new_lines_since_cursor "$f" "$endpoint") || return 1
+      lines=$(_fm_unread_surface_prefilter "$lines")
       # Once any informational line in this span is presented fleet-wide, the
       # contiguous cursor may advance through the captured endpoint. Routine
       # lines remain unacknowledged only while they are the sole unread content,
@@ -2765,6 +2833,8 @@ EOF
 
 status_commit_presentation_snapshot() {  # <state> <snapshot>
   local state=$1 snapshot=$2 task endpoint ident f cur_ident size tmp backstop acknowledged_task acknowledged_endpoint
+  local _FM_PM_STATE _FM_PM_CACHE _FM_PM_BAD
+  _fm_presentation_manifest_preload "$state"
   tmp="$state/.status-presentation-cursor.tmp.$$"
   : > "$tmp" || return 1
   while IFS=$(printf '\t') read -r task endpoint ident; do
@@ -2926,11 +2996,9 @@ status_new_lines_since_cursor() {  # <status-file> [<captured-end-offset>]
   [ "$offset" -lt "$size" ] || return 0
   _fm_status_read_span "$f" "$offset" "$((size - offset))" > "$chunk_file" 2>/dev/null \
     || { rm -f "$chunk_file"; return 1; }
-  while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in
-      *[![:space:]]*) printf '%s\n' "$line" || { rc=1; break; } ;;
-    esac
-  done < "$chunk_file"
+  # One grep keeps the non-blank lines (and ends an unterminated last line);
+  # exit 1 only means the span held no such line.
+  LC_ALL=C grep -a '[^[:space:]]' "$chunk_file" || [ "$?" -eq 1 ] || rc=1
   rm -f "$chunk_file"
   return "$rc"
 }
@@ -2941,7 +3009,9 @@ status_new_lines_since_cursor() {  # <status-file> [<captured-end-offset>]
 status_line_is_unread_surface() {  # <status-line>
   local line=$1 verb key note resolve held prefix
   [ -n "$line" ] || return 1
-  verb=$(status_line_verb "$line")
+  # Out-var form: this runs once per unread line on the drain's hot path, and a
+  # command substitution here forked per line.
+  status_line_verb "$line" verb
   [ "$verb" = note ] && return 0
   resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
   held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
@@ -2962,6 +3032,17 @@ status_line_is_unread_surface() {  # <status-line>
   return 1
 }
 
+# Keep only the lines that can pass status_line_is_unread_surface: its verb must
+# be note or the resolve or captain-held verb, and a verb is always a substring
+# of its line. One grep replaces a per-line bash verb parse for the routine
+# lines that make up almost every status log; the exact check still decides.
+_fm_unread_surface_prefilter() {  # <lines>
+  local resolve held
+  resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
+  held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
+  printf '%s\n' "$1" | LC_ALL=C grep -F -e note -e "$resolve" -e "$held" || true
+}
+
 # Fleet-wide unread informational lines: one "<task>\t<status-line>" row per
 # still-unread `note:` or pending-reply resolution, in glob (task id) order.
 # Prints nothing when none are unread. Directory scan rejects status symlinks
@@ -2972,8 +3053,10 @@ scan_unread_surface_lines() {  # <state>
   for f in "$state"/*.status; do
     [ -e "$f" ] || continue
     [ "$f" = "$exclude" ] && continue
-    task=$(basename "$f"); task="${task%.status}"
+    task=${f##*/}; task="${task%.status}"
     lines=$(status_new_lines_since_cursor "$f") || return 1
+    [ -n "$lines" ] || continue
+    lines=$(_fm_unread_surface_prefilter "$lines")
     [ -n "$lines" ] || continue
     while IFS= read -r line; do
       [ -n "$line" ] || continue
@@ -2988,10 +3071,14 @@ EOF
 
 scan_unread_surface_snapshot() {  # <state> <task-and-endpoint-snapshot>
   local state=$1 snapshot=$2 task endpoint ident f lines line
+  local _FM_PM_STATE _FM_PM_CACHE _FM_PM_BAD
+  _fm_presentation_manifest_preload "$state"
   while IFS=$(printf '\t') read -r task endpoint ident; do
     [ -n "$task" ] || continue
     f="$state/$task.status"
     lines=$(status_new_lines_since_cursor "$f" "$endpoint") || return 1
+    [ -n "$lines" ] || continue
+    lines=$(_fm_unread_surface_prefilter "$lines")
     [ -n "$lines" ] || continue
     while IFS= read -r line; do
       [ -n "$line" ] || continue
