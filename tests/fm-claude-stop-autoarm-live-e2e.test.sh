@@ -9,6 +9,9 @@
 # commands; and the cooperative guard consumes no forced continuation while the
 # hook's launch is healthy; and on every real Stop the auto-arm runs as a
 # sibling of the turn-end guard under one parent (FLEET-199).
+# The claude -p call reads stdin from /dev/null: its "no stdin data received"
+# warning would otherwise land on the first line of the stream-json transcript
+# and make jq read none of it.
 # The project and FM_HOME are isolated; Claude keeps using its existing managed
 # authentication. No live fleet home, worktree, or session is touched.
 # shellcheck disable=SC2016 # the model, not this test shell, reads the prompt text
@@ -110,6 +113,14 @@ printf '9999999\n' > "$HOME_DIR/state/.lock"
 # a misbehaving session can never loop forever.
 cat > "$PROJECT/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+# A handling successor (FM_WATCH_PREDECESSOR_ARM_PID set, by the hook or by the
+# supervision host) is recorded apart, so the hook-owned arm count stays about
+# the foreground cycles. It confirms a started watcher and exits.
+if [ -n "${FM_WATCH_PREDECESSOR_ARM_PID:-}" ]; then
+  echo "successor=$$ predecessor=$FM_WATCH_PREDECESSOR_ARM_PID" >> "$FM_HOME/state/successor-ran"
+  printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+  exit 0
+fi
 N=$(cat "$FM_HOME/state/arm-count" 2>/dev/null || echo 0); N=$((N+1)); echo "$N" > "$FM_HOME/state/arm-count"
 echo "arm-run=$N pid=$$" >> "$FM_HOME/state/arm-ran"
 if [ "$N" -ge 3 ]; then
@@ -143,7 +154,7 @@ PROMPT='After reading the complete session-start digest, reply with exactly CYCL
   cd "$PROJECT" || exit 1
   FM_HOME="$HOME_DIR" CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 \
     claude -p "$PROMPT" --dangerously-skip-permissions --settings '{"feedbackDrafts":"off"}' \
-    --effort low --output-format stream-json --verbose
+    --effort low --output-format stream-json --verbose </dev/null
 ) > "$TRANSCRIPT" 2>&1 || fail "Claude credentialed auto-arm session failed: $(tail -20 "$TRANSCRIPT")"
 
 # FLEET-199: bin/fm-turnend-guard.sh waits for an auto-arm that is a live
@@ -181,6 +192,8 @@ awk '
   || fail "Stop auto-arm is not a sibling of the turn-end guard: $(cat "$LAB/siblings.verdict"); log: $(cat "$HOME_DIR/state/stop-siblings.log")"
 ARM_RUNS=$(wc -l < "$HOME_DIR/state/arm-ran" 2>/dev/null | tr -d ' ')
 [ "$ARM_RUNS" = 2 ] || fail "expected exactly 2 hook-owned arm cycles, got $ARM_RUNS: $(cat "$HOME_DIR/state/arm-ran" 2>/dev/null)"
+SUCCESSOR_RUNS=$(wc -l < "$HOME_DIR/state/successor-ran" 2>/dev/null | tr -d ' ')
+[ "$SUCCESSOR_RUNS" = 2 ] || fail "expected exactly one handling successor per actionable close (2), got ${SUCCESSOR_RUNS:-0}: $(cat "$HOME_DIR/state/successor-ran" 2>/dev/null)"
 DRAIN_RUNS=$(wc -l < "$HOME_DIR/state/drain-ran" 2>/dev/null | tr -d ' ')
 [ "$DRAIN_RUNS" = 3 ] || fail "expected one session-start drain plus two model wake drains, got $DRAIN_RUNS drains"
 REWAKES=$(jq -r '

@@ -1211,3 +1211,8 @@ On both Stops, `fm-turnend-guard.sh --claude` and `fm-claude-stop-autoarm.sh` ra
 That assertion requires at least one Stop to catch the guard and the auto-arm together under that parent, so a missing guard fails it.
 The run then failed the existing check `expected exactly 2 hook-owned arm cycles, got 4`.
 The same command on unchanged `origin/main` (75a21be4, no FLEET-199 change) with the same Claude Code version failed the same check with `got 4`, so the failure is confirmed pre-existing and not caused by the due-wait.
+The cause was a stale test fixture, not a double arm.
+Its `fm-watch-arm.sh` stand-in counted every call as a hook-owned cycle, but since 31c47af5 the hook also starts one handling successor per actionable close (the supervision host does the same), and the hook retries a close that left no healthy watcher once.
+The count was therefore two foreground cycles plus one successor on Stop 1 and one attempt plus one retry on Stop 2.
+The fixture now records a call carrying `FM_WATCH_PREDECESSOR_ARM_PID` to `state/successor-ran`, the test asserts exactly two successors, and `claude -p` reads stdin from `/dev/null` so its stderr warning no longer breaks the transcript parse.
+With those changes the same command passed on Claude Code 2.1.332 with two foreground cycles and two successors.
