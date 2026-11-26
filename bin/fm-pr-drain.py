@@ -28,6 +28,11 @@ shared marker: the open list gives the eligible count now, and when it is above 
 last 14 days are walked back from now (a close adds one PR, a creation removes one; closed PRs count as eligible unless
 they were drafts, promotion PRs or labelled `held`) until the count was 24 or more (on) or S or fewer (off). Read-only: one `gh pr list`
 of open PRs, plus one of recently closed PRs only in that band. FM_PR_DRAIN_TIMEOUT (default 20) bounds each read in seconds.
+When the home's config/pr-drain-off lists the project (one registered project name per line, `#` comments allowed; same
+config directory and inheritance as config/ci-slots), state prints `off <owner/repo> <n> (drain off by config/pr-drain-off)`
+and walks no closed PRs: Lee, main chat, 2026-11-26T14:29:24Z: "pr drain: go with (a) — switch the drain off for
+PropertyCompass2 now and amend the rule by PR so only the CI-slot gate holds PRs". A malformed file (unreadable, or a
+project named twice) is named in the line and ignored. gate, open and the CI-slot count are unchanged.
 open prints one line, the CI-slot count (P: the eligible count state reads, so drafts, promotion PRs, PRs waiting for the
 captain and PRs labelled `held` are left out, and a pile counts once) that bin/fm-fleet-alarm.py compares with a project's
 CI slots (config/ci-slots; bin/fm-project-capacity-lib.sh owns it), from one `gh pr list` read:
@@ -278,6 +283,20 @@ def state(project, name=None):
     repo = repo_of(project)
     if not repo:
         return 'none'
+    name = name or os.path.basename(os.path.abspath(project))
+    note = ''
+    try:
+        if project_mode('--pr-drain-off', name) == 'off':
+            found = open_prs(project)
+            if isinstance(found, str):
+                return found
+            return f"off {found[0]} {len(tally(project, found[1])['units'])} (drain off by config/pr-drain-off)"
+    except (ValueError, OSError, subprocess.TimeoutExpired) as error:
+        note = f' (config/pr-drain-off is malformed and ignored: {error})'
+    return state_by_count(project, repo, name) + note
+
+
+def state_by_count(project, repo, name):
     try:
         # The open read (no --search) proves the repository is readable; a search answers [] when it is not.
         found = open_prs(project)
@@ -287,7 +306,6 @@ def state(project, name=None):
         seen = tally(project, prs)
         opened = seen['units'] + seen['carried']
         count = len(seen['units'])
-        name = name or os.path.basename(os.path.abspath(project))
         try:
             # S when the project declares CI slots, else drain ends only at 0.
             floor = int(project_mode('--ci-slots', name) or 0)
