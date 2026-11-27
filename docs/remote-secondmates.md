@@ -453,7 +453,7 @@ Without an explicit backend, a later launch or liveness recovery preserves the p
 An existing endpoint on a different backend is refused rather than migrated.
 Placement is per backend:
 
-- Herdr: all remote secondmates of one code root on a host share that root's remote session, `fm-remote` for the account's primary root, and retain separate `2ndmate-<id>` workspaces inside it.
+- Herdr: all remote secondmates of one code root on a host share that root's remote session, `fm-remote` for the account's primary root, or the account's [selected session](#use-your-own-herdr-session) when it names one, and retain separate `2ndmate-<id>` workspaces inside it.
 - Rex: each remote secondmate home gets its own `2ndmate-<id>-<hash>` session on the host's persistent personal rex server, the same placement rule a local secondmate home uses.
 
 ### Use your own Herdr session
