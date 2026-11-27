@@ -3410,6 +3410,23 @@ test_deadline_default_live_applies_with_the_not_the_captain_label() {
   )
 }
 
+test_deadline_default_with_answer_words_records_no_selected_answer() {
+  (
+    local home show
+    home=$(make_home default-answer-words)
+    printf 'live\n' > "$home/config/captain-hold-defaults"
+    touch "$home/config/hold-answer-words"
+    dd_hold "$home" sample-words docs >/dev/null || fail "could not hold a call with a default"
+    dd_at 2026-07-21T13:00:00Z "$home" answer sample-words --deadline-default >/dev/null \
+      || fail "the live default failed with answer words enabled"
+    show=$(tasks_in "$home" show sample-words --full)
+    assert_contains "$show" "Resolution mode: deadline-default" "the record lost its deadline-default mode"
+    assert_contains "$show" "Deadline default (not the captain's words):" "the record lost the not-the-captain label"
+    assert_not_contains "$show" "Selected answer:" "a deadline default was recorded as the captain's selected answer"
+    pass "a deadline default with answer words enabled records no selected answer"
+  )
+}
+
 test_real_answer_wins_and_later_answer_supersedes_the_default() {
   (
     local home show
@@ -3640,6 +3657,7 @@ test_deadline_default_refuses_every_reserved_class
 test_deadline_default_refuses_unknown_and_malformed_requests
 test_deadline_default_dry_run_logs_and_answers_nothing
 test_deadline_default_live_applies_with_the_not_the_captain_label
+test_deadline_default_with_answer_words_records_no_selected_answer
 test_real_answer_wins_and_later_answer_supersedes_the_default
 test_deadline_default_deferral_clears_or_replaces_the_default
 test_deadline_default_active_rehold_keeps_its_published_default

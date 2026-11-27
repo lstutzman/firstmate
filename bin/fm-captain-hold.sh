@@ -778,7 +778,7 @@ resolution_block() {  # <mode>
   printf '\n%s\n%s\n' "$label" "$DECISION_TEXT"
   [ -f "$CONFIG/hold-answer-words" ] || return 0
   case "$1" in
-    reconciled|forge-closed|forge-released) return 0 ;;
+    reconciled|forge-closed|forge-released|deadline-default) return 0 ;;
   esac
   # The leading newline lets one pattern find a marker that opens the text.
   lines=$'\n'$DECISION_TEXT

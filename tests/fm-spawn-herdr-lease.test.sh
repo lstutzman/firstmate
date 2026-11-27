@@ -366,6 +366,7 @@ projection_cleanup() {
   # Unblock every disposable child even when an assertion fails.
   printf 'release\n' >&7 2>/dev/null || true
   printf 'release\n' >&8 2>/dev/null || true
+  printf 'release\n' >&4 2>/dev/null || true
   local pid
   for pid in "${PROJECTION_PIDS[@]}"; do wait "$pid" 2>/dev/null || true; done
   fm_test_cleanup
@@ -434,7 +435,8 @@ PY
 
 # Runs only as a background child, so its exports and sourced libraries stay
 # out of the test shell.
-projection_lock_holder_child() {
+projection_lock_holder_child() {  # <release fd>
+  local fd=$1
   export PATH="$A/fakebin:$PATH" FM_FAKE_DIR="$D" FM_HOME="$A/home"
   export FM_PROJECTION_FAKE="$ROOT/tests/fixtures/herdr-projection-fake.py"
   . "$ROOT/bin/fm-wake-lib.sh"
@@ -443,13 +445,13 @@ projection_lock_holder_child() {
   lock=$(fm_backend_herdr_presentation_session_lock_path default) || exit 1
   fm_lock_try_acquire "$lock" || exit 1
   printf 'held\n' > "$D/events"
-  read -r -t 60 _ <&8
+  read -r -t 60 _ <&"$fd"
   fm_lock_release "$lock"
   printf 'released\n' > "$D/events"
 }
 
-projection_lock_holder() {
-  projection_lock_holder_child &
+projection_lock_holder() {  # [<release fd>]
+  projection_lock_holder_child "${1:-8}" &
   PROJECTION_PIDS+=("$!")
   projection_event held
 }
@@ -498,8 +500,62 @@ test_default_exact_recovery_refuses_contention() {
   pass "default exact recovery refuses a held session lock without projection mutations"
 }
 
+test_opt_in_exact_recoveries_wait_and_replace_own_husks() {
+  local A B D
+  make_projection_pair wait
+  FM_FAKE_DIR="$D" python3 "$ROOT/tests/fixtures/herdr-projection-fake.py" \
+    seed wait-a "$A/home" "$A/project" aaaaaaaaaaaaaaaaaaaaaa >/dev/null
+  # The holder gets its own release FIFO: the fork leases before it locks, so
+  # A's allocation must be released while the holder still holds the lock.
+  mkfifo "$D/release-holder"
+  exec 4<>"$D/release-holder"
+  projection_lock_holder 4
+  # Observe an actual failed acquire at the sleep boundary, then park that
+  # retry on the task's FIFO. Never infer contention from elapsed time.
+  cat > "$A/fakebin/sleep" <<'SH'
+#!/usr/bin/env bash
+if [ "$*" = 0.1 ] && [ ! -f "$FM_FAKE_DIR/retried-$FM_WAIT_ID" ]; then
+  : > "$FM_FAKE_DIR/retried-$FM_WAIT_ID"
+  printf 'waiting %s\n' "$FM_WAIT_ID" > "$FM_FAKE_DIR/events"
+  read -r -t 60 _ < "$FM_FAKE_DIR/retry-$FM_WAIT_ID" || exit 1
+fi
+SH
+  cp "$A/fakebin/sleep" "$B/fakebin/sleep"
+  mkfifo "$D/retry-wait-a" "$D/retry-wait-b"
+  exec 5<>"$D/retry-wait-a" 6<>"$D/retry-wait-b"
+  FM_WAIT_ID=wait-a projection_start "$A" wait-a --herdr-resume-lock-wait
+  projection_event 'allocated wait-a'
+  printf 'release\n' >&8
+  projection_event 'waiting wait-a'
+  FM_WAIT_ID=wait-b projection_start "$B" wait-b --herdr-resume-lock-wait
+  projection_event 'allocated wait-b'
+  printf 'release\n' >&7
+  projection_event 'waiting wait-b'
+  printf 'release\n' >&4
+  projection_event released
+  cp "$B/home/state/wait-b.meta" "$B/meta-before"
+  cp "$B/home/state/wait-b.herdr-presentation" "$B/journal-before"
+  printf 'retry\n' >&5
+  projection_event 'done wait-a 0'
+  projection_assert_replaced "$A" wait-a
+  cmp "$B/meta-before" "$B/home/state/wait-b.meta" || fail "A changed B's metadata"
+  cmp "$B/journal-before" "$B/home/state/wait-b.herdr-presentation" || fail "A changed B's journal"
+  ! grep -q '^pane close old-pane-wait-b' "$D/herdr-log" || fail "A closed B's husk"
+  cp "$A/home/state/wait-a.meta" "$A/meta-before"
+  cp "$A/home/state/wait-a.herdr-presentation" "$A/journal-before"
+  printf 'retry\n' >&6
+  projection_event 'done wait-b 0'
+  projection_assert_replaced "$B" wait-b
+  cmp "$A/meta-before" "$A/home/state/wait-a.meta" || fail "B changed A's metadata"
+  cmp "$A/journal-before" "$A/home/state/wait-a.herdr-presentation" || fail "B changed A's journal"
+  projection_finish
+  exec 4>&- 5>&- 6>&-
+  pass "opt-in concurrent recoveries wait for the session lock and replace only their own husks"
+}
+
 test_exact_recovery_during_sibling_allocation
 test_default_exact_recovery_refuses_contention
+test_opt_in_exact_recoveries_wait_and_replace_own_husks
 
 test_delayed_worktree_entry
 test_dropped_worktree_entry
