@@ -67,13 +67,16 @@
 # card.
 #
 # `answer` records the captain's exact words and resolves the call in the same
-# act. It requires a non-empty captain decision file of at most 8192 bytes and
-# writes a resolution block while preserving the leading hold-set stamp until
-# the close succeeds (the previous body is preserved and archived through
-# tasks-axi --archive-body). It closes a question with `tasks-axi done` - or,
-# with `--release`, lifts the hold with `tasks-axi unhold` so a captain-gated
-# WORK item resumes without closing - and restores resolution-first body
-# ordering. `--release` also requires exactly one of `--phases-filed
+# act. It requires a non-empty captain decision file of at most 8192 bytes.
+# With config/hold-answer-words present, it also refuses a file holding only
+# an option selection (one letter or digit, bare, in parentheses, or followed
+# by `.` or `)`, with any surrounding blanks), because the displayed option
+# words must be recorded with it. It writes a resolution block while
+# preserving the leading hold-set stamp until the close succeeds (the previous
+# body is preserved and archived through tasks-axi --archive-body). It closes
+# a question with `tasks-axi done` - or, with `--release`, lifts the hold with
+# `tasks-axi unhold` so a captain-gated WORK item resumes without closing - and
+# restores resolution-first body ordering. `--release` also requires exactly one of `--phases-filed
 # <id>[,<id>...]` or `--no-phases`: an approval whose plan has phases is released
 # only when every remaining phase, the go-live step included, is a filed open
 # backlog item in this home, so no approved phase lives only in prose. Each id
@@ -138,7 +141,17 @@
 # `<task-id>\t<answer>\t<label>[\t<mode>]` lines on stdin and resolves each named
 # task through the very same `answer` path above, so every guard applies
 # identically no matter which channel the answer arrived on. The key IS the
-# task id - no identity arithmetic. The optional fourth field selects the close:
+# task id - no identity arithmetic. With config/hold-answer-words present, an
+# answer that is only an option selection (surrounding blanks ignored) needs
+# the label carrying the option words as the captain saw them; a missing or
+# blank label reports the row `skipped:` and
+# feeds nothing, because missing words are never inferred. With that same flag,
+# blank labels are omitted and a non-reconciled resolution record ends with one
+# `Selected answer:` line only when it holds a single-line selection: the
+# displayed label when present, else the answer, else a decision that is one
+# line long. A multi-line decision with no `Answer:` or `Answer as shown to
+# the captain:` line has no `Selected answer:` line.
+# The optional fourth field selects the close:
 # empty or `done` completes the task, `release` lifts the hold so held work
 # resumes (written `release:<id>[,<id>...]` or `release:none`, the same two phase
 # answers as `answer --release`; a bare `release` is refused); anything else is skipped. A `release` line while the away-posture
@@ -541,6 +554,22 @@ BINDING_ANY='(any)'
 DECISION_TEXT=''
 DECISION_DIGEST=''
 
+is_blank() {  # <text>
+  case "$1" in *[![:space:]]*) return 1 ;; esac
+  return 0
+}
+
+# Surrounding blanks never turn a bare option into its displayed words.
+is_option_selection() {  # <text>
+  local text=$1
+  text=${text#"${text%%[![:space:]]*}"}
+  text=${text%"${text##*[![:space:]]}"}
+  case "$text" in
+    [A-Za-z0-9]|\([A-Za-z0-9]\)|[A-Za-z0-9][.\)]) return 0 ;;
+  esac
+  return 1
+}
+
 load_decision() {  # <path>, or - for stdin; sets DECISION_TEXT and DECISION_DIGEST
   local path=$1 decision
   [ -n "$path" ] || fail "--decision-file is required"
@@ -553,6 +582,9 @@ load_decision() {  # <path>, or - for stdin; sets DECISION_TEXT and DECISION_DIG
   [ -n "$decision" ] || fail "decision file must not be empty"
   [ "$(printf '%s' "$decision" | LC_ALL=C wc -c | tr -d ' ')" -le 8192 ] \
     || fail "decision file exceeds 8192 bytes"
+  if [ -f "$CONFIG/hold-answer-words" ] && is_option_selection "$decision"; then
+    fail "decision file contains only option $decision; include the displayed option words"
+  fi
   DECISION_TEXT=$decision
   DECISION_DIGEST=$(sha256_text "$decision")
 }
@@ -737,12 +769,28 @@ SUPERSEDES_DEFAULT=0
 PHASES_RECORD=''
 resolution_block() {  # <mode>
   local label='Captain decision:'
+  local selected='' lines
   case "$1" in reconciled|forge-closed|forge-released) label='Reconciliation evidence:' ;; esac
   [ "$1" != deadline-default ] || label=$DEADLINE_DEFAULT_LABEL
   printf 'Resolution recorded by fm-captain-hold.\nDecision digest: %s\nResolution mode: %s\n' "$DECISION_DIGEST" "$1"
   [ -z "$PHASES_RECORD" ] || printf 'Phases: %s\n' "$PHASES_RECORD"
   [ "$SUPERSEDES_DEFAULT" != 1 ] || printf 'Supersedes the deadline default recorded below.\n'
   printf '\n%s\n%s\n' "$label" "$DECISION_TEXT"
+  [ -f "$CONFIG/hold-answer-words" ] || return 0
+  case "$1" in
+    reconciled|forge-closed|forge-released) return 0 ;;
+  esac
+  # The leading newline lets one pattern find a marker that opens the text.
+  lines=$'\n'$DECISION_TEXT
+  case "$lines" in
+    *$'\nAnswer as shown to the captain: '*)
+      selected=${lines##*$'\nAnswer as shown to the captain: '} ;;
+    *$'\nAnswer: '*) selected=${lines##*$'\nAnswer: '} ;;
+    $'\n'*$'\n'*) ;;
+    *) selected=$DECISION_TEXT ;;
+  esac
+  selected=${selected%%$'\n'*}
+  is_blank "$selected" || printf 'Selected answer: %s\n' "$selected"
 }
 
 # Durable state of one captain call: an active captain hold (annotations
@@ -2069,6 +2117,14 @@ command_answers() {
     answer=$(sanitize_field "${answer:-}")
     [ -n "$answer" ] || continue
     label=$(sanitize_field "${label:-}")
+    if [ -f "$CONFIG/hold-answer-words" ]; then
+      ! is_blank "$label" || label=''
+      if [ -z "$label" ] && is_option_selection "$answer"; then
+        printf 'skipped: %s (option %s requires its displayed meaning)\n' "$key" "$answer"
+        skipped=$((skipped + 1))
+        continue
+      fi
+    fi
     if [ "$answer" = "$RECONCILE_VALUE" ]; then
       printf 'refused: %s (reconcile requests require a bound captured source)\n' "$key"
       skipped=$((skipped + 1))
