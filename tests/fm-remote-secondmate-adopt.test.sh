@@ -104,6 +104,21 @@ grep -Fx 'harness=claude' "$HOME_DIR/state/gil.meta" >/dev/null || fail "an unre
 assert_grep "adopt gil $SID" "$TMP/ssh.log" "the host verb did not receive the id and agent session"
 pass "a confirmed adopt rebinds the parent's session and target in place"
 
+# --- a legacy record with no remote_backend line still adopts ------------------
+reset_meta
+grep -v '^remote_backend=' "$HOME_DIR/state/gil.meta" > "$TMP/legacy.meta" && cp "$TMP/legacy.meta" "$HOME_DIR/state/gil.meta"
+OUT=$(run_adopt gil "$SID"); RC=$?
+expect_code 0 "$RC" "a legacy herdr record with no remote_backend line should adopt"$'\n'"$OUT"
+grep -Fx 'remote_target=default:wXA:p2' "$HOME_DIR/state/gil.meta" >/dev/null || fail "the legacy record was not rebound"
+reset_meta
+sed -i 's/^remote_backend=herdr$/remote_backend=rex/' "$HOME_DIR/state/gil.meta"
+cp "$HOME_DIR/state/gil.meta" "$TMP/rex.meta"
+OUT=$(run_adopt gil "$SID"); RC=$?
+[ "$RC" -ne 0 ] || fail "a rex record was accepted by the herdr adopt tool"
+assert_contains "$OUT" "recorded on the rex backend" "the refusal did not name the recorded backend"
+cmp -s "$TMP/rex.meta" "$HOME_DIR/state/gil.meta" || fail "a refused rex adopt changed the record"
+pass "a legacy record with no remote_backend adopts as herdr and a rex record is refused"
+
 # --- every refusal leaves the parent's record byte-identical ------------------
 for mode in refuse no-route foreign-session unmarked-plain; do
   reset_meta
@@ -132,6 +147,7 @@ OUT=$(run_adopt gil 'bad id'); RC=$?
 [ "$RC" -ne 0 ] || fail "an invalid agent session id was accepted"
 OUT=$(run_adopt gil); RC=$?
 expect_code 2 "$RC" "a missing argument is a usage error"
+assert_contains "$OUT" "started without Firstmate's launch flags is accepted" "the help does not say a hand-started agent is accepted"
 pass "a local mate, a bad session id, and a missing argument are refused"
 
 echo "ALL TESTS PASSED"

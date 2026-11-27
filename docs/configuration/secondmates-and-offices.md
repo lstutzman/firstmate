@@ -32,7 +32,7 @@ On the remote host's account, this optional file names the Herdr session its rem
 Without it, they use the code root's reserved `fm-remote` session (or `fm-remote-<root-id>` for a second root on the account), exactly as before.
 The file holds one session name on its first line and nothing else, for example `default` to put the mates in the Herdr you watch.
 The name uses letters, digits, dot, underscore, and dash, starts with a letter or digit, stays within 64 characters, and is never `fm-remote` or `fm-remote-*`.
-The file must be a plain file; a symlink, a second line, or an unusable name makes launch, route, state, and the readiness doctor refuse and name the file.
+The file must be a plain file; a symlink, a second line, or an unusable name makes launch, route, and the readiness doctor refuse and name the file, and makes state read `unverified`.
 Every remote control verb and `bin/fm-remote-doctor.sh` read it on the host, so the parent's configuration needs no change.
 A selected session is yours: the doctor only checks that its server is running (and, on macOS, was born in the login session), reports each gap as a human step, and never creates, owns, reloads, or stops it.
 Remote [launch](../remote-secondmates.md#launch-or-recover) records the plain session name only when the host reports it as selected.

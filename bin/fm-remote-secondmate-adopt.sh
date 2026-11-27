@@ -5,13 +5,15 @@
 # Usage: fm-remote-secondmate-adopt.sh <id> <agent_session_id>
 #
 # For a mate whose endpoint is gone but whose agent is alive in another Herdr
-# pane, for example one started by hand in the user's visible session.
-# bin/fm-remote-secondmate-control.sh's adopt verb runs on the secondmate's
-# host: it finds the pane by agent session id in the host's selected Herdr
-# session, proves the host-side facts (see its header), and rewrites only the
-# host's endpoint record. It never launches, relaunches, or stops anything,
-# and neither does this wrapper.
+# pane, for example one started by hand in the user's visible session. An agent
+# started without Firstmate's launch flags is accepted when the host's proofs
+# pass: the pane holds that agent session, its agent matches the recorded
+# harness, and the home's state/.lock and state/.lock-session name a live
+# harness process inside that pane whose working directory is the mate's home.
+# This never launches, relaunches, or stops anything.
 #
+# bin/fm-remote-secondmate-control.sh's adopt verb runs on the secondmate's
+# host and rewrites only the host's endpoint record (its header owns the proofs).
 # This parent's route record (state/<id>.meta here, marked remote_host=... to a
 # different machine) is a separate file that verb cannot reach. This wrapper is
 # the other half, shaped like bin/fm-remote-secondmate-relaunch.sh: it runs the
@@ -34,7 +36,7 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-remote-herdr-identity-lib.sh"
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
-usage() { sed -n '2,4p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 
 [ "$#" -eq 2 ] || usage
 ID=$1
@@ -47,8 +49,11 @@ META="$STATE/$ID.meta"
 REMOTE_HOST=$(fm_meta_get "$META" remote_host)
 [ -n "$REMOTE_HOST" ] \
   || die "task $ID is not a remotely placed secondmate; adopt applies only to a remote route"
-[ "$(fm_meta_get "$META" remote_backend)" = herdr ] \
-  || die "task $ID is not recorded on the herdr backend; adopt binds only a Herdr endpoint"
+# A record written before rex existed names no backend, which means herdr
+# (bin/fm-spawn.sh and the liveness sweep read it the same way).
+RECORDED_BACKEND=$(fm_meta_get "$META" remote_backend)
+[ "${RECORDED_BACKEND:-herdr}" = herdr ] \
+  || die "task $ID is recorded on the $RECORDED_BACKEND backend; adopt binds only a Herdr endpoint"
 [ -n "$(fm_meta_get "$META" remote_herdr_session)" ] && [ -n "$(fm_meta_get "$META" remote_target)" ] \
   || die "the record for $ID names no remote_herdr_session and remote_target to rebind"
 

@@ -7,7 +7,8 @@
 #      fm-remote and the route carries no selection marker.
 #   B) With it, launch, route, state, and retire all use that session, retire
 #      closes only this mate's pane, and no server is ever stopped.
-#   C) An unusable selection (fm-remote*, spaces, two lines, a symlink) refuses.
+#   C) An unusable selection (fm-remote*, spaces, two lines, a symlink) refuses
+#      launch and route, and state reads unverified, each naming the file.
 #   D) A route recorded in another session is refused while one is selected.
 #   E) launch and relaunch refuse when the home's state/.lock names a live
 #      process and the recorded endpoint is not that agent, and say to use adopt.
@@ -143,25 +144,28 @@ SEL_PANE=$(sed -n 's/^target=default://p' "$TMP_ROOT/b.out")
 assert_no_regex 'server stop|session stop' "$TMP_ROOT/herdr.log" "retire stopped a Herdr server or session"
 pass "B launch, route, state, and retire use the selected session, retire closes only its own pane and stops nothing"
 
-# --- C) an unusable selection refuses -------------------------------------------
+# --- C) an unusable selection refuses ------------------------------------------
 
-ID=sm-bad
-HOME_BAD=$(seed_home "$ID")
+# HOME_PLAIN holds a real endpoint record, so route and state reach the
+# selection check instead of stopping at a missing record.
 check_bad() { # <label> <account>
-  local acct=$2 verb
-  for verb in "launch $ID omp anthropic/claude-test high herdr" "route $ID" "state $ID"; do
-    # shellcheck disable=SC2086
-    if ctl "$acct" "$HOME_BAD" $verb > "$TMP_ROOT/c.out" 2>&1 && [ "$verb" != "state $ID" ]; then
-      fail "$1: '$verb' accepted an unusable selection"
-    fi
-  done
-  if ctl "$acct" "$HOME_BAD" launch "$ID" omp anthropic/claude-test high herdr > "$TMP_ROOT/c.out" 2>&1; then
-    fail "$1: launch accepted an unusable selection"
+  local label=$1 acct=$2
+  if ctl "$acct" "$HOME_PLAIN" launch sm-plain omp anthropic/claude-test high herdr > "$TMP_ROOT/c.out" 2>&1; then
+    fail "$label: launch accepted an unusable selection"
   fi
-  assert_grep 'remote-herdr-session' "$TMP_ROOT/c.out" "$1: the refusal did not name the selection file"
+  grep -q 'remote-herdr-session' "$TMP_ROOT/c.out" || fail "$label: launch did not name the selection file"$'\n'"$(cat "$TMP_ROOT/c.out")"
+  if ctl "$acct" "$HOME_PLAIN" route sm-plain > "$TMP_ROOT/c.out" 2>&1; then
+    fail "$label: route accepted an unusable selection"
+  fi
+  grep -q 'remote-herdr-session' "$TMP_ROOT/c.out" || fail "$label: route did not name the selection file"$'\n'"$(cat "$TMP_ROOT/c.out")"
+  ctl "$acct" "$HOME_PLAIN" state sm-plain > "$TMP_ROOT/c.out" 2> "$TMP_ROOT/c.err"
+  [ "$(cat "$TMP_ROOT/c.out")" = unverified ] || fail "$label: state did not read unverified: $(cat "$TMP_ROOT/c.out")"
+  grep -q 'remote-herdr-session' "$TMP_ROOT/c.err" || fail "$label: state did not name the selection file"$'\n'"$(cat "$TMP_ROOT/c.err")"
 }
+bad_n=0
 for bad in fm-remote fm-remote-0123456789abcdef 'two words' '-leading' ''; do
-  acct=$(new_account "bad-$RANDOM" "$bad")
+  bad_n=$((bad_n + 1))
+  acct=$(new_account "bad-$bad_n" "$bad")
   [ -n "$bad" ] || : > "$acct/.firstmate/remote-herdr-session"
   check_bad "value '$bad'" "$acct"
 done
@@ -172,7 +176,7 @@ acct=$(new_account bad-link)
 printf 'default\n' > "$TMP_ROOT/real-selection"
 ln -s "$TMP_ROOT/real-selection" "$acct/.firstmate/remote-herdr-session"
 check_bad "a symlink" "$acct"
-pass "C an unusable selection file refuses launch, route, and state naming the file"
+pass "C an unusable selection file refuses launch and route and reads state unverified, naming the file"
 
 # --- D) another session's route is refused while one is selected ---------------
 
