@@ -270,6 +270,16 @@ case "${FM_FAKE_SSH_MODE:-normal}:$command_name:$command_rel" in
     printf 'harness=codex\n'
     exit 0
     ;;
+  launch-selected-session-route:fm-remote-secondmate-control.sh:*)
+    [ "$_command_action" = launch ] || exit 93
+    printf 'schema=fm-remote-secondmate-control.v1\n'
+    printf 'backend=herdr\n'
+    printf 'target=default:w1:p2\n'
+    printf 'herdr_session=default\n'
+    printf 'herdr_session_source=selected\n'
+    printf 'harness=codex\n'
+    exit 0
+    ;;
   launch-rex-bad-server-route:fm-remote-secondmate-control.sh:*)
     [ "$_command_action" = launch ] || exit 93
     printf 'schema=fm-remote-secondmate-control.v1\n'

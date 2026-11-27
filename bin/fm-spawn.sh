@@ -1448,7 +1448,7 @@ fi
 
 spawn_remote_secondmate() {
   local id=$1 remote host root home harness positional model effort backend out rc meta tmp
-  local remote_backend remote_target remote_harness remote_herdr_session registry_lock remote_lock remote_generation
+  local remote_backend remote_target remote_harness remote_herdr_session remote_herdr_source registry_lock remote_lock remote_generation
   local remote_rex_session_id remote_rex_server remote_rex_ok
   local remote_traceparent remote_recorded_traceparent sm_primary_head sync_out sync_rc account_config
   local -a launch_args
@@ -1693,11 +1693,17 @@ spawn_remote_secondmate() {
   case "$remote_backend" in
     herdr)
       remote_herdr_session=$(printf '%s\n' "$out" | sed -n 's/^herdr_session=//p' | tail -1)
-      if ! fm_remote_herdr_session_name_valid "$remote_herdr_session" || [ "${remote_target%%:*}" != "$remote_herdr_session" ]; then
+      # A host whose account selected its own Herdr session
+      # (~/.firstmate/remote-herdr-session) says so in the route block; its
+      # plain session name is accepted only with that marker.
+      remote_herdr_source=$(printf '%s\n' "$out" | sed -n 's/^herdr_session_source=//p' | tail -1)
+      if { ! fm_remote_herdr_session_name_valid "$remote_herdr_session" \
+        && { [ "$remote_herdr_source" != selected ] || ! fm_remote_herdr_selectable_session_name "$remote_herdr_session"; }; } \
+        || [ "${remote_target%%:*}" != "$remote_herdr_session" ]; then
         fm_lock_release "$remote_lock" || true
         fm_lock_release "$registry_lock" || true
         fm_lock_release "$SPAWN_TASK_LOCK" || true
-        echo "error: remote launch returned Herdr session '${remote_herdr_session:-missing}', expected 'fm-remote' or a code-root-derived 'fm-remote-<id>'; preserving the remote route for reconciliation" >&2
+        echo "error: remote launch returned Herdr session '${remote_herdr_session:-missing}', expected 'fm-remote', a code-root-derived 'fm-remote-<id>', or the host's selected session; preserving the remote route for reconciliation" >&2
         return 1
       fi
       ;;

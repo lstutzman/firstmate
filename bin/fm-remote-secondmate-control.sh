@@ -14,17 +14,40 @@
 #   fm-remote-secondmate-control.sh sync <id> [<parent-commit>]
 #   fm-remote-secondmate-control.sh update <id>
 #   fm-remote-secondmate-control.sh retire <id> [--force]
+#   fm-remote-secondmate-control.sh adopt <id> <agent_session_id>
 #
 # Remote placement ends here, but the second-mate agent runs only on a session
 # backend whose server survives every SSH disconnection that supervises it:
 # herdr in this code root's remote session (bin/fm-remote-herdr-identity-lib.sh),
 # or rex in this home's 2ndmate-<id>-<hash> session on the personal rex server.
 # Launch refuses any other selection rather than reading this home's
-# config/backend. The user's interactive sessions remain for the user's work.
+# config/backend. The user's interactive sessions remain for the user's work,
+# unless the account opts a Herdr session in with ~/.firstmate/remote-herdr-session
+# (one session name, never fm-remote*): every verb here then uses that session,
+# route reports herdr_session_source=selected, and nothing here creates, owns,
+# or stops that session's server.
 # fm-spawn/fm-send/fm-teardown keep owning the local endpoint mechanics.
 # The home's own workers keep their ordinary backend selection.
 # bin/fm-remote-doctor.sh owns that host's readiness for the selected backend.
 # docs/remote-secondmates.md owns why.
+#
+# launch and relaunch refuse when the home's state/.lock names a live process
+# and the recorded endpoint is not the live agent, because starting then would
+# put a second agent beside the running one (the watcher's auto-relaunch runs
+# through launch). Use adopt instead.
+#
+# adopt binds this host's endpoint record to an agent that is ALREADY running,
+# for example one started by hand in the user's visible Herdr session. It
+# never launches, relaunches, or stops anything. It finds the pane in the
+# selected session whose Herdr agent session id is <agent_session_id>, and
+# refuses unless: the recorded endpoint is not alive; the pane's agent matches
+# the recorded harness; the home's state/.lock names a live harness process
+# inside that pane whose working directory is this home; and
+# state/.lock-session equals <agent_session_id>. An agent started without
+# Firstmate's launch flags is accepted when those checks pass. It then rewrites
+# the host-side record (window and the herdr_* fields) under the metadata lock
+# and prints the same route block `route` prints; the parent runs it through
+# bin/fm-remote-secondmate-adopt.sh, which updates its own record from that.
 #
 # With <parent-commit>, sync follows the PARENT PRIMARY's default-branch commit,
 # which the parent resolves on its own checkout and passes in, so a remote home
@@ -72,7 +95,7 @@ REMOTE_HERDR_SESSION=
 export FM_BACKEND_REX_NO_AUTOSTART=1
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
-usage() { sed -n '2,27p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,50p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 validate_id() { case "$1" in ''|*[!A-Za-z0-9._-]*) die "invalid secondmate id: $1" ;; esac; }
 
 # Sourcing fm-wake-lib.sh through the libraries below creates "$FM_HOME/state",
@@ -96,6 +119,8 @@ fi
 . "$SCRIPT_DIR/fm-task-inbox-lib.sh"
 # shellcheck source=bin/fm-remote-herdr-identity-lib.sh
 . "$SCRIPT_DIR/fm-remote-herdr-identity-lib.sh"
+# shellcheck source=bin/fm-session-lock-lib.sh
+. "$SCRIPT_DIR/fm-session-lock-lib.sh"
 
 # The Herdr session this code root's remote mates live in, resolved by the same
 # owner the readiness doctor prepares the service under.
@@ -103,6 +128,10 @@ remote_herdr_session_resolve() {
   [ -z "$REMOTE_HERDR_SESSION" ] || return 0
   fm_remote_herdr_identity "$FM_ROOT" || return 1
   REMOTE_HERDR_SESSION=$FM_REMOTE_HERDR_SESSION
+}
+
+remote_herdr_session_error() {
+  printf '%s' "${FM_REMOTE_HERDR_ERROR:-no SHA-256 tool resolves to name the Herdr session for code root $FM_ROOT}"
 }
 
 # True when the home path holds directories and nothing else, after removing
@@ -148,7 +177,7 @@ remote_endpoint_load() {
   case "$REMOTE_ENDPOINT_BACKEND" in
     herdr)
       if ! remote_herdr_session_resolve; then
-        REMOTE_ENDPOINT_ERROR="no SHA-256 tool resolves to name the Herdr session for code root $FM_ROOT"
+        REMOTE_ENDPOINT_ERROR=$(remote_herdr_session_error)
         return 1
       fi
       herdr_session=$(fm_backend_meta_exact_value "$REMOTE_ENDPOINT_META" herdr_session 2>/dev/null || true)
@@ -184,6 +213,25 @@ remote_endpoint_load() {
       return 1
       ;;
   esac
+}
+
+# Refuse to start an agent while this home's session lock names a live process:
+# that process is an agent already running here (a relaunch's own live agent is
+# handled by the caller before this runs), and a second one beside it would
+# fight it for the home. bin/fm-session-lock-lib.sh owns "live"; an unreadable
+# lock refuses too, because a launch cannot prove nothing runs.
+refuse_if_live_holder() { # <id> <verb>
+  local id=$1 verb=$2 pid session=
+  fm_session_lock_inspect "$TARGET_HOME/state"
+  pid=$FM_LOCK_INSPECT_PID
+  case "$FM_LOCK_INSPECT_STATE" in
+    held) ;;
+    unreadable) die "$verb refused: $TARGET_HOME/state/.lock cannot be read, so a running agent cannot be ruled out" ;;
+    stale|free) return 0 ;;
+    *) fm_session_lock_pid_blocks_reclaim "$pid" || return 0 ;;
+  esac
+  [ ! -f "$TARGET_HOME/state/.lock-session" ] || IFS= read -r session < "$TARGET_HOME/state/.lock-session" || true
+  die "$verb refused: $TARGET_HOME/state/.lock names live process $pid${session:+ (agent session $session)}, so an agent is already running in this home and a second one would fight it. Bind the route to it with: fm-remote-secondmate-control.sh adopt $id <agent_session_id> (from the parent: bin/fm-remote-secondmate-adopt.sh $id <agent_session_id>)"
 }
 
 remote_endpoint_require() {
@@ -238,6 +286,7 @@ print_route() { # <id>
   case "$REMOTE_ENDPOINT_BACKEND" in
     herdr)
       printf 'herdr_session=%s\n' "$REMOTE_HERDR_SESSION"
+      [ "${FM_REMOTE_HERDR_SELECTED:-0}" != 1 ] || printf 'herdr_session_source=selected\n'
       ;;
     rex)
       rex_session_id=$(fm_meta_get "$REMOTE_ENDPOINT_META" rex_session_id)
@@ -306,12 +355,15 @@ cmd_launch() {
         return 0
         ;;
       dead)
+        refuse_if_live_holder "$id" launch
         fm_backend_kill "$REMOTE_ENDPOINT_BACKEND" "$REMOTE_ENDPOINT_TARGET" 2>/dev/null \
           || die "could not remove the confirmed agent-less endpoint"
         ;;
-      missing) ;;
+      missing) refuse_if_live_holder "$id" launch ;;
       *) die "remote endpoint state is $current; refusing duplicate launch" ;;
     esac
+  else
+    refuse_if_live_holder "$id" launch
   fi
   # The parent owns both convergence legs before it asks for this launch: it
   # already fast-forwarded this home to ITS primary commit and pushed inherited
@@ -326,7 +378,7 @@ cmd_launch() {
     FM_CONFIG_OVERRIDE="$TARGET_HOME/config" FM_SKIP_SECONDMATE_INHERIT=1
     FM_SKIP_SECONDMATE_SYNC=1)
   if [ "$selected_backend" = herdr ]; then
-    remote_herdr_session_resolve || die "no SHA-256 tool resolves to name the Herdr session for code root $FM_ROOT"
+    remote_herdr_session_resolve || die "$(remote_herdr_session_error)"
     launch_env=("HERDR_SESSION=$REMOTE_HERDR_SESSION" "${launch_env[@]}")
   fi
   if ! out=$(env "${launch_env[@]}" "$SCRIPT_DIR/fm-spawn.sh" "${ARGS[@]}" 2>&1); then
@@ -370,6 +422,10 @@ cmd_relaunch() {
     "$SCRIPT_DIR/fm-harness.sh" validate-native-effort "$harness" "$model" "$effort" || return 1
   fi
   remote_endpoint_require "$id"
+  # A live endpoint is the agent this relaunch replaces in place; any other
+  # live holder of the home's lock is a different agent, so refuse.
+  [ "$(remote_agent_state "$REMOTE_ENDPOINT_BACKEND" "$REMOTE_ENDPOINT_TARGET" "$REMOTE_ENDPOINT_META")" = alive ] \
+    || refuse_if_live_holder "$id" relaunch
   [ "$model" != - ] || model=default
   [ "$effort" != - ] || effort=default
   control_args=("$id" relaunch --harness "$harness" --model "$model" --effort "$effort")
@@ -389,6 +445,141 @@ cmd_relaunch() {
   # endpoint's own republished metadata - rather than trusting these argv
   # values - is what makes that record correct even when relaunch resolved
   # "default" against a configured pin this call never saw.
+  print_route "$id"
+}
+
+# True when <pid> is the pane's shell, one of its foreground processes, or a
+# descendant of its shell, read from Herdr's own process-info plus the process
+# table (the same two sources bin/backends/herdr.sh's pane proofs use).
+adopt_pid_in_pane() { # <session> <pane> <pid>
+  local session=$1 pane=$2 pid=$3 info shell_pid fg ps_bin rows
+  info=$(fm_backend_herdr_cli "$session" pane process-info --pane "$pane" 2>/dev/null) || return 1
+  printf '%s' "$info" | jq -e --arg pane "$pane" \
+    '.result.type == "pane_process_info" and .result.process_info.pane_id == $pane' >/dev/null 2>&1 || return 1
+  shell_pid=$(printf '%s' "$info" | jq -er '.result.process_info.shell_pid | select(type == "number" and . > 1) | floor' 2>/dev/null) || return 1
+  [ "$pid" != "$shell_pid" ] || return 0
+  fg=$(printf '%s' "$info" | jq -r '.result.process_info.foreground_processes[]?.pid | select(type == "number") | floor' 2>/dev/null) || fg=
+  case " $(printf '%s' "$fg" | tr '\n' ' ') " in *" $pid "*) return 0 ;; esac
+  ps_bin=${FM_HERDR_PS_BIN:-ps}
+  rows=$(LC_ALL=C "$ps_bin" -axo pid=,ppid= 2>/dev/null) || return 1
+  printf '%s\n' "$rows" | awk -v want="$pid" -v root="$shell_pid" '
+    { ppid[$1] = $2 }
+    END {
+      p = want
+      for (i = 0; i < 64 && p != "" && p > 1; i++) {
+        if (p == root) exit 0
+        p = ppid[p]
+      }
+      exit 1
+    }'
+}
+
+# The working directory of a live process, resolved to a physical path.
+adopt_pid_cwd() { # <pid>
+  local pid=$1 dir
+  if [ -d "/proc/$pid" ]; then
+    dir=$(readlink "/proc/$pid/cwd" 2>/dev/null) || return 1
+  elif command -v lsof >/dev/null 2>&1; then
+    dir=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1) || return 1
+  else
+    return 1
+  fi
+  [ -n "$dir" ] && [ -d "$dir" ] || return 1
+  (cd -- "$dir" && pwd -P)
+}
+
+adopt_agent_label_matches() { # <label> <harness>
+  case "$1" in
+    "$2") return 0 ;;
+    pi) [ "$2" = pi-signed ] ;;
+    *) return 1 ;;
+  esac
+}
+
+cmd_adopt() {
+  local id=$1 sid=$2 meta session pane list out agent_label harness found=0 candidate
+  local pid lock_session holder_cwd home_phys info workspace tab old_state lock tmp line
+  validate_id "$id"
+  validate_home "$id"
+  case "$sid" in ''|*[!A-Za-z0-9._-]*) die "invalid agent session id" ;; esac
+  meta=$(meta_path "$id")
+  fm_backend_validate_task_endpoint "$meta" "$id" 2>/dev/null \
+    || die "remote secondmate $id has no valid endpoint record to rebind; adopt only rebinds an existing route"
+  [ "$FM_BACKEND_VALIDATED_BACKEND" = herdr ] || die "adopt supports only a Herdr endpoint record, not '$FM_BACKEND_VALIDATED_BACKEND'"
+  harness=$(fm_meta_get "$meta" harness)
+  [ "$(fm_meta_get "$meta" kind)" = secondmate ] || die "endpoint record for $id is not a secondmate record"
+  remote_herdr_session_resolve || die "$(remote_herdr_session_error)"
+  session=$REMOTE_HERDR_SESSION
+  fm_backend_source herdr >/dev/null 2>&1 || die "the herdr backend adapter cannot be loaded"
+  command -v jq >/dev/null 2>&1 || die "jq is required to read Herdr's pane records"
+  [ "$(fm_backend_herdr_server_running_state "$session")" = running ] \
+    || die "the Herdr server for session '$session' is not running; adopt never starts one"
+  # The recorded endpoint must not itself be a live agent: two agents is not a rebind.
+  old_state=$(fm_backend_agent_state herdr "$FM_BACKEND_VALIDATED_TARGET" 2>/dev/null || printf 'unreadable\n')
+  [ "$old_state" != alive ] || die "the recorded endpoint $FM_BACKEND_VALIDATED_TARGET is still alive; adopt rebinds only a dead or missing endpoint"
+  # The pane: exactly one pane in the selected session holds this agent session.
+  list=$(fm_backend_herdr_cli "$session" pane list 2>/dev/null) || die "cannot list panes in Herdr session '$session'"
+  pane=
+  while IFS= read -r candidate; do
+    [ -n "$candidate" ] || continue
+    out=$(fm_backend_herdr_cli "$session" agent get "$candidate" 2>/dev/null) || continue
+    if [ "$(printf '%s' "$out" | jq -r '.result.agent.agent_session.value // empty' 2>/dev/null)" = "$sid" ]; then
+      found=$((found + 1))
+      pane=$candidate
+      agent_label=$(printf '%s' "$out" | jq -r '.result.agent.agent // empty' 2>/dev/null)
+    fi
+  done < <(printf '%s' "$list" | jq -r '.result.panes[]?.pane_id // empty' 2>/dev/null)
+  [ "$found" -ge 1 ] || die "no pane in Herdr session '$session' holds agent session $sid"
+  [ "$found" -eq 1 ] || die "$found panes in Herdr session '$session' hold agent session $sid; refusing an ambiguous bind"
+  adopt_agent_label_matches "$agent_label" "$harness" \
+    || die "the pane's agent is '${agent_label:-unknown}', but the record for $id says harness '$harness'"
+  # The home's lock must name a live harness process inside that pane, and its
+  # session sidecar must carry the same agent session id.
+  fm_session_lock_inspect "$TARGET_HOME/state"
+  [ "$FM_LOCK_INSPECT_STATE" = held ] \
+    || die "$TARGET_HOME/state/.lock does not name a live harness process (lock is $FM_LOCK_INSPECT_STATE); nothing to adopt"
+  pid=$FM_LOCK_INSPECT_PID
+  lock="$TARGET_HOME/state/.lock-session"
+  [ -f "$lock" ] && [ ! -L "$lock" ] || die "$lock is missing, so the lock holder's agent session cannot be proven"
+  IFS= read -r lock_session < "$lock" || true
+  [ "$lock_session" = "$sid" ] \
+    || die "$lock names agent session '${lock_session:-empty}', not $sid"
+  adopt_pid_in_pane "$session" "$pane" "$pid" \
+    || die "lock holder pid $pid is not inside pane $session:$pane"
+  holder_cwd=$(adopt_pid_cwd "$pid") || die "cannot read the working directory of lock holder pid $pid"
+  home_phys=$(cd -- "$TARGET_HOME" && pwd -P)
+  [ "$holder_cwd" = "$home_phys" ] \
+    || die "lock holder pid $pid runs in $holder_cwd, not this home $home_phys"
+  info=$(fm_backend_herdr_cli "$session" pane get "$pane" 2>/dev/null) || die "cannot read pane $pane"
+  workspace=$(printf '%s' "$info" | jq -r '.result.pane.workspace_id // empty' 2>/dev/null)
+  tab=$(printf '%s' "$info" | jq -r '.result.pane.tab_id // empty' 2>/dev/null)
+  [ -n "$workspace" ] && [ -n "$tab" ] || die "pane $pane reports no workspace or tab"
+  if ! fm_backend_endpoint_atom_valid "$workspace" || ! fm_backend_endpoint_atom_valid "${tab//:/_}" \
+    || ! fm_backend_endpoint_atom_valid "${pane//:/_}"; then
+    die "pane $pane reports ids that are not valid endpoint ids"
+  fi
+  # Rewrite only the endpoint fields, in place and in order. The old endpoint's
+  # process identity (proc_*) describes a process that is gone, so it goes too.
+  local meta_lock
+  meta_lock=$(fm_meta_lock_path "$meta") || die "remote secondmate metadata lock path is invalid"
+  fm_task_inbox_lock_acquire "$meta_lock" \
+    || die "remote secondmate endpoint metadata could not be locked"
+  tmp=$(mktemp "$CONTROL_STATE/.fm-adopt-meta.XXXXXX") || { fm_lock_release "$meta_lock"; die "cannot stage the updated record"; }
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      window=*) printf 'window=%s:%s\n' "$session" "$pane" ;;
+      herdr_session=*) printf 'herdr_session=%s\n' "$session" ;;
+      herdr_workspace_id=*) printf 'herdr_workspace_id=%s\n' "$workspace" ;;
+      herdr_tab_id=*) printf 'herdr_tab_id=%s\n' "$tab" ;;
+      herdr_pane_id=*) printf 'herdr_pane_id=%s\n' "$pane" ;;
+      proc_root=*|proc_root_id=*|proc_family=*) ;;
+      *) printf '%s\n' "$line" ;;
+    esac
+  done < "$meta" > "$tmp"
+  chmod 0600 "$tmp"
+  mv -f -- "$tmp" "$meta"
+  fm_lock_release "$meta_lock"
+  remote_endpoint_require "$id"
   print_route "$id"
 }
 
@@ -599,6 +790,7 @@ case "${1:-}" in
   sync) shift; [ "$#" -ge 1 ] && [ "$#" -le 2 ] || usage; cmd_sync "$@" ;;
   update) shift; [ "$#" -eq 1 ] || usage; cmd_update "$@" ;;
   retire) shift; [ "$#" -ge 1 ] && [ "$#" -le 2 ] || usage; cmd_retire "$@" ;;
+  adopt) shift; [ "$#" -eq 2 ] || usage; cmd_adopt "$@" ;;
   ''|-h|--help|help) usage ;;
   *) die "unknown command: $1" ;;
 esac

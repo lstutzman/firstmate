@@ -27,6 +27,7 @@ Provisioning checks any available supported backend; launch checks the selected 
 
 - The code root's Herdr remote session is reserved for remote fleet work and must not be used for personal work; [launch placement](#launch-or-recover) identifies that session.
 - The user's interactive Herdr session remains `default` and is not a remote-secondmate prerequisite.
+  Mates in the reserved session are invisible in the Herdr you watch; an account that wants them there opts in with a [selected session](#use-your-own-herdr-session).
 - Herdr's remote-session server belongs to the host's own GUI login session rather than to the SSH connection.
   As a result, the agent's endpoint survives every disconnection the primary's supervision depends on.
 - A remote Rex endpoint requires a persistent rex server started with `rex server start`, which is a detached daemon no SSH session owns.
@@ -455,10 +456,46 @@ Placement is per backend:
 - Herdr: all remote secondmates of one code root on a host share that root's remote session, `fm-remote` for the account's primary root, and retain separate `2ndmate-<id>` workspaces inside it.
 - Rex: each remote secondmate home gets its own `2ndmate-<id>-<hash>` session on the host's persistent personal rex server, the same placement rule a local secondmate home uses.
 
+### Use your own Herdr session
+
+The reserved remote session runs in its own server, so its mates never appear in the Herdr you watch.
+To place them in a session you already run, write that session's name on one line in `~/.firstmate/remote-herdr-session` on the host account, for example `default`.
+[The setting](configuration/secondmates-and-offices.md#remote-herdr-session-firstmateremote-herdr-session) lists the accepted names; the reserved `fm-remote` names are not.
+With it set:
+
+- Launch, relaunch, state, route, send, key, capture, observe, and retire use that session, and the route reports `herdr_session_source=selected` so the primary records the plain name.
+- Retire closes only that mate's own panes or workspace, never the session, its server, or another mate's panes, exactly as in the reserved session.
+- [`bin/fm-remote-doctor.sh`](../bin/fm-remote-doctor.sh) checks that the session's server is running and, on macOS, that it was born in the login session so its panes reach the login keychain.
+  It reports a gap as a human step and never starts, owns, reloads, or stops the server, and `--fix` never writes a launch agent or owner record for it.
+  The server must already be running in your own session, so a reboot or a stopped Herdr leaves launch refused until you start it.
+- The server is yours rather than a Firstmate-owned launch agent, so whatever restarts that session also affects the mates in it.
+
+Removing the file returns new launches to the reserved session; it does not move a mate that is already running.
+
+### Adopt an agent that is already running
+
+Launch and relaunch refuse when the home's `state/.lock` names a live process and the recorded endpoint is not that agent, because starting then would put a second agent beside it.
+The watcher's automatic relaunch goes through launch, so it is refused the same way and reports the reason instead of starting a duplicate.
+To bind the route to the agent that is already running, for example one started by hand in your visible Herdr session, run:
+
+```sh
+bin/fm-remote-secondmate-adopt.sh <id> <agent_session_id>
+```
+
+The host verb `adopt` never launches, relaunches, or stops anything.
+It finds the pane in the selected session whose Herdr agent session id is `<agent_session_id>` and refuses unless all of these hold:
+
+- The pane's agent matches the recorded harness, and the recorded endpoint is not alive.
+- The home's `state/.lock` names a live harness process that runs inside that pane with this home as its working directory.
+- The home's `state/.lock-session` equals `<agent_session_id>`.
+
+An agent started without Firstmate's launch flags is accepted when those checks pass.
+On success the host rewrites its own endpoint fields in place, and the wrapper rewrites the primary's `remote_herdr_session=` and `remote_target=` from the route the host confirmed; a refused adopt changes nothing.
+
 ### Refused and unsupported launches
 
 - An explicit request for any backend other than herdr or rex is refused rather than honored, and the remote host refuses one too.
-- An existing remote endpoint recorded outside its backend's contract - a Herdr session other than its code root's remote session, or a Rex route whose recorded server is not a local `unix://` endpoint - is classified as unverified and left untouched.
+- An existing remote endpoint recorded outside its backend's contract - a Herdr session other than its code root's remote session (or the account's [selected session](#use-your-own-herdr-session)), or a Rex route whose recorded server is not a local `unix://` endpoint - is classified as unverified and left untouched.
   Launch, liveness recovery, control, and retirement refuse it until an operator explicitly migrates it, instead of attempting a live cutover.
 - A launch after a host has drifted out of readiness fails with the doctor's own gap text instead of leaving a half-created endpoint.
 - Raw launch commands are not accepted for remote secondmates.
@@ -753,6 +790,8 @@ bin/fm-test-run.sh tests/fm-remote-transport-lanes.test.sh
 bin/fm-test-run.sh tests/fm-remote-doctor.test.sh
 bin/fm-test-run.sh tests/fm-remote-herdr-guard.test.sh
 bin/fm-test-run.sh tests/fm-remote-herdr-identity.test.sh
+bin/fm-test-run.sh tests/fm-remote-herdr-selected-session.test.sh
+bin/fm-test-run.sh tests/fm-remote-secondmate-adopt.test.sh
 bin/fm-test-run.sh tests/fm-project-origin.test.sh
 bin/fm-test-run.sh tests/fm-secondmate-sync.test.sh
 bin/fm-test-run.sh tests/fm-remote-reply.test.sh

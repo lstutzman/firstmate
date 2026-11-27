@@ -18,18 +18,34 @@
 # ~/.firstmate/remote-herdr-owner-<root-id>, where <root-id> is the first 16
 # hex digits of the SHA-256 of the root path.
 #
+# Opt-in selected session: an account that wants its remote second mates in a
+# Herdr session it already runs (for example the user's `default` session, so
+# the mates are visible in the Herdr the user watches) writes that session name
+# on one line to ~/.firstmate/remote-herdr-session. Absent that file, the
+# identity above is exactly as before. A selected session is the user's own
+# service: readiness only reads it and never creates, owns, reloads, or stops
+# it, and no launch agent or owner record is written for it.
+#
 # Functions:
 #   fm_remote_herdr_identity <fm-root>
 #     Sets FM_REMOTE_HERDR_SESSION, FM_REMOTE_HERDR_LABEL,
 #     FM_REMOTE_HERDR_OWNER_DIR, FM_REMOTE_HERDR_OWNER_FILE, and
 #     FM_REMOTE_HERDR_OWNER_ROOT (the root proven to own the resolved
-#     session, empty when unproven). Returns 1 when <fm-root> needs a
-#     root-derived identity and no SHA-256 tool resolves.
+#     session, empty when unproven), and FM_REMOTE_HERDR_SELECTED (1 when the
+#     session comes from the selection file, else 0; LABEL and OWNER_* are then
+#     empty). Returns 1 when <fm-root> needs a root-derived identity and no
+#     SHA-256 tool resolves, and 2 when the selection file names an unusable
+#     session; FM_REMOTE_HERDR_ERROR then says why.
 #   fm_remote_herdr_recorded_owner <owner-file>
 #     Prints the root recorded in <owner-file>, nothing when it is absent or
 #     not a plain file in a plain directory.
 #   fm_remote_herdr_session_name_valid <session>
 #     Succeeds for fm-remote and fm-remote-<root-id> only.
+#   fm_remote_herdr_selectable_session_name <session>
+#     Succeeds for a plain session name the selection file may hold: letters,
+#     digits, dot, underscore, and dash, at most 64 characters, starting with a
+#     letter or digit, and never an fm-remote or fm-remote-* name, because those
+#     belong to the code root's own service.
 
 fm_remote_herdr_recorded_owner() { # <owner-file>
   local file=$1 dir owner=
@@ -77,11 +93,51 @@ fm_remote_herdr_legacy_guard() { # <plist>
   return 1
 }
 
+fm_remote_herdr_selectable_session_name() { # <session>
+  case "$1" in
+    ''|-*|.*|_*|*[!A-Za-z0-9._-]*) return 1 ;;
+    fm-remote|fm-remote-*) return 1 ;;
+  esac
+  [ "${#1}" -le 64 ]
+}
+
+# Sets FM_REMOTE_HERDR_SELECTED_NAME (empty when no selection file exists).
+# Returns 2 with FM_REMOTE_HERDR_ERROR set when the file is not a plain file or
+# does not hold exactly one usable name. Both are consumed by the sourcing
+# caller, so their assignments read as unused here.
+# shellcheck disable=SC2034
+fm_remote_herdr_selected_session() {
+  local file="${HOME:-}/.firstmate/remote-herdr-session" name="" extra=""
+  FM_REMOTE_HERDR_ERROR=
+  FM_REMOTE_HERDR_SELECTED_NAME=
+  [ -e "$file" ] || [ -L "$file" ] || return 0
+  if [ ! -f "$file" ] || [ -L "$file" ] || [ -L "${file%/*}" ]; then
+    FM_REMOTE_HERDR_ERROR="$file must be a plain file"
+    return 2
+  fi
+  { IFS= read -r name || true; IFS= read -r extra || true; } < "$file"
+  if [ -n "$extra" ] || ! fm_remote_herdr_selectable_session_name "$name"; then
+    FM_REMOTE_HERDR_ERROR="$file must hold one plain Herdr session name (not fm-remote or fm-remote-*) on its first line"
+    return 2
+  fi
+  FM_REMOTE_HERDR_SELECTED_NAME=$name
+}
+
 # Consumed by the sourcing caller, so its assignments read as unused here.
 # shellcheck disable=SC2034
 fm_remote_herdr_identity() { # <fm-root>
   local root=$1 owner plist guard id
+  FM_REMOTE_HERDR_SELECTED=0
+  fm_remote_herdr_selected_session || return 2
   FM_REMOTE_HERDR_OWNER_DIR="${HOME:-}/.firstmate"
+  if [ -n "$FM_REMOTE_HERDR_SELECTED_NAME" ]; then
+    FM_REMOTE_HERDR_SELECTED=1
+    FM_REMOTE_HERDR_SESSION=$FM_REMOTE_HERDR_SELECTED_NAME
+    FM_REMOTE_HERDR_LABEL=
+    FM_REMOTE_HERDR_OWNER_FILE=
+    FM_REMOTE_HERDR_OWNER_ROOT=
+    return 0
+  fi
   FM_REMOTE_HERDR_SESSION=fm-remote
   FM_REMOTE_HERDR_LABEL=dev.firstmate.herdr.fm-remote
   FM_REMOTE_HERDR_OWNER_FILE="$FM_REMOTE_HERDR_OWNER_DIR/remote-herdr-owner"
