@@ -37,6 +37,7 @@ h2	backlog-and-decisions.md	Backlog backend
 h2	backlog-and-decisions.md	Open-decision reminders
 h2	runtime-backend.md	Runtime backend
 h2	supervision.md	Calm preference
+h2	supervision.md	Pi bash timeout cap
 h2	supervision.md	Pi repeated-read containment
 h2	supervision.md	Pi supervision branch
 h2	supervision.md	Pi supervision branch model and effort
@@ -73,7 +74,9 @@ h2	projects-and-forges.md	Forge selection
 h2	projects-and-forges.md	PR text selection
 h2	projects-and-forges.md	GitHub Enterprise hosts
 h2	projects-and-forges.md	External review tool
+h2	prs-and-pipeline.md	Explicit PR follows
 h2	prs-and-pipeline.md	PR health monitor
+h2	prs-and-pipeline.md	Answer words
 h2	prs-and-pipeline.md	PR hold settlement
 h2	prs-and-pipeline.md	PR registration scan
 h2	prs-and-pipeline.md	No-mistakes pipeline spend

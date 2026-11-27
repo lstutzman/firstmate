@@ -50,6 +50,9 @@ The coverage-guard test owns modeled real-hint headroom under that budget.
 Do not discount a local speedup from CI packing weights; refresh from CI artifacts instead.
 `tests/fm-backend-t3code.test.sh` and `tests/fm-t3-mcp.test.sh` run in the portable parallel lanes, so their hints sit in `tests/fm-test-ci-timings.tsv` and follow the 2026-11-07 parallel refresh above: every case id the backend suite spawns carries a per-run suffix and its cleanup removes only the `/tmp/fm-<id>` directories that run created, and both suites passed running concurrently with each other and beside another parallel suite (see [`fm-test-isolation-proof.md`](fm-test-isolation-proof.md)).
 
+The 2026-11-13 `tests/fm-pi-bash-timeout.test.sh` serial hint is a provisional local measurement of 1486 ms, the slowest of five successful `bin/fm-test-run.sh tests/fm-pi-bash-timeout.test.sh` samples (1288-1486 ms) on a macOS arm64 host, collected separately from coverage and lint checks.
+Replace it with an Ubuntu timing-artifact maximum at the next CI refresh; this is not whole-shard CI timing evidence.
+
 ## Parallel lanes
 
 The three parallel lanes use longest-processing-time assignment over those hints.

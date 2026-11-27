@@ -396,8 +396,10 @@ The lease outlives the pane: teardown closes the exact pane before it returns th
 An aborted spawn returns the lease only when Herdr confirms the task pane gone; otherwise it names the `treehouse return` command.
 
 Recovery is deliberately conservative and presentation-only.
+A control-plane Herdr reclaim skips presentation projection, which is presentation-only and never endpoint or ownership authority; the reclaim, like every recovery that cannot bind exactly, nests its fresh workspace under the dispatching home's workspace ([Watching and task containers](#watching-and-task-containers)).
 An existing journal suppresses another projected create.
 Before any recovery mutation, Firstmate holds both the task spawn lock and the named-session presentation lock.
+The presentation lock covers the projected layout mutation only and is released before the remaining spawn setup and agent launch; this fork leases the worktree slot before it takes the lock, so allocation never runs under it.
 That presentation lock lives in a namespace private to the OS account, so another account on the same host running its own Firstmate on Herdr cannot block this account's spawn, recovery, or teardown.
 A namespace at this account's name that another account owns, or that is not mode 700, is still refused and is never adopted, chowned, or removed.
 
