@@ -470,10 +470,30 @@ test_b1_unchecked_when_sub_issues_unreadable() {
   pass "fm-officer landing: a B1 whose sub-issues or open PRs cannot be read is named unchecked, not raised"
 }
 
+test_b1_vetting_budget_logs_a_starved_reopen() {
+  local home json dir
+  make_triage_world starved; home=$WORLD_HOME; dir="$TMP_ROOT/starved"
+  jq '.records["lstutzman/PropertyCompass2#9999"] = {repo: "lstutzman/PropertyCompass2", pr: 9999, head_sha: "h", merged_sha: "m", merged_at: "2026-10-21T10:00:00Z",
+        on_staging: true, staging_deployed: true, on_main: false, main_promoted_at: null, in_production: false, production_release: null,
+        linear_ids: ["PC-1000"], linear_state: {"PC-1000": "Done"}, landed_via: "lone"}
+      | .items["PC-1000"] = ["lstutzman/PropertyCompass2#9999"]' "$dir/facts.json" > "$dir/f" && mv "$dir/f" "$dir/facts.json"
+  printf '{"ok":true,"data":{"issue":{"identifier":"PC-1000","state":"Done"},"subIssues":[]}}\n' > "$dir/views/PC-1000.json"
+  sed -i.bak 's/; model: none/; max-corrections: 2; model: none/' "$home/data/officers.md"
+  run_landing "$home" >/dev/null || fail "landing run must succeed"
+  json="$home/data/officers/landing/$DATE.json"
+  assert_equals reopen "$(jq -r '.items[] | select(.item == "PC-1000") | .correction' "$json")" "PC-1000 is a false Done to reopen"
+  assert_equals 10 "$(($(grep -c '^issue view' "$LINEAR_LOG") + $(wc -l < "$GH_LOG")))" "vetting stops at the shared budget of five reads per allowed correction"
+  assert_no_grep "PC-1000" "$LINEAR_LOG" "the reopen gets no read once vetting used the budget"
+  assert_equals skipped "$(jq -r '.writes_done[] | select(.item == "PC-1000") | .action' "$json")" "the starved reopen is logged as skipped"
+  assert_equals "re-check budget used" "$(jq -r '.writes_done[] | select(.item == "PC-1000") | .reason' "$json")" "the skip names the budget"
+  pass "fm-officer landing: a reopen left without a read by B1 vetting is logged as skipped"
+}
+
 
 test_classes_from_facts
 test_b1_triage_rows
 test_b1_unchecked_when_sub_issues_unreadable
+test_b1_vetting_budget_logs_a_starved_reopen
 test_registry_refuses_in_staging_as_reopen_state
 test_registry_refuses_released_as_reopen_state
 test_pass_refuses_released_as_reopen_state

@@ -420,6 +420,8 @@ def correct_items(view, doc, out, date, max_corrections, reopen_state, release_i
             current = ((b1_checks or {}).get(item) or {}).get("current") if action == "report" else None
             if not current:
                 if reads_left <= 0:
+                    results.append({"item": item, "action": "skipped", "to": to_state, "record": used,
+                                    "reason": "re-check budget used"})
                     continue
                 reads_left -= 1
                 current = linear(["issue", "view", item, "--sub-issues"])
