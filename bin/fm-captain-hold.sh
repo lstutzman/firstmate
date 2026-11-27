@@ -146,7 +146,8 @@
 # the label carrying the option words as the captain saw them; a missing or
 # blank label reports the row `skipped:` and
 # feeds nothing, because missing words are never inferred. With that same flag,
-# blank labels are omitted and a non-reconciled resolution record ends with one
+# blank labels are omitted and a resolution record that is neither a
+# reconcile nor a deadline-default close ends with one
 # `Selected answer:` line only when it holds a single-line selection: the
 # displayed label when present, else the answer, else a decision that is one
 # line long. A multi-line decision with no `Answer:` or `Answer as shown to

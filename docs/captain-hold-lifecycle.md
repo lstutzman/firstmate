@@ -102,7 +102,7 @@ A quiet record is a present captain and does not refuse.
 It then works in this order:
 
 1. It durably writes a resolution block carrying the decision digest and a `Resolution mode:`.
-   With answer words enabled, a non-reconciled block also ends with at most one single-line `Selected answer:` field for readers of answered calls.
+   With answer words enabled, a block that is neither a reconcile nor a deadline-default close also ends with at most one single-line `Selected answer:` field for readers of answered calls.
    `bin/fm-captain-hold.sh --help` owns how that value is chosen and when it is absent.
 2. It retains the leading hold-set stamp until the selected `tasks-axi done` or `tasks-axi unhold` transition succeeds.
 3. It then restores the successful record's resolution-first body ordering.
