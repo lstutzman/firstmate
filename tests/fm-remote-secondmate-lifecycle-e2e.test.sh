@@ -560,6 +560,19 @@ assert_grep "remote launch returned Herdr session 'default', expected 'fm-remote
 cmp -s "$TMP_ROOT/parent-ios-before-nonherdr.meta" "$PARENT/state/ios.meta" \
   || fail "parent rewrote its endpoint metadata after a default-session route refusal"
 
+# The same plain session name is accepted when the host says its account
+# selected it (~/.firstmate/remote-herdr-session) and the target is inside it.
+set +e
+FM_FAKE_SSH_MODE=launch-selected-session-route remote_env "$ROOT/bin/fm-spawn.sh" ios --secondmate \
+  > "$TMP_ROOT/spawn-selected-session-route.out" 2>&1
+selected_session_parent_rc=$?
+set -e
+[ "$selected_session_parent_rc" -eq 0 ] \
+  || fail "parent refused a host-selected session route"$'\n'"$(cat "$TMP_ROOT/spawn-selected-session-route.out")"
+assert_grep 'remote_herdr_session=default' "$PARENT/state/ios.meta" "parent did not record the host-selected session"
+assert_grep 'remote_target=default:w1:p2' "$PARENT/state/ios.meta" "parent did not record the host-selected target"
+cp "$TMP_ROOT/parent-ios-before-nonherdr.meta" "$PARENT/state/ios.meta"
+
 remote_route_meta="$REMOTE_HOME/state/parent-route/ios.meta"
 cp "$remote_route_meta" "$TMP_ROOT/remote-ios-before-legacy.meta"
 cat > "$remote_route_meta" <<EOF

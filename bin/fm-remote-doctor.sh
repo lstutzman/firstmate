@@ -121,6 +121,9 @@ LAUNCH_AGENT_LABEL=dev.firstmate.herdr.fm-remote
 HERDR_OWNER_DIR="${HOME:-}/.firstmate"
 HERDR_OWNER_FILE="$HERDR_OWNER_DIR/remote-herdr-owner"
 HERDR_OWNER_ROOT=
+# 1 when ~/.firstmate/remote-herdr-session selects the user's own Herdr session
+# for remote mates: that service is only read here, never created or owned.
+HERDR_SESSION_SELECTED=0
 LAUNCH_AGENT_DIR="${HOME:-}/Library/LaunchAgents"
 LAUNCH_AGENT_LOG_DIR="${HOME:-}/Library/Logs"
 ENTRYPOINT_LINK="${HOME:-}/.local/bin/fm-remote-entrypoint.sh"
@@ -171,8 +174,9 @@ case "$DOCTOR_BACKEND" in
 esac
 if [ "$DOCTOR_BACKEND" = herdr ] && [ "$MODE" != worker-tool-probe ]; then
   fm_remote_herdr_identity "$FM_ROOT" \
-    || { printf 'error: no SHA-256 tool resolves to name the Herdr session for code root %s\n' "$FM_ROOT" >&2; exit 1; }
+    || { printf 'error: %s\n' "${FM_REMOTE_HERDR_ERROR:-no SHA-256 tool resolves to name the Herdr session for code root $FM_ROOT}" >&2; exit 1; }
   HERDR_SESSION_NAME=$FM_REMOTE_HERDR_SESSION
+  HERDR_SESSION_SELECTED=$FM_REMOTE_HERDR_SELECTED
   LAUNCH_AGENT_LABEL=$FM_REMOTE_HERDR_LABEL
   HERDR_OWNER_DIR=$FM_REMOTE_HERDR_OWNER_DIR
   HERDR_OWNER_FILE=$FM_REMOTE_HERDR_OWNER_FILE
@@ -1052,6 +1056,50 @@ check_herdr_server() {
     "rerun this command with --fix to start it"
 }
 
+# A selected session is the user's own Herdr service: it must already be
+# running, and on darwin its server must have been born in the Aqua login
+# session so its panes reach the login keychain. Nothing here starts, adopts,
+# or reloads it, so every gap is a human step and --fix never touches it.
+check_selected_herdr_server() {
+  local birth
+  record herdr-owner "skip: session $HERDR_SESSION_NAME is selected in $HERDR_OWNER_DIR/remote-herdr-session and is not owned by this code root"
+  record launchagent "skip: selected session $HERDR_SESSION_NAME has no Firstmate launch agent"
+  record launchagent-scope "skip: selected session $HERDR_SESSION_NAME has no Firstmate launch agent"
+  record launchagent-loaded "skip: selected session $HERDR_SESSION_NAME has no Firstmate launch agent"
+  if ! herdr_cli_available; then
+    record herdr-server "human: herdr server status cannot be read without both herdr and jq on the runtime PATH" \
+      "install the missing tool reported above, then rerun this command"
+    return 0
+  fi
+  if ! herdr_server_running; then
+    record herdr-server "human: the selected Herdr session $HERDR_SESSION_NAME is not running" \
+      "start Herdr session $HERDR_SESSION_NAME yourself (Firstmate never starts a session you selected), or remove $HERDR_OWNER_DIR/remote-herdr-session to use the code root's fm-remote session"
+    return 0
+  fi
+  if [ "$PLATFORM" != darwin ]; then
+    record herdr-server "ok: selected session $HERDR_SESSION_NAME is running"
+    return 0
+  fi
+  birth=$(herdr_server_birth)
+  case "$birth" in
+    launchd\ *|worker\ *)
+      record herdr-server "ok: selected session $HERDR_SESSION_NAME is running in the Aqua login session (pid ${birth#* }, ${birth%% *})"
+      ;;
+    nolsof)
+      record herdr-server "human: selected session $HERDR_SESSION_NAME is running but lsof does not resolve, so its server's birth cannot be proven" \
+        "install lsof on that account so this check can tell an Aqua-born server from one started over SSH"
+      ;;
+    unproven)
+      record herdr-server "human: selected session $HERDR_SESSION_NAME is running but no herdr process can be shown to own its socket, so its birth cannot be proven" \
+        "restart Herdr session $HERDR_SESSION_NAME from the login session at the console; Firstmate never restarts a session you selected"
+      ;;
+    *)
+      record herdr-server "human: selected session $HERDR_SESSION_NAME is served by pid ${birth#* } born outside the Aqua login session (${birth%% *}), so its panes cannot reach the login keychain" \
+        "restart Herdr session $HERDR_SESSION_NAME from the login session at the console (not over SSH); Firstmate never restarts a session you selected"
+      ;;
+  esac
+}
+
 shared_entrypoint_valid() { # <link-target>
   local target=$1 root
   case "$target" in /*/bin/fm-remote-entrypoint.sh) ;; *) return 1 ;; esac
@@ -1105,8 +1153,12 @@ run_checks() { # <resolved-login-shell>
   # server, and the no-backend gap has nothing further to prove.
   case "$DOCTOR_BACKEND" in
     herdr)
-      check_launch_agent "$shell"
-      check_herdr_server
+      if [ "$HERDR_SESSION_SELECTED" = 1 ]; then
+        check_selected_herdr_server
+      else
+        check_launch_agent "$shell"
+        check_herdr_server
+      fi
       ;;
     rex) check_rex_server ;;
   esac

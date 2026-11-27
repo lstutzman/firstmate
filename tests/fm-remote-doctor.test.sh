@@ -1584,3 +1584,66 @@ assert_contains "$DOCTOR_OUT" 'check remote-job-worker=ok:' \
 assert_not_contains "$DOCTOR_OUT" 'check herdr-server=' "the herdr server was checked for rex on linux"
 [ ! -s "$CASE_LAUNCHCTL_LOG" ] || fail "the linux rex path invoked launchctl"
 pass "a Linux host verifies rex without any Aqua-specific requirement"
+
+# --- a selected Herdr session is only read, never created, owned, or stopped --
+# ~/.firstmate/remote-herdr-session names the user's own session (here the
+# default one). Readiness reads it and reports every gap as a human step.
+
+# A running, Aqua-born selected session is ready, and --fix writes no launch
+# agent, owner record, or server for it. The user's default server is born from
+# its own GUI-domain job (dev.firstmate.herdr), not the fm-remote one.
+hold XPC_SERVICE_NAME=dev.firstmate.herdr
+DEFAULT_HOLDER_PID=$HOLDER_PID
+new_case Darwin with-herdr gui
+printf 'default\n' > "$CASE_HOME/.firstmate/remote-herdr-session"
+printf 'true\n' > "$CASE_STATE/herdr.running.default"
+printf 'loaded\n' > "$CASE_STATE/interactive-loaded"
+printf '%s\n' "$DEFAULT_HOLDER_PID" > "$CASE_STATE/socket-owner"
+rm -f "$CASE_HOME/.firstmate/remote-herdr-owner"
+doctor --fix
+assert_contains "$DOCTOR_OUT" 'check herdr-server=ok: selected session default is running in the Aqua login session' \
+  "a running Aqua-born selected session was not accepted"
+assert_not_contains "$DOCTOR_OUT" 'check launchagent=ok' "a launch agent was checked for a selected session"
+assert_not_contains "$DOCTOR_OUT" 'fix launchagent' "--fix wrote a launch agent for a selected session"
+assert_not_contains "$DOCTOR_OUT" 'fix herdr-owner' "--fix recorded ownership of a selected session"
+[ ! -e "$CASE_PLIST" ] || fail "--fix installed the fm-remote launch agent beside a selected session"
+[ ! -e "$CASE_HOME/.firstmate/remote-herdr-owner" ] || fail "--fix wrote an owner record for a selected session"
+! grep -Eq -- "^(bootout|bootstrap|kickstart) .*$LABEL" "$CASE_LAUNCHCTL_LOG" || fail "--fix drove the fm-remote launch agent for a selected session"
+pass "a running selected session is accepted and --fix never creates or owns it"
+
+# A selected session that is not running is a human gap, and --fix leaves it.
+new_case Darwin with-herdr gui
+printf 'default\n' > "$CASE_HOME/.firstmate/remote-herdr-session"
+printf 'false\n' > "$CASE_STATE/herdr.running.default"
+doctor --fix
+expect_code 1 "$DOCTOR_RC" "a stopped selected session was reported ready"
+assert_contains "$DOCTOR_OUT" 'check herdr-server=human: the selected Herdr session default is not running' \
+  "a stopped selected session was not a human gap"
+assert_not_contains "$DOCTOR_OUT" 'fix herdr-server' "--fix tried to start a selected session"
+[ "$(cat "$CASE_STATE/herdr.running.default")" = false ] || fail "--fix started the user's selected session"
+pass "a stopped selected session is a human gap that --fix leaves alone"
+
+# A selected session served from outside the Aqua login session cannot reach
+# the keychain; the gap is human and nothing is taken over.
+new_case Darwin with-herdr gui
+printf 'default\n' > "$CASE_HOME/.firstmate/remote-herdr-session"
+printf 'true\n' > "$CASE_STATE/herdr.running.default"
+printf '%s\n' "$SSH_HOLDER_PID" > "$CASE_STATE/socket-owner"
+doctor --fix
+expect_code 1 "$DOCTOR_RC" "an SSH-born selected session was reported ready"
+assert_contains "$DOCTOR_OUT" 'check herdr-server=human: selected session default is served by pid' \
+  "an SSH-born selected session was not a human gap"
+assert_not_contains "$DOCTOR_OUT" 'fix herdr-server' "--fix tried to take over a selected session"
+! grep -Eq -- '^(bootout|bootstrap|kickstart) .*dev\.firstmate\.herdr' "$CASE_LAUNCHCTL_LOG" || fail "--fix drove a Herdr launch agent for a selected session"
+pass "a selected session born outside the Aqua login session is a human gap, never taken over"
+
+# An unusable selection stops the doctor with the file's own message.
+for bad in fm-remote fm-remote-0123456789abcdef 'two words' ''; do
+  new_case Darwin with-herdr gui
+  printf '%s\n' "$bad" > "$CASE_HOME/.firstmate/remote-herdr-session"
+  doctor
+  expect_code 1 "$DOCTOR_RC" "an unusable selection '$bad' was accepted"
+  assert_contains "$DOCTOR_OUT" 'remote-herdr-session must hold one plain Herdr session name' \
+    "the unusable selection '$bad' was not named"
+done
+pass "an unusable selection file stops the doctor with its reason"
