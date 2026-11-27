@@ -798,10 +798,12 @@ unit_signal_exits_with_lock_cleanup() {
   child=$!
   # Signal only once the lifecycle actually holds its lock. Killing before the
   # lock exists tests nothing, and on a loaded machine it used to race: the
-  # lock could be created just after the kill and outlive the process.
+  # lock could be created just after the kill and outlive the process. The
+  # directory appears before its owner files are written, and release only
+  # removes a lock that records this pid, so wait for the full publication.
   local locked=0 _
   for _ in $(seq 1 100); do
-    if [ -d "$st/state/.afk-launch.lock" ]; then locked=1; break; fi
+    if [ -s "$st/state/.afk-launch.lock/pid-identity" ]; then locked=1; break; fi
     sleep 0.05
   done
   [ "$locked" = 1 ] || fail "launcher signal: lifecycle never acquired its lock to interrupt"
