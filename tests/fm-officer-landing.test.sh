@@ -3,8 +3,8 @@
 # bin/fm-officer.sh run with a landing-truth facts fixture of the fleet-app
 # job's documented shape and a fake linear-axi that records every call.
 #
-# Covers: B1 held by an open sub-issue or an unmerged PR, and unchecked when its
-# sub-issues cannot be read (the 2026-11-26 digest's 15 false alarms as fixtures), A1 (Done, a linked PR never on main or in any release, reopened;
+# Covers: B1 held by an open sub-issue or an open PR on GitHub, and unchecked
+# when its sub-issues or open PRs cannot be read (the 2026-11-26 digest's 15 false alarms as fixtures), A1 (Done, a linked PR never on main or in any release, reopened;
 # Done on main awaiting release, reported only; Done with no fact naming it), B1 (in production but not Done; on staging but before In
 # Staging), no Linear writes unless the registry turns them on, closing only
 # fully landed items with an evidence comment through --dry-run then --verify,
@@ -89,6 +89,25 @@ SH
   chmod +x "$1/linear-axi"
 }
 
+# fake_gh <fakebin> <log> <open-prs>: a gh that logs every call and answers
+# `pr list --search "<item> in:title,body"` with the open PRs listed for that
+# item in <open-prs> ("PC-1=7,8 PC-2=fail"; "fail" exits 1), else none.
+fake_gh() {
+  cat > "$1/gh" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$2"
+item=\${8%% *}
+for entry in $3; do
+  [ "\${entry%%=*}" = "\$item" ] || continue
+  [ "\${entry#*=}" != fail ] || exit 1
+  printf '%s' "\${entry#*=}" | jq -R 'split(",") | map({number: tonumber, url: "https://github.com/lstutzman/PropertyCompass2/pull/\\(.)"})'
+  exit 0
+done
+echo '[]'
+SH
+  chmod +x "$1/gh"
+}
+
 landing_registry() {  # <home> <facts> [writes]: no writes argument leaves the field out.
   local writes=''
   [ -z "${3:-}" ] || writes="writes: $3; "
@@ -106,6 +125,7 @@ make_world() {
   FAKEBIN=$(fm_fakebin "$TMP_ROOT/$name")
   LINEAR_LOG="$TMP_ROOT/$name/linear.calls"
   fake_linear "$FAKEBIN" "$LINEAR_LOG"
+  fake_gh "$FAKEBIN" "$TMP_ROOT/$name/gh.calls" ""
   WORLD_HOME=$home
 }
 
@@ -335,30 +355,32 @@ test_pass_refuses_released_as_reopen_state() {
 }
 
 # The 2026-11-26 digest's 15 B1 findings (Navigator triage, FLEET-241). Row:
-# item|Linear state|PR numbers (all merged and in production)|open sub-issues (id:state,...)|unmerged PR number
-TRIAGE_ROWS='PC-1902|In Progress|4327,4476,4479,4481|PC-5876:In Staging,PC-5834:In Staging|
-PC-2356|In Staging|6238,6239,6276|PC-4088:Backlog|
-PC-2686|In Staging|3946,6211,6256|PC-5630:In Staging|
-PC-3287|Backlog|4771||
-PC-3479|Backlog|3927||
-PC-3553|Backlog|4305||
-PC-4280|In Progress|4955,4957||6733
-PC-4310|Backlog|4724||
-PC-4652|In Staging|6515||
-PC-4678|In Staging|6540,6629|PC-5792:In Staging|
-PC-4719|Backlog|5326||
-PC-4725|Backlog|5267,5292||
-PC-4835|Backlog|5443,5452,5854,5877||
-PC-4952|In Progress|5665,5720,5679,6080|PC-4955:Backlog,PC-4956:Backlog|
-PC-5329|In Progress|6154|PC-5333:Backlog,PC-5332:Released|'
+# item|Linear state|PR numbers (all merged and in production)|open sub-issues (id:state,...)
+# PC-4280's open PR 6733 is not in the landing facts, as on the real digest;
+# only GitHub's open-PR search names it.
+TRIAGE_ROWS='PC-1902|In Progress|4327,4476,4479,4481|PC-5876:In Staging,PC-5834:In Staging
+PC-2356|In Staging|6238,6239,6276|PC-4088:Backlog
+PC-2686|In Staging|3946,6211,6256|PC-5630:In Staging
+PC-3287|Backlog|4771|
+PC-3479|Backlog|3927|
+PC-3553|Backlog|4305|
+PC-4280|In Progress|4955,4957|
+PC-4310|Backlog|4724|
+PC-4652|In Staging|6515|
+PC-4678|In Staging|6540,6629|PC-5792:In Staging
+PC-4719|Backlog|5326|
+PC-4725|Backlog|5267,5292|
+PC-4835|Backlog|5443,5452,5854,5877|
+PC-4952|In Progress|5665,5720,5679,6080|PC-4955:Backlog,PC-4956:Backlog
+PC-5329|In Progress|6154|PC-5333:Backlog,PC-5332:Released'
 
-make_triage_world() {  # <name>: facts and Linear views from TRIAGE_ROWS; sets WORLD_HOME, FAKEBIN, LINEAR_LOG.
-  local name=$1 dir home item state prs kids open pr
+make_triage_world() {  # <name> [gh open-prs]: facts and Linear views from TRIAGE_ROWS; sets WORLD_HOME, FAKEBIN, LINEAR_LOG, GH_LOG.
+  local name=$1 dir home item state prs kids pr
   dir="$TMP_ROOT/$name"; home="$dir/home"
   officer_home "$home"
   mkdir -p "$dir/views"
   printf '{"schema_version": 2, "generated_at": "2026-10-23T23:40:00Z", "staging_sha": "a", "production_sha": "b", "records": {}, "items": {}}\n' > "$dir/facts.json"
-  while IFS='|' read -r item state prs kids open; do
+  while IFS='|' read -r item state prs kids; do
     for pr in ${prs//,/ }; do
       jq --arg i "$item" --arg s "$state" --argjson n "$pr" '
         .records["lstutzman/PropertyCompass2#\($n)"] = {repo: "lstutzman/PropertyCompass2", pr: $n, head_sha: "h", merged_sha: "m", merged_at: "2026-10-20T10:00:00Z",
@@ -366,13 +388,6 @@ make_triage_world() {  # <name>: facts and Linear views from TRIAGE_ROWS; sets W
           linear_ids: [$i], linear_state: {($i): $s}, landed_via: "lone"}
         | .items[$i] += ["lstutzman/PropertyCompass2#\($n)"]' "$dir/facts.json" > "$dir/f" && mv "$dir/f" "$dir/facts.json"
     done
-    if [ -n "$open" ]; then
-      jq --arg i "$item" --arg s "$state" --argjson n "$open" '
-        .records["lstutzman/PropertyCompass2#\($n)"] = {repo: "lstutzman/PropertyCompass2", pr: $n, head_sha: "h", merged_sha: null, merged_at: null,
-          on_staging: false, staging_deployed: false, on_main: false, main_promoted_at: null, in_production: false, production_release: null,
-          linear_ids: [$i], linear_state: {($i): $s}, landed_via: "lone"}
-        | .items[$i] += ["lstutzman/PropertyCompass2#\($n)"]' "$dir/facts.json" > "$dir/f" && mv "$dir/f" "$dir/facts.json"
-    fi
     jq -n --arg i "$item" --arg s "$state" --arg kids "$kids" '
       {ok: true, data: {issue: {identifier: $i, state: $s},
         subIssues: [($kids | split(",") | map(select(. != "")) | .[] | split(":") | {identifier: .[0], state: .[1]})]}}' > "$dir/views/$item.json"
@@ -390,6 +405,8 @@ case "\$1 \$2" in
 esac
 SH
   chmod +x "$FAKEBIN/linear-axi"
+  GH_LOG="$dir/gh.calls"
+  fake_gh "$FAKEBIN" "$GH_LOG" "${2-PC-4280=6733}"
   WORLD_HOME=$home
 }
 
@@ -402,21 +419,25 @@ test_b1_triage_rows() {
     assert_equals "" "$(finding "$json" "$item")" "$item has open sub-issues: no B1"
     assert_not_equals "" "$(jq -r --arg i "$item" '.items[] | select(.item == $i) | .b1_held[0]' "$json")" "$item is held with its open sub-issue named"
   done
-  assert_equals "" "$(jq -r '.findings[] | select(.item == "PC-4280" and .severity == "medium") | .class' "$json")" "PC-4280 has an unmerged linked PR: no release-path B1"
-  assert_equals low "$(jq -r '.findings[] | select(.item == "PC-4280") | .severity' "$json")" "the low B1 (proposed In Staging) is unchanged"
-  # The facts carry no mark that tells a mere id mention from a delivering PR
-  # (landed_via is "pile-<date>" or "lone"), and the open-children signal is
-  # absent for these rows, so they still raise: the mislink is the landing-truth
-  # job's to fix. Documented expected cases, not a claim that they are right.
+  assert_equals "" "$(finding "$json" PC-4280)" "PC-4280 has an open PR on GitHub: no B1"
+  assert_equals https://github.com/lstutzman/PropertyCompass2/pull/6733 "$(jq -r '.items[] | select(.item == "PC-4280") | .b1_held[0]' "$json")" "PC-4280 is held with its open PR named"
+  assert_grep "pr list -R lstutzman/PropertyCompass2 --state open --search PC-4280 in:title,body" "$GH_LOG" "the open PR is read from GitHub"
+  assert_no_grep "search PC-1902 " "$GH_LOG" "an item already held by a sub-issue is not searched on GitHub"
+  # Known residual cases outside the B1 rule: every linked PR is in production
+  # and nothing is open, so the rule raises them. A later fix that removes one
+  # updates its row here on purpose.
+  #   PC-3287, PC-4310, PC-4725: mislinked PRs (the PR names the item but does
+  #     not deliver it); the landing-truth job's to fix.
+  #   PC-3479, PC-3553, PC-4652, PC-4719, PC-4835: unmet acceptance items with
+  #     no open sub-issue or open PR.
   for item in PC-3287 PC-4310 PC-4725 PC-3479 PC-3553 PC-4652 PC-4719 PC-4835; do
-    assert_equals B1 "$(finding "$json" "$item")" "$item has no open sub-issue or open PR in the facts: still raised (documented)"
+    assert_equals B1 "$(finding "$json" "$item")" "$item is a known residual case: still raised"
   done
-  assert_equals 8 "$(jq '[.findings[] | select(.class == "B1" and .severity == "medium")] | length' "$json")" "7 of the 15 false alarms are held, 8 remain"
+  assert_equals 8 "$(jq '[.findings[] | select(.class == "B1" and .severity == "medium")] | length' "$json")" "7 of the 15 false alarms are held, 8 known residual cases remain"
   assert_equals 8 "$(grep -c '^issue comment PC-4688 --body-file.*--verify' "$LINEAR_LOG")" "only the 8 raised items are reported"
   assert_no_grep "PC-1902 --body" "$LINEAR_LOG" "a held epic is never reported"
   assert_equals 1 "$(grep -c '^issue view PC-3287 ' "$LINEAR_LOG")" "the vetting read is the only read: the report reuses it"
-  assert_no_grep "issue view PC-4280" "$LINEAR_LOG" "an item with an unmerged PR is not read at all"
-  pass "fm-officer landing: B1 skips items with open sub-issues or an unmerged PR (the 2026-11-26 triage rows)"
+  pass "fm-officer landing: B1 skips items with open sub-issues or an open PR (the 2026-11-26 triage rows)"
 }
 
 test_b1_unchecked_when_sub_issues_unreadable() {
@@ -426,15 +447,27 @@ test_b1_unchecked_when_sub_issues_unreadable() {
   run_landing "$home" >/dev/null || fail "an unreadable item must not fail the run"
   json="$home/data/officers/landing/$DATE.json"
   assert_equals low "$(jq -r '.findings[] | select(.item == "PC-3287") | .severity' "$json")" "an unreadable item is named, not raised as a miss"
-  assert_contains "$(jq -r '.findings[] | select(.item == "PC-3287") | .summary' "$json")" "sub-issues were not checked" "the digest says it is unchecked"
+  assert_contains "$(jq -r '.findings[] | select(.item == "PC-3287") | .summary' "$json")" "sub-issues and open PRs were not checked" "the digest says it is unchecked"
   assert_no_grep "comment PC-4688 --body-file $TMP_ROOT/unreadable/home/data/officers/landing/.miss-$DATE-PC-3287" "$LINEAR_LOG" "no report for it"
   assert_equals 7 "$(jq '[.findings[] | select(.class == "B1" and .severity == "medium")] | length' "$json")" "the other raised items are unaffected"
   make_triage_world budget; home=$WORLD_HOME
   sed -i.bak 's/; model: none/; max-corrections: 0; model: none/' "$home/data/officers.md"
   run_landing "$home" >/dev/null || fail "landing run must succeed"
   assert_no_grep "issue view" "$LINEAR_LOG" "max-corrections 0 reads nothing"
+  assert_absent "$GH_LOG" "max-corrections 0 searches nothing on GitHub"
   assert_equals 0 "$(jq '[.findings[] | select(.class == "B1" and .severity == "medium")] | length' "$home/data/officers/landing/$DATE.json")" "unread candidates are unchecked, never raised"
-  pass "fm-officer landing: a B1 whose sub-issues cannot be read is named unchecked, not raised"
+  make_triage_world ghfail "PC-4280=fail"; home=$WORLD_HOME
+  run_landing "$home" >/dev/null || fail "a failed GitHub read must not fail the run"
+  json="$home/data/officers/landing/$DATE.json"
+  assert_equals low "$(jq -r '.findings[] | select(.item == "PC-4280") | .severity' "$json")" "an item whose open PRs cannot be read is named, not raised as a miss"
+  assert_contains "$(jq -r '.findings[] | select(.item == "PC-4280") | .summary' "$json")" "gh pr list lstutzman/PropertyCompass2 failed" "the digest names the failed read"
+  assert_no_grep ".miss-$DATE-PC-4280" "$LINEAR_LOG" "no report for it"
+  make_triage_world stale; home=$WORLD_HOME
+  run_landing "$home" $((NOW + 36 * 3600)) >/dev/null || fail "a stale-facts run must still finish"
+  assert_no_grep "issue view" "$LINEAR_LOG" "stale facts vet nothing in Linear"
+  assert_absent "$GH_LOG" "stale facts vet nothing on GitHub"
+  assert_contains "$(jq -r '.findings[] | select(.item == "PC-3287") | .summary' "$home/data/officers/landing/$DATE.json")" "not checked (facts stale)" "stale candidates are named unchecked"
+  pass "fm-officer landing: a B1 whose sub-issues or open PRs cannot be read is named unchecked, not raised"
 }
 
 

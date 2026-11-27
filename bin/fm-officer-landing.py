@@ -26,24 +26,27 @@ those facts plus Linear:
                      names the item at all;
   B1 false not-done  every PR linked to the item is merged and in production,
                      the item has no open sub-issue (a sub-issue not Done,
-                     Released, Canceled or Duplicate) and no linked PR is
-                     unmerged, but the item is not Done or Released (reported
-                     as a release-path miss, never written). An item with an
-                     open sub-issue is held, not raised: a PR that reached
-                     production is one slice of it. An item whose sub-issues
-                     cannot be read is named as unchecked (low), never raised
-                     as a miss. Linear's CLI shows no PR attachments, so a
-                     linked open PR is seen only as an unmerged record in the
-                     landing facts. The other B1: a linked PR is on staging
+                     Released, Canceled or Duplicate) and no open PR names it,
+                     but the item is not Done or Released (reported as a
+                     release-path miss, never written). An item with an open
+                     sub-issue, or with an open PR on GitHub whose title or
+                     body names it (gh pr list --state open --search, in the
+                     repositories of its linked PRs), is held, not raised: a
+                     PR that reached production is one slice of it. An item
+                     whose sub-issues or open PRs cannot be read is named as
+                     unchecked (low), never raised as a miss. The other B1: a
+                     linked PR is on staging
                      while the item is still before In Staging (proposed state
                      In Staging, never written here, unchanged).
 
 Linear's request budget is shared by the whole fleet, so Done items are read
 as one paged list of at most --done-window items, and the only per-item calls
-are one read of each release-path-miss candidate (its sub-issues, which the
-report write reuses as its re-check; at most five reads per allowed
-correction, and none for a miss already reported) and the re-check of an item
-just before reopening it.
+are one Linear read of each release-path-miss candidate (its sub-issues,
+which the report write reuses as its re-check), one GitHub read of its open
+PRs (only when it has no open sub-issue and its state has not moved), and the
+re-check of an item just before reopening it. All of these share one budget of five reads per allowed
+correction; a miss already reported is not read, and nothing is vetted from
+stale facts.
 
 Only production-code landing is decidable from the facts; the other kinds of
 work in the audit's definition need a probe or Lee's recorded word, so an A1
@@ -54,8 +57,8 @@ officer never writes Done or Released. With
 --writes corrections (the default) it makes two writes:
 
   report  an item not Done or Released whose every linked PR is merged and in
-          production, and that has no open sub-issues, is a miss by the release
-          path (the item has no open sub-issues, see B1 above): this officer
+          production, and that has no open sub-issue and no open PR naming it,
+          is a miss by the release path (see B1 above): this officer
           no longer writes Done for it. It comments once on the release-path issue
           (--release-issue, PC-4688 by default) naming the item, its PR URLs and
           the production version seen, and lists the miss in its digest. The
@@ -77,8 +80,8 @@ Each correction re-checks that Linear still shows the state the facts
 recorded, writes an evidence comment quoting the landing-truth record it
 used, then changes the state, each through linear-axi --dry-run and then
 --verify. At most --max-corrections items per run are written; a skipped
-item does not count, and a run re-checks at most five items per allowed
-correction. Every correction and skip
+item does not count, and a run makes at most five vetting and re-check reads
+per allowed correction. Every correction and skip
 is also logged with that record in the findings file. It never writes In
 Staging, never files an item, and leaves a Done item no fact names to a
 person. --writes none writes nothing to Linear.
@@ -170,6 +173,22 @@ def linear(args):
     return doc.get("data") or {}
 
 
+def open_prs(repo, item):
+    try:
+        proc = subprocess.run(["gh", "pr", "list", "-R", repo, "--state", "open", "--search",
+                               "%s in:title,body" % item, "--json", "number,url"],
+                              capture_output=True, check=False, timeout=20)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError("gh pr list %s failed: %s" % (repo, type(exc).__name__))
+    try:
+        prs = json.loads(proc.stdout.decode("utf-8")) if proc.returncode == 0 else None
+    except ValueError:
+        prs = None
+    if not isinstance(prs, list):
+        raise RuntimeError("gh pr list %s failed (exit %d)" % (repo, proc.returncode))
+    return [p.get("url") or "%s#%s" % (repo, p.get("number")) for p in prs]
+
+
 def done_items(team, window):
     data = linear(["issue", "list", "--team", team, "--state", "Done", "--all",
                    "--max-items", str(window)])
@@ -185,8 +204,8 @@ def open_children(current):
 def judge(doc, done_listed, reopen_state="In Progress", b1_checks=None):
     """Per-item landing view and findings; a pure function of its inputs.
 
-    b1_checks maps a release-path-miss candidate to {"current": <Linear view>}
-    or {"error": <why it could not be read>}. None means "not vetted yet" and
+    b1_checks maps a release-path-miss candidate to {"current": <Linear view>,
+    "open_prs": [<url>]} or {"error": <why it could not be read>}. None means "not vetted yet" and
     raises every candidate, which is how the candidates are found.
     """
     items = {}
@@ -239,11 +258,11 @@ def judge(doc, done_listed, reopen_state="In Progress", b1_checks=None):
             if len(in_prod) == len(merged) == len(prs):
                 record["class"] = "B1"
                 check = None if b1_checks is None else b1_checks.get(item, {"error": "not read"})
-                kids = open_children(check["current"]) if check and "current" in check else []
+                kids = (open_children(check["current"]) + check.get("open_prs", [])) if check and "current" in check else []
                 if check and "error" in check:
                     record["b1_unchecked"] = check["error"]
                     findings.append({"class": "B1", "item": item, "severity": "low",
-                                     "summary": "%s, every linked PR (%s) in production, but its sub-issues were not checked (%s); not raised as a release-path miss" % (
+                                     "summary": "%s, every linked PR (%s) in production, but its sub-issues and open PRs were not checked (%s); not raised as a release-path miss" % (
                                          state, pr_list(in_prod), check["error"])})
                 elif kids:
                     record["b1_held"] = kids
@@ -327,16 +346,19 @@ def load_ledger(out):
         return {}
 
 
-def vet_b1(view, out, max_corrections):
-    """Read each release-path-miss candidate once (sub-issues); {item: check}.
+def vet_b1(view, out, budget, skip=None):
+    """Read each release-path-miss candidate's sub-issues, then (when it has no
+    open sub-issue and Linear still shows the state the facts recorded, so a
+    report could follow) its open PRs.
 
-    A miss already reported with the same PRs is not read again (its sub-issues
-    were checked when it was reported). Reads stop at the shared re-check
-    budget; a candidate left unread, or whose read fails, is named unchecked.
+    Returns ({item: check}, reads made). A miss already reported with the same
+    PRs is not read again (it was checked when it was reported). Reads stop at
+    budget; a candidate left unread, skipped (skip names why), or whose read
+    fails, is named unchecked.
     """
     reported = load_ledger(out)
     checks = {}
-    budget = max_corrections * VIEWS_PER_CORRECTION
+    reads = 0
     for record in view:
         if record["correction"] != "report":
             continue
@@ -344,18 +366,30 @@ def vet_b1(view, out, max_corrections):
         if reported.get(item) == miss_signature(record):
             checks[item] = {"current": {}}
             continue
-        if budget <= 0:
-            checks[item] = {"error": "re-check budget used"}
+        if skip:
+            checks[item] = {"error": skip}
             continue
-        budget -= 1
+        repos = sorted({str(p.get("repo")) for p in record["prs"]})
         try:
-            checks[item] = {"current": linear(["issue", "view", item, "--sub-issues"])}
+            if reads >= budget:
+                raise RuntimeError("re-check budget used")
+            reads += 1
+            current = linear(["issue", "view", item, "--sub-issues"])
+            found = []
+            moved = (current.get("issue") or {}).get("state") != record["linear_state"]
+            if not moved and not open_children(current):
+                for repo in repos:
+                    if reads >= budget:
+                        raise RuntimeError("re-check budget used")
+                    reads += 1
+                    found += open_prs(repo, item)
+            checks[item] = {"current": current, "open_prs": found}
         except RuntimeError as exc:
             checks[item] = {"error": str(exc)}
-    return checks
+    return checks, reads
 
 
-def correct_items(view, doc, out, date, max_corrections, reopen_state, release_issue="PC-4688", b1_checks=None):
+def correct_items(view, doc, out, date, max_corrections, reopen_state, release_issue="PC-4688", b1_checks=None, reads_left=None):
     """Apply the officer's write and report; returns one result per item tried.
 
     report: an item not Done or Released whose every linked PR is merged and in
@@ -372,7 +406,9 @@ def correct_items(view, doc, out, date, max_corrections, reopen_state, release_i
     reported = load_ledger(out)
     pending = [r for r in view if r["correction"]
                and not (r["correction"] == "report" and reported.get(r["item"]) == miss_signature(r))]
-    for record in pending[:max_corrections * VIEWS_PER_CORRECTION]:
+    if reads_left is None:
+        reads_left = max_corrections * VIEWS_PER_CORRECTION
+    for record in pending:
         if attempts >= max_corrections:
             break
         item = record["item"]
@@ -383,6 +419,9 @@ def correct_items(view, doc, out, date, max_corrections, reopen_state, release_i
         try:
             current = ((b1_checks or {}).get(item) or {}).get("current") if action == "report" else None
             if not current:
+                if reads_left <= 0:
+                    continue
+                reads_left -= 1
                 current = linear(["issue", "view", item, "--sub-issues"])
             state = (current.get("issue") or {}).get("state")
             if state != record["linear_state"]:
@@ -484,16 +523,18 @@ def main(argv):
         facts = load_facts(args.facts)
         done_listed = done_items(args.team, args.done_window) if args.done_window > 0 else []
         view, findings = judge(facts, done_listed, args.reopen_state)
-        b1_checks = vet_b1(view, args.out, args.max_corrections)
-        if b1_checks:
-            view, findings = judge(facts, done_listed, args.reopen_state, b1_checks)
         stale = facts_age_problem(facts, args.max_facts_age,
                                   time.time() if args.now is None else args.now)
+        budget = args.max_corrections * VIEWS_PER_CORRECTION
+        b1_checks, reads = vet_b1(view, args.out, budget, "facts stale" if stale else None)
+        if b1_checks:
+            view, findings = judge(facts, done_listed, args.reopen_state, b1_checks)
         if stale:
             findings.insert(0, {"class": "stale-facts", "item": "-", "severity": "high",
                                 "summary": stale + "; no Linear write made"})
         writes = correct_items(view, facts, args.out, args.date, args.max_corrections,
-                               args.reopen_state, args.release_issue, b1_checks) if args.writes == "corrections" and not stale else []
+                               args.reopen_state, args.release_issue, b1_checks,
+                               budget - reads) if args.writes == "corrections" and not stale else []
     except RuntimeError as exc:
         print("fm-officer-landing: %s" % exc, file=sys.stderr)
         return 1
