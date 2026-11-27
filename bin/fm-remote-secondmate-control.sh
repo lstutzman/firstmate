@@ -25,7 +25,8 @@
 # unless the account opts a Herdr session in with ~/.firstmate/remote-herdr-session
 # (one session name, never fm-remote*): every verb here then uses that session,
 # route reports herdr_session_source=selected, and nothing here creates, owns,
-# or stops that session's server.
+# starts, or stops that session's server (FM_BACKEND_HERDR_NO_AUTOSTART_SESSION):
+# a verb that needs it while it is stopped fails instead.
 # fm-spawn/fm-send/fm-teardown keep owning the local endpoint mechanics.
 # The home's own workers keep their ordinary backend selection.
 # bin/fm-remote-doctor.sh owns that host's readiness for the selected backend.
@@ -40,7 +41,8 @@
 # for example one started by hand in the user's visible Herdr session. It
 # never launches, relaunches, or stops anything. It finds the pane in the
 # selected session whose Herdr agent session id is <agent_session_id>, and
-# refuses unless: the recorded endpoint is not alive; the pane's agent matches
+# refuses unless: the recorded endpoint is not alive (or is already that pane,
+# when adopt only prints the route, so a repeat converges); the pane's agent matches
 # the recorded harness; the home's state/.lock names a live harness process
 # inside that pane whose working directory is this home; and
 # state/.lock-session equals <agent_session_id>. An agent started without
@@ -95,7 +97,7 @@ REMOTE_HERDR_SESSION=
 export FM_BACKEND_REX_NO_AUTOSTART=1
 
 die() { printf 'error: %s\n' "$1" >&2; exit 1; }
-usage() { sed -n '2,50p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
+usage() { sed -n '2,52p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 validate_id() { case "$1" in ''|*[!A-Za-z0-9._-]*) die "invalid secondmate id: $1" ;; esac; }
 
 # Sourcing fm-wake-lib.sh through the libraries below creates "$FM_HOME/state",
@@ -128,6 +130,7 @@ remote_herdr_session_resolve() {
   [ -z "$REMOTE_HERDR_SESSION" ] || return 0
   fm_remote_herdr_identity "$FM_ROOT" || return 1
   REMOTE_HERDR_SESSION=$FM_REMOTE_HERDR_SESSION
+  [ "$FM_REMOTE_HERDR_SELECTED" != 1 ] || export FM_BACKEND_HERDR_NO_AUTOSTART_SESSION=$REMOTE_HERDR_SESSION
 }
 
 remote_herdr_session_error() {
@@ -498,7 +501,7 @@ adopt_agent_label_matches() { # <label> <harness>
 
 cmd_adopt() {
   local id=$1 sid=$2 meta session pane list out agent_label harness found=0 candidate
-  local pid lock_session holder_cwd home_phys info workspace tab old_state lock tmp line
+  local pid lock_session holder_cwd home_phys info workspace tab old_state lock tmp line recorded_target
   validate_id "$id"
   validate_home "$id"
   case "$sid" in ''|*[!A-Za-z0-9._-]*) die "invalid agent session id" ;; esac
@@ -506,6 +509,7 @@ cmd_adopt() {
   fm_backend_validate_task_endpoint "$meta" "$id" 2>/dev/null \
     || die "remote secondmate $id has no valid endpoint record to rebind; adopt only rebinds an existing route"
   [ "$FM_BACKEND_VALIDATED_BACKEND" = herdr ] || die "adopt supports only a Herdr endpoint record, not '$FM_BACKEND_VALIDATED_BACKEND'"
+  recorded_target=$FM_BACKEND_VALIDATED_TARGET
   harness=$(fm_meta_get "$meta" harness)
   [ "$(fm_meta_get "$meta" kind)" = secondmate ] || die "endpoint record for $id is not a secondmate record"
   remote_herdr_session_resolve || die "$(remote_herdr_session_error)"
@@ -514,9 +518,7 @@ cmd_adopt() {
   command -v jq >/dev/null 2>&1 || die "jq is required to read Herdr's pane records"
   [ "$(fm_backend_herdr_server_running_state "$session")" = running ] \
     || die "the Herdr server for session '$session' is not running; adopt never starts one"
-  # The recorded endpoint must not itself be a live agent: two agents is not a rebind.
-  old_state=$(fm_backend_agent_state herdr "$FM_BACKEND_VALIDATED_TARGET" 2>/dev/null || printf 'unreadable\n')
-  [ "$old_state" != alive ] || die "the recorded endpoint $FM_BACKEND_VALIDATED_TARGET is still alive; adopt rebinds only a dead or missing endpoint"
+  old_state=$(fm_backend_agent_state herdr "$recorded_target" 2>/dev/null || printf 'unreadable\n')
   # The pane: exactly one pane in the selected session holds this agent session.
   list=$(fm_backend_herdr_cli "$session" pane list 2>/dev/null) || die "cannot list panes in Herdr session '$session'"
   pane=
@@ -550,6 +552,14 @@ cmd_adopt() {
   home_phys=$(cd -- "$TARGET_HOME" && pwd -P)
   [ "$holder_cwd" = "$home_phys" ] \
     || die "lock holder pid $pid runs in $holder_cwd, not this home $home_phys"
+  # A live recorded endpoint is either this same pane, already adopted (a repeat
+  # converges on the current route), or another agent: two agents is not a rebind.
+  if [ "$old_state" = alive ]; then
+    [ "$recorded_target" = "$session:$pane" ] \
+      || die "the recorded endpoint $recorded_target is still alive; adopt rebinds only a dead or missing endpoint"
+    print_route "$id"
+    return 0
+  fi
   info=$(fm_backend_herdr_cli "$session" pane get "$pane" 2>/dev/null) || die "cannot read pane $pane"
   workspace=$(printf '%s' "$info" | jq -r '.result.pane.workspace_id // empty' 2>/dev/null)
   tab=$(printf '%s' "$info" | jq -r '.result.pane.tab_id // empty' 2>/dev/null)

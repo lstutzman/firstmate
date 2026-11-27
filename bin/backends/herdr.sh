@@ -1891,6 +1891,8 @@ fm_backend_herdr_server_owner_name() {  # <owner-marker>
 # apart, until the replacement marker is gone and the server reports running,
 # and fails naming the replacement or the owner otherwise. A replacement marker that
 # clears with no owner marker hands back to the Firstmate-owned start below.
+# FM_BACKEND_HERDR_NO_AUTOSTART_SESSION=<session> withholds that start for that
+# one session: a stopped server there fails instead of being started.
 fm_backend_herdr_server_ensure() {  # <session>
   local session=$1 status running socket out i dir owner_marker replacing_marker owner polls=60
   status=$(fm_backend_herdr_cli "$session" status --json 2>/dev/null)
@@ -1918,6 +1920,10 @@ fm_backend_herdr_server_ensure() {  # <session>
       i=$((i + 1))
       [ ! -e "$replacing_marker" ] && [ "$(fm_backend_herdr_server_running_state "$session")" = running ] && return 0
     done
+  fi
+  if [ -n "${FM_BACKEND_HERDR_NO_AUTOSTART_SESSION:-}" ] && [ "$session" = "$FM_BACKEND_HERDR_NO_AUTOSTART_SESSION" ]; then
+    echo "error: herdr server for session '$session' is not running, and Firstmate never starts that session's server; start it yourself (open Herdr), then retry" >&2
+    return 1
   fi
   (
     unset FM_HOME FM_ROOT_OVERRIDE FM_STATE_OVERRIDE FM_DATA_OVERRIDE FM_PROJECTS_OVERRIDE FM_CONFIG_OVERRIDE \

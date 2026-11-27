@@ -20,7 +20,10 @@
 # host verb through bin/fm-on.sh, reads the confirmed session and target back
 # out of the endpoint's own route report, and rewrites remote_herdr_session=
 # and remote_target= in place. A refused or failed adopt leaves this parent's
-# record untouched. Steers to the mate then ring the adopted pane.
+# record untouched. Steers to the mate then ring the adopted pane. The host
+# verb answers a repeat for the pane it already adopted with that route, so if
+# this parent's half fails after the host's succeeded (a dropped SSH leg, an
+# unreadable report), re-running this wrapper finishes the rebind.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -67,19 +70,19 @@ printf '%s\n' "$ADOPT_OUT"
 
 [ "$(printf '%s\n' "$ADOPT_OUT" | sed -n 's/^schema=//p' | tail -1)" \
   = fm-remote-secondmate-control.v1 ] \
-  || die "the host adopted $ID but reported no route confirmation to record"
+  || die "the host adopted $ID but reported no route confirmation to record; re-run this adopt to read the host's current route"
 [ "$(printf '%s\n' "$ADOPT_OUT" | sed -n 's/^backend=//p' | tail -1)" = herdr ] \
-  || die "the host's route confirmation is not a Herdr route"
+  || die "the host's route confirmation is not a Herdr route; re-run this adopt to read the host's current route"
 NEW_TARGET=$(printf '%s\n' "$ADOPT_OUT" | sed -n 's/^target=//p' | tail -1)
 NEW_SESSION=$(printf '%s\n' "$ADOPT_OUT" | sed -n 's/^herdr_session=//p' | tail -1)
 NEW_SOURCE=$(printf '%s\n' "$ADOPT_OUT" | sed -n 's/^herdr_session_source=//p' | tail -1)
 # The same acceptance bin/fm-spawn.sh applies to a launched route.
 if ! fm_remote_herdr_session_name_valid "$NEW_SESSION" \
   && { [ "$NEW_SOURCE" != selected ] || ! fm_remote_herdr_selectable_session_name "$NEW_SESSION"; }; then
-  die "the host reported Herdr session '${NEW_SESSION:-missing}', which is neither an fm-remote session nor the host's selected session; its own record is already rebound, so reconcile this parent's record by hand"
+  die "the host reported Herdr session '${NEW_SESSION:-missing}', which is neither an fm-remote session nor the host's selected session; its own record is already rebound, so re-run this adopt once the host reports a usable session; a repeat reads the host's current route and records it here"
 fi
 [ -n "$NEW_TARGET" ] && [ "${NEW_TARGET%%:*}" = "$NEW_SESSION" ] \
-  || die "the host's route confirmation carried a target outside session '$NEW_SESSION'"
+  || die "the host's route confirmation carried a target outside session '$NEW_SESSION'; re-run this adopt to read the host's current route"
 
 META_LOCK=$(fm_meta_lock_path "$META") || die "metadata lock path is invalid for $ID"
 fm_lock_acquire_wait "$META_LOCK"

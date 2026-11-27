@@ -36,7 +36,7 @@ The file must be a plain file; a symlink, a second line, or an unusable name mak
 Every remote control verb and `bin/fm-remote-doctor.sh` read it on the host, so the parent's configuration needs no change.
 A selected session is yours: the doctor only checks that its server is running (and, on macOS, was born in the login session), reports each gap as a human step, and never creates, owns, reloads, or stops it.
 Remote [launch](../remote-secondmates.md#launch-or-recover) records the plain session name only when the host reports it as selected.
-Changing or removing the file does not move an existing mate: the host refuses an endpoint recorded in another session until it is rebound with [`adopt`](../remote-secondmates.md#adopt-an-agent-that-is-already-running) or relaunched.
+Changing or removing the file does not move an existing mate: the host refuses an endpoint recorded in another session until it is rebound with [`adopt`](../remote-secondmates.md#adopt-an-agent-that-is-already-running).
 
 Use `fm-home-seed.sh validate` to check the complete operational registry contract documented by the command itself.
 The main first mate routes by reading those scopes with judgment; the project list is provisioning data, not exclusive ownership.

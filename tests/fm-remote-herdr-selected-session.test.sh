@@ -13,8 +13,11 @@
 #   E) launch and relaunch refuse when the home's state/.lock names a live
 #      process and the recorded endpoint is not that agent, and say to use adopt.
 #   F) adopt binds the record to a running agent when every proof holds, and
-#      refuses on each missing proof without changing the record.
+#      refuses on each missing proof without changing the record; a repeat for
+#      the pane it already adopted converges on that route.
 #   G) The parent accepts a plain session name only with the selection marker.
+#   H) A stopped selected-session server is never started: retire after a host
+#      reboot runs no `herdr server`, while other sessions keep their autostart.
 #
 # The Herdr CLI is the stateful fixture in tests/remote-herdr-fixture.sh (A-E)
 # or a small read-only fake (F), and omp is a fake that answers `models --json`;
@@ -249,6 +252,10 @@ cat > "$ADOPT_BIN/herdr" <<'SH'
 set -u
 D=$FM_FAKE_ADOPT_DIR
 printf '%s\n' "$*" >> "$D/log"
+if [ "$(cat "$D/running")" != true ] && [ "${1:-} ${2:-}" != "status --json" ]; then
+  printf '{"error":{"code":"server_not_running"}}\n'
+  exit 1
+fi
 args=("$@")
 pane=""
 for ((i=0; i<${#args[@]}; i++)); do [ "${args[$i]}" = --pane ] && pane=${args[$((i+1))]:-}; done
@@ -380,5 +387,80 @@ kill -0 "$AD_PID" 2>/dev/null || fail "adopt stopped the running agent"
 # The adopted route now reads through the ordinary verbs.
 adopt_ctl "$ACCT_AD" "$HOME_AD" route "$ID" > "$TMP_ROOT/f.route" 2>&1 || fail "the adopted route does not validate"$'\n'"$(cat "$TMP_ROOT/f.route")"
 pass "F adopt binds a fully proven live agent without starting or stopping anything, and every missing proof refuses with the record untouched"
+
+# A repeat for the pane already adopted (the parent's half was lost, so the
+# wrapper runs again) converges on the same route and changes nothing.
+[ "$(adopt_ctl "$ACCT_AD" "$HOME_AD" state "$ID" 2>/dev/null)" = alive ] || fail "the adopted endpoint does not read alive"
+cp "$META_AD" "$TMP_ROOT/meta.ad.bound"
+: > "$ADOPT_DIR/log"
+adopt_ctl "$ACCT_AD" "$HOME_AD" adopt "$ID" "$SID" > "$TMP_ROOT/f.out" 2> "$TMP_ROOT/f.err" \
+  || fail "a repeated adopt of the same pane refused"$'\n'"$(cat "$TMP_ROOT/f.err")"
+[ "$(sed -n 's/^target=//p' "$TMP_ROOT/f.out")" = default:wXA:p2 ] || fail "a repeated adopt reported the wrong target"$'\n'"$(cat "$TMP_ROOT/f.out")"
+[ "$(sed -n 's/^herdr_session_source=//p' "$TMP_ROOT/f.out")" = selected ] || fail "a repeated adopt dropped the selection marker"
+cmp -s "$META_AD" "$TMP_ROOT/meta.ad.bound" || fail "a repeated adopt rewrote the endpoint record"
+grep -Eq 'server (stop|start)|session (stop|start)|agent start|pane (run|send|close)|workspace (create|close)' "$ADOPT_DIR/log" \
+  && fail "a repeated adopt ran a lifecycle or write command on Herdr"
+# A repeat still refuses when the lock no longer proves that agent.
+write_lock "$HOME_AD" "$AD_PID" other-session
+if adopt_ctl "$ACCT_AD" "$HOME_AD" adopt "$ID" "$SID" > "$TMP_ROOT/f.out" 2>&1; then
+  fail "a repeated adopt accepted a lock naming another agent session"
+fi
+cmp -s "$META_AD" "$TMP_ROOT/meta.ad.bound" || fail "a refused repeat changed the endpoint record"
+write_lock "$HOME_AD" "$AD_PID" "$SID"
+pass "F a repeated adopt of the already adopted pane converges on its route, and still refuses when a proof fails"
+
+# --- H) a stopped selected server is never started ------------------------------
+
+# The host rebooted and the user has not opened Herdr: the selected session's
+# server is stopped. Retire must not start it from this SSH-side shell.
+ID=sm-reboot
+HOME_RB=$(seed_home "$ID")
+ACCT_RB=$(new_account reboot default)
+mkdir -p "$HOME_RB/state/parent-route" "$HOME_RB/data/.parent-route"
+META_RB="$HOME_RB/state/parent-route/$ID.meta"
+fm_write_meta "$META_RB" \
+  "window=default:wR:p1" "endpoint_task_id=$ID" "worktree=$HOME_RB" "project=$ROOT" \
+  "harness=claude" "kind=secondmate" "mode=secondmate" "yolo=off" "tasktmp=" \
+  "model=" "effort=" "backend=herdr" "herdr_session=default" "herdr_workspace_id=wR" \
+  "herdr_tab_id=wR:t1" "herdr_pane_id=wR:p1" "home=$HOME_RB" "projects="
+cp "$META_RB" "$TMP_ROOT/meta.rb.orig"
+printf 'false\n' > "$ADOPT_DIR/running"
+: > "$ADOPT_DIR/log"
+adopt_ctl "$ACCT_RB" "$HOME_RB" retire "$ID" > "$TMP_ROOT/h.out" 2>&1
+rb_rc=$?
+assert_no_regex '^server( |$)' "$ADOPT_DIR/log" "retire started the stopped selected session's server"$'\n'"$(cat "$ADOPT_DIR/log")"
+grep -Eq 'session (stop|start)|agent start|pane (run|send|close)|workspace (create|close)|tab (create|close)' "$ADOPT_DIR/log" \
+  && fail "retire against a stopped server ran a lifecycle or write command on Herdr"$'\n'"$(cat "$ADOPT_DIR/log")"
+[ "$(cat "$ADOPT_DIR/running")" = false ] || fail "the selected server was started"
+[ "$rb_rc" -ne 0 ] || fail "retire reported success against a server it could not read"
+cmp -s "$META_RB" "$TMP_ROOT/meta.rb.orig" && [ -f "$HOME_RB/.fm-secondmate-home" ] \
+  || fail "a refused retire changed the endpoint record or removed the home"
+pass "H retire against a stopped selected server refuses without starting it"
+# A verb that delivers to the pane reaches the adapter's server start directly.
+: > "$ADOPT_DIR/log"
+if adopt_ctl "$ACCT_RB" "$HOME_RB" key "$ID" Enter > "$TMP_ROOT/h.out" 2>&1; then
+  fail "key reported delivery to a stopped server"
+fi
+assert_no_regex '^server( |$)' "$ADOPT_DIR/log" "key started the stopped selected session's server"$'\n'"$(cat "$ADOPT_DIR/log")"
+[ "$(cat "$ADOPT_DIR/running")" = false ] || fail "the selected server was started"
+pass "H key against a stopped selected server fails without starting it"
+
+# The default fm-remote session keeps its autostart: the guard is scoped to the selected session.
+(
+  # shellcheck source=bin/fm-backend.sh
+  . "$ROOT/bin/fm-backend.sh"
+  fm_backend_source herdr >/dev/null 2>&1 || exit 3
+  : > "$ADOPT_DIR/log"
+  PATH="$ADOPT_BIN:$BASE_PATH" FM_FAKE_ADOPT_DIR="$ADOPT_DIR" FM_BACKEND_HERDR_NO_AUTOSTART_SESSION=default \
+    fm_backend_herdr_server_ensure fm-remote >/dev/null 2>&1 || true
+  grep -q '^server --session fm-remote$' "$ADOPT_DIR/log" || exit 4
+  : > "$ADOPT_DIR/log"
+  PATH="$ADOPT_BIN:$BASE_PATH" FM_FAKE_ADOPT_DIR="$ADOPT_DIR" FM_BACKEND_HERDR_NO_AUTOSTART_SESSION=default \
+    fm_backend_herdr_server_ensure default >/dev/null 2>&1 && exit 5
+  grep -q '^server' "$ADOPT_DIR/log" && exit 6
+  exit 0
+)
+expect_code 0 "$?" "the no-autostart guard is not scoped to exactly its session"
+pass "H the no-autostart guard withholds only the selected session's start"
 
 echo "ALL TESTS PASSED"

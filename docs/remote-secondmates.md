@@ -468,6 +468,7 @@ With it set:
 - [`bin/fm-remote-doctor.sh`](../bin/fm-remote-doctor.sh) checks that the session's server is running and, on macOS, that it was born in the login session so its panes reach the login keychain.
   It reports a gap as a human step and never starts, owns, reloads, or stops the server, and `--fix` never writes a launch agent or owner record for it.
   The server must already be running in your own session, so a reboot or a stopped Herdr leaves launch refused until you start it.
+- No control verb starts that session's server: while it is stopped, a verb that needs it fails rather than start it from the SSH login, and works again once you start Herdr.
 - The server is yours rather than a Firstmate-owned launch agent, so whatever restarts that session also affects the mates in it.
 
 Removing the file returns new launches to the reserved session; it does not move a mate that is already running.
@@ -485,12 +486,13 @@ bin/fm-remote-secondmate-adopt.sh <id> <agent_session_id>
 The host verb `adopt` never launches, relaunches, or stops anything.
 It finds the pane in the selected session whose Herdr agent session id is `<agent_session_id>` and refuses unless all of these hold:
 
-- The pane's agent matches the recorded harness, and the recorded endpoint is not alive.
+- The pane's agent matches the recorded harness, and the recorded endpoint is not alive, unless it is already that pane.
 - The home's `state/.lock` names a live harness process that runs inside that pane with this home as its working directory.
 - The home's `state/.lock-session` equals `<agent_session_id>`.
 
 An agent started without Firstmate's launch flags is accepted when those checks pass.
 On success the host rewrites its own endpoint fields in place, and the wrapper rewrites the primary's `remote_herdr_session=` and `remote_target=` from the route the host confirmed; a refused adopt changes nothing.
+If the host's half succeeds and the primary's does not, for example because the SSH connection drops, run the same command again: the host answers a repeat for the pane it already adopted with that route, and the wrapper records it.
 
 ### Refused and unsupported launches
 
