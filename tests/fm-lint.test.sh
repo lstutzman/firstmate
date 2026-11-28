@@ -17,6 +17,10 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 LINT="$ROOT/bin/fm-lint.sh"
+# The resident memory cap needs a systemd user manager, which the lint tests
+# neither need nor can rely on (and a CI runner may lack), so every test runs
+# without it; the cap tests below switch it on with a stub or a real scope.
+export FM_LINT_ROOT_CGROUP_MIB=off
 INSTALLER="$ROOT/bin/fm-install-shellcheck.sh"
 # The pinned version, read from the single source (the one owner itself).
 REQUIRED=$("$LINT" --required-version)
@@ -473,6 +477,13 @@ case "$target" in
     ;;
   *oom-kill*)
     printf 'shellcheck: out of memory (requested 1048576 bytes)\n' >&2
+    kill -KILL "$$"
+    ;;
+  *cap-kill-sources*)
+    # Killed without a word, as the kernel does, but only while following sources.
+    case " $* " in *" --external-sources "*) kill -KILL "$$" ;; esac
+    ;;
+  *cap-kill*)
     kill -KILL "$$"
     ;;
   *oom-text-findings*)
@@ -1845,6 +1856,18 @@ test_root_deadline_names_the_root_and_reaps_the_tree() {
     pass "SKIP (host cannot enforce the bounded envelope): root deadline kill check"
     return
   fi
+  fm_lint_deadline_case off
+  # The same deadline and reap, with each root also inside a real capped scope:
+  # the process and its group must survive the scope for the watchdog to kill them.
+  if fm_lint_real_cap_supported; then
+    fm_lint_deadline_case 4096
+  else
+    pass "SKIP (no systemd user scope with a memory cap): deadline kill inside a capped scope"
+  fi
+}
+
+fm_lint_deadline_case() {  # <cap-mib|off>
+  local cap=$1
   local tmp fakebin stub_log telemetry roots_log out rc
   local blocker ok sentinel_pid child_pid_file stub_pid_file child_pid stub_pid
   tmp=$(fm_test_tmproot fm-lint-bound-deadline)
@@ -1864,7 +1887,7 @@ test_root_deadline_names_the_root_and_reaps_the_tree() {
   sentinel_pid=$!
   rc=0
   out=$(PATH="$fakebin:$PATH" FM_LINT_JOBS=1 \
-    FM_LINT_REQUIRE_BOUNDS=1 \
+    FM_LINT_REQUIRE_BOUNDS=1 FM_LINT_ROOT_CGROUP_MIB="$cap" \
     FM_LINT_ROOT_SECONDS=1 FM_LINT_ROOT_GRACE=1 \
     FM_TEST_STUB_LOG="$stub_log" FM_TEST_CHILD_PID="$child_pid_file" \
     FM_TEST_STUB_PID="$stub_pid_file" FM_TEST_BLOCK_SECS=300 \
@@ -1895,7 +1918,191 @@ test_root_deadline_names_the_root_and_reaps_the_tree() {
     "$roots_log" || fail "the sidecar lost the completed root's ok record"
   awk -F '\t' '$1 == "end" && $3 ~ /blocker\.sh$/ && $10 == "timeout" { found=1 } END { exit !found }' \
     "$roots_log" || fail "the sidecar did not record the timed-out root by name"
-  pass "a root pinned at the wall deadline fails by name, reaps its tree, and leaves the sentinel alive"
+  pass "a root pinned at the wall deadline fails by name, reaps its tree, and leaves the sentinel alive (cap $cap)"
+}
+
+# fm_lint_real_cap_supported: true when a real systemd user scope applies a
+# MemoryMax on this host, checked the way bin/fm-lint.sh probes it.
+fm_lint_real_cap_supported() {
+  command -v systemd-run >/dev/null 2>&1 || return 1
+  local got
+  # shellcheck disable=SC2016 # The probe text is shell source for bash -c.
+  got=$(timeout 10 systemd-run --user --scope -q --collect --expand-environment=no \
+    -p MemoryMax=64M -p MemorySwapMax=0 -p OOMPolicy=continue -- \
+    bash -c 'cat "/sys/fs/cgroup$(sed -n "s/^0:://p" /proc/self/cgroup)/memory.max"' 2>/dev/null) \
+    || return 1
+  [ "$got" = 67108864 ]
+}
+
+# fm_lint_stub_systemd_run <fakebin-dir>: a systemd-run stand-in for the cap
+# tests. It logs each call's arguments on FM_TEST_SD_LOG, answers the cap probe
+# (a bash -c that reads memory.max) with the MemoryMax it was given, and runs
+# any other wrapped command directly. FM_TEST_SD_MODE=unavailable fails every
+# call; undelegated answers the probe with "max", as a host that does not
+# delegate the memory controller does.
+fm_lint_stub_systemd_run() {
+  local fakebin=$1
+  cat > "$fakebin/systemd-run" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FM_TEST_SD_LOG:-/dev/null}"
+[ "${FM_TEST_SD_MODE:-ok}" != unavailable ] || { echo 'Failed to connect to bus' >&2; exit 1; }
+max=
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -p) case "$2" in MemoryMax=*) max=${2#MemoryMax=}; max=${max%M} ;; esac; shift 2 ;;
+    --) shift; break ;;
+    *) shift ;;
+  esac
+done
+case "$*" in
+  "bash -c "*memory.max*)
+    if [ "${FM_TEST_SD_MODE:-ok}" = undelegated ]; then echo max; else echo $((max * 1048576)); fi
+    exit 0
+    ;;
+esac
+exec "$@"
+SH
+  chmod +x "$fakebin/systemd-run"
+}
+
+test_memory_cap_wraps_each_root_in_a_capped_scope() {
+  local tmp fakebin sd_log out rc require_bounds cap
+  local -a modes=(0)
+  fm_lint_bounds_supported && modes=(0 1)
+  tmp=$(fm_test_tmproot fm-lint-cap-scope)
+  fakebin=$(fm_fakebin "$tmp")
+  fm_lint_stub_reactive_shellcheck "$fakebin"
+  fm_lint_stub_systemd_run "$fakebin"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/a.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/b.sh"
+  for require_bounds in "${modes[@]}"; do
+    for cap in 8192 300; do
+      sd_log="$tmp/sd.$require_bounds.$cap.log"
+      rc=0
+      out=$(PATH="$fakebin:$PATH" FM_LINT_JOBS=1 FM_LINT_REQUIRE_BOUNDS="$require_bounds" \
+        FM_TEST_SD_LOG="$sd_log" \
+        FM_LINT_ROOT_CGROUP_MIB="$cap" \
+        "$LINT" --telemetry "$tmp/t.$require_bounds.$cap.tsv" "$tmp/a.sh" "$tmp/b.sh" 2>&1) || rc=$?
+      [ "$rc" -eq 0 ] || fail "a clean run failed under the cap (bounds=$require_bounds cap=$cap)"$'\n'"$out"
+      assert_contains "$out" "per-root memory cap $cap MiB" "the run did not say the cap was active"
+      [ "$(grep -c 'no per-root memory cap' <<<"$out")" -eq 0 ] || fail "an active cap also reported it was unavailable"
+      # One probe, then one scope for each ShellCheck process (the root and its ratchet check).
+      [ "$(grep -c 'memory.max' "$sd_log")" -eq 1 ] || fail "the cap was not probed exactly once"
+      [ "$(grep -vc 'memory.max' "$sd_log")" -eq 4 ] \
+        || fail "each root's two ShellCheck processes did not each get a scope (bounds=$require_bounds)"$'\n'"$(cat "$sd_log")"
+      [ "$(grep -c -- "-p MemoryMax=${cap}M -p MemorySwapMax=0 -p OOMPolicy=continue" "$sd_log")" -eq 5 ] \
+        || fail "a scope lacked the MemoryMax, no-swap or OOMPolicy=continue property"$'\n'"$(cat "$sd_log")"
+      grep -q "^meta"$'\t'"root_memory_cap_mib"$'\t'"$cap\$" "$tmp/t.$require_bounds.$cap.roots.tsv" \
+        || fail "the roots sidecar did not record the active cap"
+    done
+  done
+  pass "every ShellCheck process runs in its own capped scope, probed once, with the setting honored"
+}
+
+test_memory_cap_unavailable_says_so_once_and_still_lints() {
+  local tmp fakebin out rc mode stub_log
+  tmp=$(fm_test_tmproot fm-lint-cap-unavailable)
+  fakebin=$(fm_fakebin "$tmp")
+  fm_lint_stub_reactive_shellcheck "$fakebin"
+  fm_lint_stub_systemd_run "$fakebin"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/a.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/b.sh"
+  for mode in unavailable undelegated; do
+    stub_log="$tmp/stub.$mode.log"
+    rc=0
+    out=$(PATH="$fakebin:$PATH" FM_LINT_JOBS=1 FM_LINT_ROOT_CGROUP_MIB='' \
+      FM_TEST_SD_MODE="$mode" FM_TEST_STUB_LOG="$stub_log" \
+      "$LINT" --telemetry "$tmp/t.$mode.tsv" "$tmp/a.sh" "$tmp/b.sh" 2>&1) || rc=$?
+    [ "$rc" -eq 0 ] || fail "a host without the cap failed instead of linting as before ($mode)"$'\n'"$out"
+    [ "$(grep -c 'no per-root memory cap' <<<"$out")" -eq 1 ] \
+      || fail "the missing cap was not reported in exactly one line ($mode)"$'\n'"$out"
+    grep -q 'a.sh' "$stub_log" || fail "a.sh was not linted without the cap ($mode)"
+    grep -q 'b.sh' "$stub_log" || fail "b.sh was not linted without the cap ($mode)"
+    grep -q "^meta"$'\t'"root_memory_cap_mib"$'\t'"none\$" "$tmp/t.$mode.roots.tsv" \
+      || fail "the sidecar claimed a cap that was not applied ($mode)"
+  done
+  for mode in abc 0; do
+    rc=0
+    out=$(PATH="$fakebin:$PATH" FM_LINT_ROOT_CGROUP_MIB="$mode" "$LINT" "$tmp/a.sh" 2>&1) || rc=$?
+    [ "$rc" -eq 2 ] || fail "FM_LINT_ROOT_CGROUP_MIB=$mode was not refused"
+    assert_contains "$out" "FM_LINT_ROOT_CGROUP_MIB must be a positive integer or off" "the bad setting was not named"
+  done
+  pass "a host that cannot apply the cap says so in one line and lints as before; a bad setting is refused"
+}
+
+test_memory_cap_kill_is_a_named_memory_limit_not_a_finding() {
+  local tmp fakebin out rc
+  tmp=$(fm_test_tmproot fm-lint-cap-kill)
+  fakebin=$(fm_fakebin "$tmp")
+  fm_lint_stub_reactive_shellcheck "$fakebin"
+  fm_lint_stub_systemd_run "$fakebin"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/ok.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/cap-kill.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/cap-kill-sources.sh"
+
+  # A root the cap kills, with and without sources, fails by name as a memory limit.
+  rc=0
+  out=$(PATH="$fakebin:$PATH" FM_LINT_JOBS=1 FM_LINT_ROOT_CGROUP_MIB='' \
+    "$LINT" --telemetry "$tmp/dead.tsv" "$tmp/ok.sh" "$tmp/cap-kill.sh" 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a root killed by the cap passed silently"
+  assert_contains "$out" "cap-kill.sh exceeded the per-root memory limit (cgroup cap 8192 MiB)" \
+    "the killed root was not named as a memory limit"
+  assert_contains "$out" "reason=memory" "the cap kill was not classified as memory"
+  assert_not_contains "$out" "signal:KILL" "the cap kill was reported as a bare signal"
+  awk -F '\t' '$1 == "end" && $3 ~ /cap-kill\.sh$/ && $10 == "memory" { found=1 } END { exit !found }' \
+    "$tmp/dead.roots.tsv" || fail "the sidecar did not record the cap-killed root as memory"
+
+  # A root only the source-following pass kills takes the documented retry, as in CI.
+  rc=0
+  out=$(PATH="$fakebin:$PATH" FM_LINT_JOBS=1 FM_LINT_ROOT_CGROUP_MIB='' \
+    "$LINT" --telemetry "$tmp/retry.tsv" "$tmp/cap-kill-sources.sh" 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || fail "a root that fits without sources did not take the memory retry"$'\n'"$out"
+  assert_contains "$out" "cap-kill-sources.sh hit the memory ceiling with --external-sources" \
+    "the retry did not name the root"
+  awk -F '\t' '$1 == "end" && $3 ~ /cap-kill-sources\.sh$/ && $10 == "memory-fallback" { found=1 } END { exit !found }' \
+    "$tmp/retry.roots.tsv" || fail "the sidecar did not record the memory fallback"
+
+  # With the cap off nothing changes: a bare kill stays a signal, never a memory limit.
+  rc=0
+  out=$(PATH="$fakebin:$PATH" FM_LINT_JOBS=1 FM_LINT_ROOT_CGROUP_MIB=off \
+    "$LINT" "$tmp/cap-kill.sh" 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a killed root passed with the cap off"
+  assert_contains "$out" "reason=signal:KILL" "the cap-off classification changed"
+  assert_not_contains "$out" "memory limit" "the cap-off run claimed a memory limit"
+  pass "a cap kill fails by name as a memory limit, retries without sources, and cap off keeps the old reasons"
+}
+
+test_memory_cap_real_scope_kills_only_the_hoarder() {
+  if ! fm_lint_real_cap_supported; then
+    pass "SKIP (no systemd user scope with a memory cap): real cap check"
+    return
+  fi
+  local tmp fakebin out rc require_bounds sentinel_pid
+  local -a modes=(0)
+  fm_lint_bounds_supported && modes=(0 1)
+  tmp=$(fm_test_tmproot fm-lint-cap-real)
+  fakebin=$(fm_fakebin "$tmp")
+  fm_lint_stub_reactive_shellcheck "$fakebin"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/ok.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/hoarder.sh"
+  for require_bounds in "${modes[@]}"; do
+    # The hoarder allocates 512 MiB; a real 256 MiB scope kills it, and only it.
+    sleep 300 &
+    sentinel_pid=$!
+    rc=0
+    out=$(PATH="$fakebin:$PATH" FM_LINT_JOBS=1 FM_LINT_REQUIRE_BOUNDS="$require_bounds" \
+      FM_LINT_ROOT_CGROUP_MIB=256 \
+      "$LINT" --telemetry "$tmp/t.$require_bounds.tsv" "$tmp/ok.sh" "$tmp/hoarder.sh" 2>&1) || rc=$?
+    [ "$rc" -ne 0 ] || fail "a root over its real cap passed (bounds=$require_bounds)"
+    assert_contains "$out" "hoarder.sh exceeded the per-root memory limit (cgroup cap 256 MiB)" \
+      "the real cap kill was not named as a memory limit"
+    kill -0 "$sentinel_pid" 2>/dev/null || fail "the cap kill took an unrelated sentinel process with it"
+    kill -KILL "$sentinel_pid" 2>/dev/null || true
+    wait "$sentinel_pid" 2>/dev/null || true
+    awk -F '\t' '$1 == "end" && $3 ~ /ok\.sh$/ && $10 == "ok" { found=1 } END { exit !found }' \
+      "$tmp/t.$require_bounds.roots.tsv" || fail "the clean root did not pass beside the capped one"
+  done
+  pass "a real capped scope kills only the root over its cap, which fails by name as a memory limit"
 }
 
 test_root_memory_limit_reports_a_named_death() {
@@ -2801,6 +3008,10 @@ test_jobs_are_deterministic_and_complete
 test_worker_trees_stop_on_signal
 test_root_deadline_names_the_root_and_reaps_the_tree
 test_root_memory_limit_reports_a_named_death
+test_memory_cap_wraps_each_root_in_a_capped_scope
+test_memory_cap_unavailable_says_so_once_and_still_lints
+test_memory_cap_kill_is_a_named_memory_limit_not_a_finding
+test_memory_cap_real_scope_kills_only_the_hoarder
 test_memory_failure_retries_without_external_sources
 test_memory_fallback_spends_only_the_remaining_root_deadline
 test_memory_evidence_outranks_findings_and_signal_reasons

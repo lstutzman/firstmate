@@ -125,7 +125,24 @@
 # named error, so a required-bounds run never lints uncapped. Without
 # FM_LINT_REQUIRE_BOUNDS (a local developer lint, where hosts like macOS
 # cannot apply the address-space limit at all) each root still runs in its
-# own ShellCheck process with identical diagnostics, just unbounded.
+# own ShellCheck process with identical diagnostics, without the deadline and
+# address-space limit.
+#
+# Resident memory cap (every run, not only bounded ones): where a systemd user
+# manager can enforce one, each ShellCheck process also runs in its own
+# transient scope with MemoryMax=FM_LINT_ROOT_CGROUP_MIB (default 8192 MiB, or
+# "off"), no swap, and OOMPolicy=continue, so the kernel kills only that
+# ShellCheck and never anything else on the host. Source-following analysis of
+# the heaviest roots needs 17 to 20 GB when nothing bounds it, enough for a
+# global out-of-memory kill of unrelated processes (FLEET-280); the default
+# matches the ceiling CI's address-space limit gives (about 8 GiB resident), so
+# a local run and CI take the same memory fallback for the same roots. Before
+# any root starts, one probe scope confirms the host applies the cap; when it
+# does not (no systemd-run or user manager, a controller that is not
+# delegated), the run says so in one line and lints as it would without a cap.
+# A bare SIGKILL (137) under an active cap is a memory failure, so it takes the
+# memory fallback below, and a root that still dies is reported by name as a
+# memory limit rather than as a lint finding.
 #
 # If a source-following root exits with a memory failure, it is retried once
 # without --external-sources under the same memory limit and only the time
@@ -149,8 +166,8 @@
 # limit-unavailable, or error:<rc>; with the cache on, a `cache` record per
 # root says hit, miss or uncacheable.
 # Memory requires process-level evidence (a GHC exhaustion status or runtime
-# error on stderr), not an echoed source excerpt or an OOM phrase in a
-# filename. In partition mode begin/end
+# error on stderr, or a bare SIGKILL under an active cgroup cap), not an echoed
+# source excerpt or an OOM phrase in a filename. In partition mode begin/end
 # lines also stream to stderr, and an abnormal root end is always reported
 # there.
 #
@@ -264,6 +281,12 @@ fm_lint_classify_root() {  # <rc> <root-stderr-file>
   if grep -qE '^[^[:space:]:]+: (out of memory \(requested [0-9]+ bytes\)|Heap exhausted;)$|: resource exhausted \((Cannot allocate memory|out of memory)\)$' "$err" 2>/dev/null; then
     printf 'memory\n'; return 0
   fi
+  # Under an active cgroup cap the kernel's out-of-memory kill is a bare
+  # SIGKILL. The deadline watchdog exits 124 on its own bound, so a 137 here is
+  # the cap and never a lint finding.
+  if [ -n "${FM_LINT_INTERNAL_CAP_MIB:-}" ] && [ "$rc" = 137 ]; then
+    printf 'memory\n'; return 0
+  fi
   if [ "$rc" = 1 ]; then
     printf 'findings\n'; return 0
   fi
@@ -292,11 +315,36 @@ fm_lint_classify_root() {  # <rc> <root-stderr-file>
   esac
 }
 
-# Run one ShellCheck invocation under the given deadline and the per-root
-# address-space limit, returning its exit status in FM_LINT_LAST_RC.
+# Command words that start a program in its own memory-capped systemd scope,
+# left in FM_LINT_CAP_PREFIX; empty when no cap is active
+# (FM_LINT_INTERNAL_CAP_MIB unset). The flags are the ones the host's capped
+# dotnet wrapper proves: no swap, and OOMPolicy=continue so a cap hit kills
+# only the biggest process of the scope instead of stopping the whole scope.
+fm_lint_cap_prefix() {
+  FM_LINT_CAP_PREFIX=()
+  [ -n "${FM_LINT_INTERNAL_CAP_MIB:-}" ] || return 0
+  FM_LINT_CAP_PREFIX=(systemd-run --user --scope -q --collect --expand-environment=no
+    -p "MemoryMax=${FM_LINT_INTERNAL_CAP_MIB}M" -p MemorySwapMax=0 -p OOMPolicy=continue --)
+}
+
+# What bounded a root's memory, for the message that names a memory failure.
+fm_lint_memory_limit_desc() {
+  if [ -n "${FM_LINT_INTERNAL_CAP_MIB:-}" ]; then
+    printf 'cgroup cap %s MiB' "$FM_LINT_INTERNAL_CAP_MIB"
+  elif [ "${FM_LINT_INTERNAL_BOUNDED:-none}" != none ]; then
+    printf 'address-space limit %s KiB' "${FM_LINT_INTERNAL_MEMORY_KIB:-unknown}"
+  else
+    printf 'ShellCheck ran out of memory'
+  fi
+}
+
+# Run one ShellCheck invocation under the given deadline, the per-root
+# address-space limit and the cgroup cap, returning its exit status in
+# FM_LINT_LAST_RC.
 fm_lint_exec_root() {  # <path> <stdout-file> <stderr-file> <rss-file> <seconds> <args...>
   local path=$1 root_out=$2 root_err=$3 rss_file=$4 seconds=$5 invocation_rc=0
   shift 5
+  fm_lint_cap_prefix
   if [ "${FM_LINT_INTERNAL_BOUNDED:-none}" != none ]; then
     # The watchdog runs in a process group of its own (the same setpgrp hop the
     # workers use), so the owner's TERM-then-KILL group sweep cannot kill it
@@ -314,9 +362,11 @@ fm_lint_exec_root() {  # <path> <stdout-file> <stderr-file> <rss-file> <seconds>
     wait "$FM_LINT_WORKER_RUN_PID" || invocation_rc=$?
     FM_LINT_WORKER_RUN_PID=
   else
-    "$FM_LINT_SHELLCHECK" "$@" -- "$path" > "$root_out" 2> "$root_err" &
+    "${FM_LINT_CAP_PREFIX[@]+"${FM_LINT_CAP_PREFIX[@]}"}" "$FM_LINT_SHELLCHECK" "$@" -- "$path" > "$root_out" 2> "$root_err" &
     FM_LINT_WORKER_RUN_PID=$!
-    wait "$FM_LINT_WORKER_RUN_PID" || invocation_rc=$?
+    # The status is classified below; bash's own "Killed" notice for a root the
+    # cap killed would only repeat it, with the shell's line number.
+    wait "$FM_LINT_WORKER_RUN_PID" 2>/dev/null || invocation_rc=$?
     FM_LINT_WORKER_RUN_PID=
   fi
   FM_LINT_LAST_RC=$invocation_rc
@@ -514,6 +564,10 @@ fm_lint_run_root() {  # <index> <path> <output-dir> <shard-index>
     rss_kib=$(fm_lint_root_rss "$rss_file")
     cat "$root_out" "$root_err" >> "$output_dir/shard.$shard_index.out"
   fi
+  if [ "$reason" = memory ]; then
+    printf 'fm-lint: %s exceeded the per-root memory limit (%s): a memory limit, not a lint finding\n' \
+      "$path" "$(fm_lint_memory_limit_desc)" >> "$output_dir/shard.$shard_index.out"
+  fi
   case "$reason" in
     ok|findings|memory-fallback)
       fm_lint_ratchet_root "$path" "$output_dir/root.$shard_index.$index" "$output_dir/shard.$shard_index.out" \
@@ -623,13 +677,14 @@ if [ "${1:-}" = "--internal-root" ]; then
       "$internal_memory_kib" >&2
     exit 97
   }
+  fm_lint_cap_prefix
   if [ -x /usr/bin/time ]; then
     if [ "$(uname)" = Darwin ]; then
       exec /usr/bin/time -l -o "$internal_rss_file" "$@"
     fi
-    exec /usr/bin/time -f 'max_rss_kib=%M' -o "$internal_rss_file" "$@"
+    exec "${FM_LINT_CAP_PREFIX[@]+"${FM_LINT_CAP_PREFIX[@]}"}" /usr/bin/time -f 'max_rss_kib=%M' -o "$internal_rss_file" "$@"
   fi
-  exec "$@"
+  exec "${FM_LINT_CAP_PREFIX[@]+"${FM_LINT_CAP_PREFIX[@]}"}" "$@"
 fi
 
 # Private bounded-run mode used only by the per-root runner above: the caller
@@ -1449,7 +1504,8 @@ fi
 # watchdog is probed and the host's acceptance of ulimit -v is checked before
 # any root starts; failed checks refuse with a named error. A required-bounds run
 # never lints uncapped. Without it each root still runs alone in its own
-# ShellCheck process, unbounded, for local developer lint.
+# ShellCheck process, without the deadline and address-space limit, for local
+# developer lint.
 ROOT_SECONDS=${FM_LINT_ROOT_SECONDS:-1200}
 ROOT_GRACE=${FM_LINT_ROOT_GRACE:-5}
 # 12 GiB of virtual address space per analysis process. ulimit -v caps
@@ -1462,7 +1518,8 @@ ROOT_GRACE=${FM_LINT_ROOT_GRACE:-5}
 # lint job, so worst-case resident demand is ~8 GiB plus runner overhead,
 # inside the 16 GiB runner. Local lint defaults to two workers; two such
 # caps allow ~16 GiB resident plus host overhead, so use FM_LINT_JOBS=1 on
-# smaller local machines. A root that exceeds its cap fails by name.
+# smaller local machines. A root that exceeds its cap fails by name. The
+# resident cgroup cap (header) applies to every run, bounded or not.
 # Never disable, narrow, or redirect source-following to fit a root under
 # the cap. The roots sidecar records each root's peak RSS; roots peaking
 # above about 3 GiB resident are reduction candidates,
@@ -1519,6 +1576,40 @@ if [ "$ROOT_COUNT" -gt 0 ] && [ "${FM_LINT_REQUIRE_BOUNDS:-0}" = 1 ]; then
     exit 2
   fi
 fi
+
+# Resident memory cap (header): one probe scope with the exact flags every root
+# uses proves the host applies MemoryMax before any root starts. A host that
+# cannot says so in one line and lints without the cap, as before.
+CAP_MIB=${FM_LINT_ROOT_CGROUP_MIB:-8192}
+CAP_ACTIVE_MIB=
+case "$CAP_MIB" in
+  off) ;;
+  ''|0*|*[!0-9]*)
+    printf 'fm-lint.sh: FM_LINT_ROOT_CGROUP_MIB must be a positive integer or off, got %s.\n' "$CAP_MIB" >&2
+    exit 2
+    ;;
+  *)
+    if [ "$ROOT_COUNT" -gt 0 ]; then
+      cap_probe=$(
+        FM_LINT_INTERNAL_CAP_MIB=$CAP_MIB
+        fm_lint_cap_prefix
+        # shellcheck disable=SC2016 # The probe text is shell source for bash -c.
+        probe_cmd=(bash -c 'cat "/sys/fs/cgroup$(sed -n "s/^0:://p" /proc/self/cgroup)/memory.max"')
+        if declare -F fm_exec_timed >/dev/null 2>&1; then
+          fm_exec_timed 10 1 "${FM_LINT_CAP_PREFIX[@]}" "${probe_cmd[@]}" 2>/dev/null
+        else
+          "${FM_LINT_CAP_PREFIX[@]}" "${probe_cmd[@]}" 2>/dev/null
+        fi
+      ) || cap_probe=
+      if [ "$cap_probe" = "$((CAP_MIB * 1048576))" ]; then
+        CAP_ACTIVE_MIB=$CAP_MIB
+        printf 'fm-lint.sh: per-root memory cap %s MiB (systemd scope per ShellCheck process)\n' "$CAP_MIB" >&2
+      else
+        printf 'fm-lint.sh: no per-root memory cap: a systemd user scope with MemoryMax=%sM is not available here; ShellCheck runs without it.\n' "$CAP_MIB" >&2
+      fi
+    fi
+    ;;
+esac
 
 PROGRESS=0
 if [ -n "$PARTITION" ]; then
@@ -1587,6 +1678,7 @@ fi
   printf 'meta\t%s\t%s\n' 'root_deadline_seconds' "$root_deadline_meta"
   printf 'meta\t%s\t%s\n' 'root_kill_grace_seconds' "$root_grace_meta"
   printf 'meta\t%s\t%s\n' 'root_memory_limit_kib' "$root_memory_meta"
+  printf 'meta\t%s\t%s\n' 'root_memory_cap_mib' "${CAP_ACTIVE_MIB:-none}"
   printf 'meta\t%s\t%s\n' 'timing_mechanism' "$BOUND_MECH"
 } >> "$ROOTS_LOG"
 
@@ -1706,6 +1798,7 @@ fm_lint_run_worker() {  # <worker-index>
     FM_LINT_INTERNAL_EXCLUDE="$EXCLUDE_CODES"
     FM_LINT_INTERNAL_BOUNDED="$BOUND_MECH"
     FM_LINT_INTERNAL_MEMORY_KIB="$ROOT_MEMORY_KIB"
+    FM_LINT_INTERNAL_CAP_MIB="$CAP_ACTIVE_MIB"
     FM_LINT_INTERNAL_ROOT_SECS="$ROOT_SECONDS"
     FM_LINT_INTERNAL_GRACE="$ROOT_GRACE"
     FM_LINT_INTERNAL_ROOTS_LOG="$ROOTS_LOG"
