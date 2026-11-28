@@ -5,6 +5,7 @@ Part of the [configuration reference](../configuration.md).
 ## Harness support
 
 claude, codex, opencode, pi, pi-signed, grok, kimi, cursor, and omp are empirically verified for crewmate and secondmate launches; gemini is verified for crewmate and scout launches only, and [README requirements](../../README.md#requirements) own the set supported for the primary session.
+A ship crewmate also needs wired safety hooks, so by default `fm-spawn.sh` refuses one on most of these harnesses; [Safety-hook capability](#safety-hook-capability) owns that rule.
 
 ### Harness restrictions and credentials
 
@@ -20,6 +21,7 @@ On Zellij, cmux, Orca, Paseo, and tern a typed-plane Cursor send (a harness-nati
 `fm-spawn.sh` refuses a ship task on a harness that has no wired safety hooks (the deletion, secret, push, and gate guards), because the fleet rules limit such a harness to a read-only scout; the refusal names a hooked harness, and a scout or secondmate spawn is never refused by this rule.
 [`bin/fm-harness-safety-lib.sh`](../../bin/fm-harness-safety-lib.sh) owns the built-in table: claude, codex, and agy are hooked, pi, pi-signed, omp, and kimi are not, and every other harness defaults to not hooked until a harness reference records its guards.
 A home states its own answers in `config/harness-safety-hooks`, one `<harness> yes|no` line each (exact harness names only, no wildcard), where blank lines and `#` comments are ignored and the last matching line wins.
+A raw launch command names no verified adapter, so it counts as not hooked unless a `config/harness-safety-hooks` line for its harness name says `yes`.
 
 muse is verified for crewmate and scout launches ONLY, and `fm-spawn.sh` refuses it for a secondmate, because muse ships no usable hook surface for a primary session's turn-end supervision; [`docs/verification/muse.md`](../verification/muse.md) owns that evidence.
 muse also needs a worker-reachable credential before spawning, and the portable fleet path is the `<config>/muse/auth.json` credential stored by `muse login`, because a caller-only `META_API_KEY` does not cross a long-lived backend daemon.
