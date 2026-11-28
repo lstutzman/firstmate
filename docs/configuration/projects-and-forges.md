@@ -102,7 +102,7 @@ A PR another home holds (Slarti's Wednesday pile, a Navigator PR waiting for the
 A brief declaring one of these `bin/fm-brief.sh --pr-drain` classes carries no CI slots check: `production-outage`, `cve`, `security` (unless its Linear item loses the exemption, above), `lee-explicit`, and the landing jobs `restack`, `red-gate-fix`, `returned-pr-fix` and `review`, which open no new PR.
 The other drain classes (`wolverine`, `lee-research`, `officer`, `scheduled`) carry it, and a scout never does.
 A promoted scout's instructions carry it too.
-A malformed file makes the gate read `unknown`; it never refuses a spawn.
+A malformed file makes `state` read `unknown` (`gate` does not read it); it never refuses a spawn.
 The fleet alarm announces a change only: a `working [key=ci-slots-over-<owner>-<repo>]` line when P, drafts left out, exceeds S and a `resolved` line with that key once P is back at or under S, each naming P and S ([Fleet quota and secondmate alarm](away-and-alarms.md#fleet-quota-and-secondmate-alarm-configfleet-alarmjson)).
 [`bin/fm-project-capacity-lib.sh`](../../bin/fm-project-capacity-lib.sh) owns the file formats and the held signal, [`bin/fm-pr-drain.py`](../../bin/fm-pr-drain.py) owns the open count, the gate and the exempt classes, [`bin/fm-ci-slots-held.sh`](../../bin/fm-ci-slots-held.sh) reads the held signal, [`bin/fm-ready-branch.sh`](../../bin/fm-ready-branch.sh) records and lists parked ready branches, and `bin/fm-project-mode.sh --ci-slots <name>` reads S back.
 
