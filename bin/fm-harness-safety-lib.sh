@@ -19,13 +19,16 @@
 # at a permissive table so launch-wiring tests can spawn any adapter, and
 # tests/fm-spawn-harness-safety.test.sh unsets it.
 #
-# fm_harness_safety_hooks <harness> [<config-dir>] prints yes or no.
+# fm_harness_safety_hooks <harness> [<config-dir>] [raw] prints yes or no. A raw launch
+# command names no verified adapter, so with a third argument the built-in table is
+# skipped (its basename could spoof claude) and only an explicit config line can say yes.
 fm_harness_safety_hooks() {
-  local harness=$1 config_dir=${2:-} verdict='' file name value extra
+  local harness=$1 config_dir=${2:-} raw=${3:-} verdict='' file name value extra
   case "$harness" in
   claude | codex | agy) verdict=yes ;;
   *) verdict=no ;;
   esac
+  [ -z "$raw" ] || verdict=no
   for file in "${config_dir:+$config_dir/harness-safety-hooks}" "${FM_TEST_SEAM:+${FM_HARNESS_SAFETY_OVERRIDE:-}}"; do
     [ -n "$file" ] && [ -f "$file" ] || continue
     while read -r name value extra; do

@@ -65,3 +65,12 @@ cp "$TMP_ROOT/table" "$TMP_ROOT/cfg/harness-safety-hooks"
 [ "$(fm_harness_safety_hooks pi "$TMP_ROOT/cfg")" = yes ] || fail 'a wildcard line must apply'
 [ "$(fm_harness_safety_hooks kimi "$TMP_ROOT/cfg")" = no ] || fail 'the last matching line must win'
 pass 'the table defaults unknown harnesses to no and honors wildcard and last-line-wins'
+
+# A raw launch command is not a verified adapter: a spoofed basename must not count as hooked.
+fm_test_spawn_brief "$home" ship-raw
+rc=0
+(cd "$home" && fm_test_run_spawn "$home" "$wt" "$fakebin" ship-raw "$real" --harness '/tmp/x/claude --yes' --mode no-mistakes --yolo off) > "$TMP_ROOT/ship-raw.out" || rc=$?
+[ "$rc" -ne 0 ] || fail "a raw launch spoofing claude spawned a ship: $(cat "$TMP_ROOT/ship-raw.out")"
+assert_grep "$MSG" "$TMP_ROOT/ship-raw.out" 'raw launch: expected the safety-hook refusal'
+[ "$(fm_harness_safety_hooks claude '' raw)" = no ] || fail 'a raw launch must not take the built-in yes'
+pass 'a raw launch command counts as unhooked for a ship task'

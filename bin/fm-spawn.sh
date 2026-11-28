@@ -3513,7 +3513,7 @@ fi
 # bin/fm-harness-safety-lib.sh owns the table; a scout and a secondmate are not refused here.
 # shellcheck source=bin/fm-harness-safety-lib.sh
 . "$SCRIPT_DIR/fm-harness-safety-lib.sh"
-if [ "$KIND" = ship ] && [ "$(fm_harness_safety_hooks "$HARNESS" "$CONFIG")" != yes ]; then
+if [ "$KIND" = ship ] && [ "$(fm_harness_safety_hooks "$HARNESS" "$CONFIG" "${RAW_LAUNCH#0}")" != yes ]; then
   echo "error: harness '$HARNESS' has no wired safety hooks (deletion, secret, push, gate), and fleet rules section 9 limits such a harness to a read-only scout. Spawn this ship task on a hooked harness (claude, codex, or agy), or pass --scout if it only reads. A home that has wired hooks for '$HARNESS' states so in config/harness-safety-hooks." >&2
   exit 1
 fi
