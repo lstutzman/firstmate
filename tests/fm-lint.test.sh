@@ -2630,6 +2630,47 @@ test_cache_prune_keeps_only_markers_the_run_used() {
   pass "a full passing run prunes superseded markers and a partial run leaves them"
 }
 
+test_cache_keep_days_retains_by_age_not_by_use() {
+  if ! pinned_ready; then
+    pass "SKIP (ShellCheck $REQUIRED not resolved): result cache keep-days check"
+    return
+  fi
+  local tmp repo cache out rc counts
+  tmp=$(fm_test_tmproot fm-lint-cache-keep)
+  repo="$tmp/repo"
+  cache="$tmp/cache"
+  fm_lint_cache_repo "$repo"
+  rc=0; out=$(CI=true FM_LINT_CACHE_DIR="$cache" FM_LINT_CACHE_KEEP_DAYS=30 "$repo/bin/fm-lint.sh" 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] && [ "$(fm_lint_cache_counts "$out")" = "0 6 0" ] \
+    || fail "the first full run was not six misses: $out"
+  # A second branch edits a root. Its full passing run must not delete the
+  # marker the first branch's bytes still need, which the use-based prune does.
+  cp "$repo/tests/t.sh" "$tmp/t.sh.first"
+  printf '# edited\n' >> "$repo/tests/t.sh"
+  rc=0; out=$(CI=true FM_LINT_CACHE_DIR="$cache" FM_LINT_CACHE_KEEP_DAYS=30 "$repo/bin/fm-lint.sh" 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] && [ "$(fm_lint_cache_counts "$out")" = "5 1 0" ] \
+    || fail "an edit to one root was not one miss and five hits: $out"
+  [ "$(fm_lint_cache_markers "$cache")" = 7 ] || fail "keep-days mode pruned a marker that is not old"
+  cp "$tmp/t.sh.first" "$repo/tests/t.sh"
+  counts=$(fm_lint_cache_counts "$(CI=true FM_LINT_CACHE_DIR="$cache" FM_LINT_CACHE_KEEP_DAYS=30 "$repo/bin/fm-lint.sh" 2>&1)")
+  [ "$counts" = "6 0 0" ] || fail "the first branch's bytes did not hit the retained marker: $counts"
+  # Age every marker, then run: used markers are refreshed by their hit, the one
+  # nothing used stays old and goes.
+  printf '# edited again\n' >> "$repo/tests/t.sh"
+  find "$cache" -maxdepth 1 -type f -exec touch -t 200001010000 {} +
+  rc=0; out=$(CI=true FM_LINT_CACHE_DIR="$cache" FM_LINT_CACHE_KEEP_DAYS=30 "$repo/bin/fm-lint.sh" 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] && [ "$(fm_lint_cache_counts "$out")" = "5 1 0" ] \
+    || fail "the aged cache did not give five hits and one miss: $out"
+  [ "$(fm_lint_cache_markers "$cache")" = 6 ] \
+    || fail "an aged marker survived, or a marker a hit refreshed was removed"
+  # An unset value keeps the use-based prune and a bad value is refused.
+  for bad in 0 abc -3; do
+    rc=0; out=$(FM_LINT_CACHE_DIR="$cache" FM_LINT_CACHE_KEEP_DAYS="$bad" "$repo/bin/fm-lint.sh" tests/t.sh 2>&1) || rc=$?
+    [ "$rc" -eq 2 ] || fail "FM_LINT_CACHE_KEEP_DAYS=$bad was not refused: rc=$rc $out"
+  done
+  pass "keep-days mode retains markers by age, refreshes them on a hit and refuses a bad value"
+}
+
 test_seeded_module_boundary_parity() {
   if ! pinned_ready; then
     pass "SKIP (ShellCheck $REQUIRED not resolved): seeded source-boundary parity check"
@@ -2741,6 +2782,7 @@ test_cache_missing_source_target_is_part_of_the_key
 test_cache_never_stores_a_weaker_or_unproven_result
 test_cache_unusable_directory_lints_every_root
 test_cache_prune_keeps_only_markers_the_run_used
+test_cache_keep_days_retains_by_age_not_by_use
 test_seeded_module_boundary_parity
 test_changed_mode_lints_only_the_changed_file
 test_ci_forces_full_lint_even_with_empty_diff

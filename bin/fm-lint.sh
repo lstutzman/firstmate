@@ -102,6 +102,14 @@
 # like ShellCheck does; tests/fm-lint.test.sh proves that against the real
 # ShellCheck, including a source-path directive, which makes a root uncacheable.
 #
+# FM_LINT_CACHE_KEEP_DAYS=<n> turns the cache into a long-lived, shared one, for
+# a directory that several branches use in turn (the no-mistakes lint step). It
+# replaces the use-based prune above, which would let each full passing run of
+# one branch delete the markers another branch still needs: a hit refreshes its
+# marker's modification time, and a run removes only markers untouched for more
+# than <n> days. A deleted marker costs one re-lint of that root, never a wrong
+# pass, because the key already names every input.
+#
 # With FM_LINT_REQUIRE_BOUNDS=1, which CI sets, every per-root ShellCheck
 # process runs under an enforced envelope: a wall deadline
 # (FM_LINT_ROOT_SECONDS, default 1200), a terminate-then-kill cleanup grace
@@ -436,6 +444,7 @@ fm_lint_run_root() {  # <index> <path> <output-dir> <shard-index>
       # Same inputs, same pinned analysis, last time passed with reason ok:
       # this is that pass, so nothing is run and nothing is skipped.
       printf '%s\n' "$cache_key" >> "$FM_LINT_INTERNAL_CACHE_USED"
+      [ -z "${FM_LINT_INTERNAL_CACHE_KEEP_DAYS:-}" ] || touch "$FM_LINT_INTERNAL_CACHE_DIR/$cache_key" 2>/dev/null || true
       end_ms=$(fm_lint_now_ms)
       if [ -n "${FM_LINT_INTERNAL_ROOTS_LOG:-}" ]; then
         printf 'cache\t%s\t%s\t%s\thit\n' "$index" "$path" "$shard_index" >> "$FM_LINT_INTERNAL_ROOTS_LOG"
@@ -1587,9 +1596,18 @@ CACHE_DIR=
 CACHE_KEYS=
 CACHE_USED="$TMP_ROOT/cache.used"
 CACHE_ENABLED=0
+CACHE_KEEP_DAYS=${FM_LINT_CACHE_KEEP_DAYS:-}
 : > "$CACHE_USED"
 fm_lint_cache_setup() {
   local salt keys_out
+  case "$CACHE_KEEP_DAYS" in
+    ''|0*|*[!0-9]*)
+      if [ -n "$CACHE_KEEP_DAYS" ]; then
+        printf 'fm-lint.sh: FM_LINT_CACHE_KEEP_DAYS must be a positive integer, got %s.\n' "$CACHE_KEEP_DAYS" >&2
+        exit 2
+      fi
+      ;;
+  esac
   if ! mkdir -p "$FM_LINT_CACHE_DIR" 2>/dev/null || [ ! -w "$FM_LINT_CACHE_DIR" ]; then
     printf 'fm-lint.sh: result cache %s is not writable; linting every root.\n' "$FM_LINT_CACHE_DIR" >&2
     return 0
@@ -1697,6 +1715,7 @@ fm_lint_run_worker() {  # <worker-index>
     FM_LINT_INTERNAL_CACHE_DIR="$CACHE_DIR"
     FM_LINT_INTERNAL_CACHE_KEYS="$CACHE_KEYS"
     FM_LINT_INTERNAL_CACHE_USED="$CACHE_USED"
+    FM_LINT_INTERNAL_CACHE_KEEP_DAYS="$CACHE_KEEP_DAYS"
     FM_LINT_SHELLCHECK="$SHELLCHECK_BIN"
     FM_LINT_PERL_BIN="$PERL_BIN"
   )
@@ -1782,7 +1801,9 @@ if [ "$CACHE_ENABLED" -eq 1 ]; then
   cache_hits=$(awk -F '\t' '$1 == "cache" && $5 == "hit" { n++ } END { print n + 0 }' "$ROOTS_LOG")
   cache_misses=$(awk -F '\t' '$1 == "cache" && $5 == "miss" { n++ } END { print n + 0 }' "$ROOTS_LOG")
   cache_uncacheable=$(awk -F '\t' '$1 == "cache" && $5 == "uncacheable" { n++ } END { print n + 0 }' "$ROOTS_LOG")
-  if [ "$overall_rc" -eq 0 ] && [ "$EXPLICIT_PATHS" -eq 0 ] && [ "$CHANGED_MODE" -eq 0 ]; then
+  if [ -n "$CACHE_KEEP_DAYS" ]; then
+    find "$CACHE_DIR" -maxdepth 1 -type f -mtime +"$CACHE_KEEP_DAYS" -exec rm -f {} + 2>/dev/null || true
+  elif [ "$overall_rc" -eq 0 ] && [ "$EXPLICIT_PATHS" -eq 0 ] && [ "$CHANGED_MODE" -eq 0 ]; then
     for cache_file in "$CACHE_DIR"/* "$CACHE_DIR"/.tmp.*; do
       [ -f "$cache_file" ] || continue
       case "${cache_file##*/}" in

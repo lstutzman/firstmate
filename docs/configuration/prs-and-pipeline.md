@@ -199,6 +199,7 @@ The flag is a home-local preference and is not inherited by secondmate homes; [`
 ## Gate defaults (.no-mistakes.yaml)
 
 The tracked [`.no-mistakes.yaml`](../../.no-mistakes.yaml) sets `test.evidence.store_in_repo: false` and runs the [secret scan](../secret-scan.md), the canonical [shell/workflow lint](../../bin/fm-lint.sh) and the [Pi production-consumer typecheck](../../tests/fm-pi-primary-types.test.sh) in the compiler-owning lint phase.
+The lint step also keeps a result cache outside every worktree, so a full canonical lint re-checks only the roots whose inputs changed; [`bin/fm-lint.sh`](../../bin/fm-lint.sh) owns the cache and its retention.
 Each run's test artifacts stay on local disk under the no-mistakes home and are not published to the public orphan `no-mistakes/evidence` branch or linked from the PR body; [secret-scan.md](../secret-scan.md#evidence) owns why.
 
 Evidence never enters a pushed feature branch or the default branch; the worktree's `.no-mistakes/` stays local and CI rejects tracked entries under that path.
