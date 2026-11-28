@@ -325,7 +325,7 @@ herdr_blocked_action() {
 }
 
 # Birth of the process serving the session, as the guard classifies it:
-# prints "<birth> <pid>" (launchd, worker, ssh, or unknown), "unproven" when
+# prints "<birth> <pid>" (launchd, worker, app, ssh, or unknown), "unproven" when
 # no herdr process can be shown to hold the socket, or "nolsof" when lsof does
 # not resolve. bin/fm-remote-herdr-owner-lib.sh owns the markers.
 herdr_server_birth() {
@@ -1019,7 +1019,7 @@ check_herdr_server() {
     local birth
     birth=$(herdr_server_birth)
     case "$birth" in
-      launchd\ *|worker\ *)
+      launchd\ *|worker\ *|app\ *)
         record herdr-server "ok: session $HERDR_SESSION_NAME is running in the Aqua login session (pid ${birth#* }, ${birth%% *})"
         ;;
       nolsof)
@@ -1082,7 +1082,7 @@ check_selected_herdr_server() {
   fi
   birth=$(herdr_server_birth)
   case "$birth" in
-    launchd\ *|worker\ *)
+    launchd\ *|worker\ *|app\ *)
       record herdr-server "ok: selected session $HERDR_SESSION_NAME is running in the Aqua login session (pid ${birth#* }, ${birth%% *})"
       ;;
     nolsof)

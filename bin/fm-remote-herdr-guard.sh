@@ -22,8 +22,8 @@
 # for a retry after the throttle interval):
 #   no server owns the session socket  -> exec `herdr server --session <s>`
 #                                          (foreground, launchd-supervised)
-#   the owner was born in the Aqua session (launchd or the Aqua remote-job
-#   worker)                            -> exit 0, leave it alone
+#   the owner was born in the Aqua session (launchd, the Aqua remote-job
+#   worker, or a gui-domain app)       -> exit 0, leave it alone
 #   the owner was born anywhere else (an SSH remote attach, a shell over
 #   ssh/mosh, or a birth it cannot prove), and the operator's
 #   fm-remote-doctor.sh --fix authorized this start
