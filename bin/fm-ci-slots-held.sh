@@ -6,7 +6,7 @@
 #
 # Prints the held PR URLs, one per line. bin/fm-project-capacity-lib.sh's fm_ci_slots_held owns
 # the signal (a task record in a local home whose yolo is not on, or whose backlog
-# row is held for the captain); bin/fm-pr-drain.py gate and state are the callers. A PR no
+# row is held for the captain); bin/fm-pr-drain.py state and open are the callers, through tally. A PR no
 # local record shows to be waiting is not counted as held here; a PR another home
 # holds carries the GitHub label HELD_LABEL, which bin/fm-pr-drain.py reads itself. Exits 1 with a message
 # on stderr when the task records cannot be read, which the caller reads as no

@@ -220,6 +220,7 @@ def held_urls(project, urls):
         return set()
 
 
+# Never holds: Lee, 2026-11-24T08:17:21Z, "cap active gates, not open PRs"; 2026-11-24T07:55:24Z, "I don't want you limiting the number of gates. I don't want you limiting the number of slots"; no tool measures running gates against S today.
 def gate(project, name):
     """The worker's pre-PR check: `open`, or `none` off github.com, as one line. No open-PR cap exists, so it never holds."""
     repo = repo_of(project)

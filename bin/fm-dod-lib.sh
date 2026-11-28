@@ -667,7 +667,7 @@ fm_ci_slots_gate_rule() {  # <fm-root> <branch> <project-name>
   printf -v name_q '%q' "$name"
   cat <<EOF
 CI slots check: just before you open a new pull request (in no-mistakes mode, before you run /no-mistakes, which opens one), run \`python3 $root_q gate . $name_q\` from your worktree.
-While it prints \`hold\`, no CI slot is free (no cap on open PRs exists; the check never holds today), and this overrides the rest of the Definition of done: open no pull request and do not run /no-mistakes; push the branch with \`git push -u origin $branch_q\`, append \`done [at=<epoch>]: branch $branch pushed, no PR (CI slots)\` and stop; firstmate opens the pull request when a place frees.
+It measures no CI slots and always prints \`open\` today, because no cap on open PRs exists. The \`hold\` answer is kept for a future run-time slot count: if it ever prints \`hold\`, that overrides the rest of the Definition of done: open no pull request and do not run /no-mistakes; push the branch with \`git push -u origin $branch_q\`, append \`done [at=<epoch>]: branch $branch pushed, no PR (CI slots)\` and stop; firstmate opens the pull request when a place frees.
 When it prints \`open\`, \`unknown\` or \`none\`, open the pull request as the Definition of done says.
 If your branch already has an open pull request, skip this check and finish through the Definition of done, /no-mistakes included.
 EOF
