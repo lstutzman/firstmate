@@ -221,6 +221,49 @@ test_ship_modes_generate_clean_briefs() {
   pass "fm-brief.sh: no-mistakes/direct-PR/local-only briefs generate cleanly"
 }
 
+# config/browser-tool names the browser tool rule 3 requires, so a home whose additions
+# forbid chrome-devtools-axi does not get a brief that both requires and bans it.
+test_browser_tool_comes_from_home_config() {
+  local home brief rc
+  home="$TMP_ROOT/browser-tool-home"
+  mkdir -p "$home/data" "$home/config"
+  printf '%s\n' "Playwright (npm run shot)" > "$home/config/browser-tool"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-browser-ship some-proj --mode direct-PR >/dev/null 2>&1 \
+    || fail "a ship brief with config/browser-tool should scaffold"
+  brief="$home/data/brief-browser-ship/brief.md"
+  assert_grep "3. Use gh-axi for GitHub operations and Playwright (npm run shot) for browser operations." "$brief" \
+    "a configured browser tool must replace chrome-devtools-axi in the ship Rule 3 line"
+  ! grep -q chrome-devtools-axi "$brief" || fail "a configured browser tool left chrome-devtools-axi in the ship brief"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-browser-scout some-proj --scout >/dev/null 2>&1 \
+    || fail "a scout brief with config/browser-tool should scaffold"
+  brief="$home/data/brief-browser-scout/brief.md"
+  assert_grep "3. Use gh-axi for GitHub operations and Playwright (npm run shot) for browser operations." "$brief" \
+    "a configured browser tool must replace chrome-devtools-axi in the scout Rule 3 line"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-browser-forgejo some-proj --mode direct-PR --forge forgejo >/dev/null 2>&1 \
+    || fail "a forgejo ship brief with config/browser-tool should scaffold"
+  assert_grep "3. Use tea for Forgejo operations and Playwright (npm run shot) for browser operations." "$home/data/brief-browser-forgejo/brief.md" \
+    "a configured browser tool must replace chrome-devtools-axi in the forgejo Rule 3 line"
+  printf '%s\n' 'Run review-tool upload.' > "$home/config/external-review.md"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-browser-ext some-proj --mode direct-PR --forge external >/dev/null 2>&1 \
+    || fail "an external-review ship brief with config/browser-tool should scaffold"
+  assert_grep "and use Playwright (npm run shot) for browser operations." "$home/data/brief-browser-ext/brief.md" \
+    "a configured browser tool must replace chrome-devtools-axi in the external-review Rule 3 line"
+  printf 'bad\ttool\n' > "$home/config/browser-tool"
+  rc=0
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-browser-ctl some-proj --mode direct-PR >/dev/null 2>&1 || rc=$?
+  [ "$rc" -ne 0 ] || fail "a non-printable config/browser-tool must be refused"
+  printf '%s\n' "$(printf 'x%.0s' $(seq 1 81))" > "$home/config/browser-tool"
+  rc=0
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-browser-long some-proj --mode direct-PR >/dev/null 2>&1 || rc=$?
+  [ "$rc" -ne 0 ] || fail "an over-long config/browser-tool must be refused"
+  : > "$home/config/browser-tool"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-browser-empty some-proj --mode direct-PR >/dev/null 2>&1 \
+    || fail "an empty config/browser-tool should fall back to the default"
+  assert_grep "chrome-devtools-axi for browser operations." "$home/data/brief-browser-empty/brief.md" \
+    "an empty config/browser-tool must keep the default tool"
+  pass "fm-brief.sh: config/browser-tool sets the browser tool named in Rule 3"
+}
+
 # --forge forgejo is the Forgejo value of the project's registered forge binding
 # (bin/fm-project-mode.sh --forge), passed at intake exactly like --mode. It
 # names tea instead of gh-axi in the ship brief's forge-CLI rule and in the
@@ -1863,6 +1906,7 @@ test_no_heredoc_in_command_substitution
 test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs
 test_forge_selection_renders_correct_cli
+test_browser_tool_comes_from_home_config
 test_forge_external_renders_the_review_rail
 test_ship_mode_is_required_and_closed_set
 test_ship_mode_is_explicit_not_registry
