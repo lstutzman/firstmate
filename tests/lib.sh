@@ -57,7 +57,8 @@ export FM_TEST_SEAM=1
 # (bin/fm-harness-safety-lib.sh) refuses a ship on a harness with no wired safety
 # hooks, so the suite applies a permissive table. tests/fm-spawn-harness-safety.test.sh
 # unsets it to test the real table.
-export FM_HARNESS_SAFETY_OVERRIDE="$(dirname "${BASH_SOURCE[0]}")/fixtures/harness-safety-permissive"
+FM_HARNESS_SAFETY_OVERRIDE="$(dirname "${BASH_SOURCE[0]}")/fixtures/harness-safety-permissive"
+export FM_HARNESS_SAFETY_OVERRIDE
 
 # Clear the task-worker marker bin/fm-spawn.sh exports into ship and scout
 # panes. This suite builds git-init fixture repositories whose primary checkout
