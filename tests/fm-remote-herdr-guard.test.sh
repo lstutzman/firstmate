@@ -135,6 +135,38 @@ hold_under() {
   HOLDER_PIDS+=("$HOLDER_PID")
 }
 
+# hold_app <xpc-label> [sshd] -> HOLDER_PID, APP_PID: a marker-free holder
+# whose PARENT (the stand-in GUI app, like Ghostty) carries XPC_SERVICE_NAME
+# and, with "sshd", itself runs under an sshd-session ancestor.
+APP_SCRIPT="$TMP_ROOT/app-holder.sh"
+cat > "$APP_SCRIPT" <<'SH'
+#!/usr/bin/env bash
+env -i FM_HOLDER=1 "$FM_HOLDER_JQ" . "$FM_HOLDER_FIFO" &
+printf '%s\n' "$!" > "$FM_HOLDER_PIDFILE"
+wait
+SH
+hold_app() {
+  local label=$1 wrap=${2:-} fifo="$TMP_ROOT/holder-$HOLDER_FD.fifo" pidfile="$TMP_ROOT/holder-$HOLDER_FD.pid"
+  rm -f "$fifo" "$pidfile"
+  mkfifo "$fifo"
+  eval "exec ${HOLDER_FD}<>\"\$fifo\""
+  if [ "$wrap" = sshd ]; then
+    ( FM_HOLDER_JQ="$HOLDER_JQ" FM_HOLDER_FIFO="$fifo" FM_HOLDER_PIDFILE="$pidfile" XPC_SERVICE_NAME="$label" \
+        exec -a 'sshd-session:' bash -c 'bash "$1" & wait' sshd-wrapper "$APP_SCRIPT" ) &
+  else
+    ( FM_HOLDER_JQ="$HOLDER_JQ" FM_HOLDER_FIFO="$fifo" FM_HOLDER_PIDFILE="$pidfile" XPC_SERVICE_NAME="$label" \
+        exec -a Ghostty bash "$APP_SCRIPT" ) &
+  fi
+  HOLDER_PIDS+=("$!")
+  HOLDER_FD=$((HOLDER_FD + 1))
+  local i=0
+  while [ ! -s "$pidfile" ] && [ "$i" -lt 100 ]; do sleep 0.05; i=$((i + 1)); done
+  [ -s "$pidfile" ] || fail "app holder for $label did not report its pid"
+  HOLDER_PID=$(cat "$pidfile")
+  HOLDER_PIDS+=("$HOLDER_PID")
+  APP_PID=$(ps -o ppid= -p "$HOLDER_PID" | tr -d ' ')
+}
+
 CASE_N=0
 new_case() { # [running|stopped]
   CASE_N=$((CASE_N + 1))
@@ -239,6 +271,12 @@ hold_under herdr --session "$SESSION" remote-client-bridge
 BRIDGE_CHILD_PID=$HOLDER_PID
 hold_under 'sshd-session:' kunchen@notty
 SSHD_CHILD_PID=$HOLDER_PID
+hold_app com.mitchellh.ghostty.test
+APP_OWNER=$HOLDER_PID
+APP_ANCESTOR=$APP_PID
+hold_app com.mitchellh.ghostty.test sshd
+APP_SSHD_OWNER=$HOLDER_PID
+APP_SSHD_ANCESTOR=$APP_PID
 sleep 0.3
 
 new_case running
@@ -261,6 +299,18 @@ assert_not_contains "$(herdr_calls)" 'server stop' "the guard stopped a gui-doma
 assert_contains "$GUARD_OUT" "pid $WORKER_PID born in the Aqua login session (worker)" \
   "the guard did not name the worker owner"
 pass "launchd and worker markers require gui-domain launchctl proof"
+
+# A server born from a GUI app: an ancestor's XPC label must be running in
+# gui/<uid> with that ancestor's pid and absent from user/<uid>.
+new_case running
+printf '%s\n' "$APP_OWNER" > "$CASE_OWNER"
+load_job gui com.mitchellh.ghostty.test "$APP_ANCESTOR"
+guard
+expect_code 0 "$GUARD_RC" "the guard did not exit 0 for an app-born owner"
+assert_not_started "the guard started a second server over an app-born owner"
+assert_not_contains "$(herdr_calls)" 'server stop' "the guard stopped an app-born owner"
+assert_contains "$GUARD_OUT" "pid $APP_OWNER born in the Aqua login session (app)" "the guard did not name the app owner"
+pass "a server born from a gui-domain app ancestor is Aqua-born"
 
 # --- a foreign owner is stopped, then the guard becomes the server -----------
 
@@ -295,6 +345,34 @@ for foreign in "ssh $SSH_PID" "ssh $BRIDGE_CHILD_PID" "ssh $SSHD_CHILD_PID" "unk
   assert_contains "$GUARD_OUT" "pid ${foreign#* } born outside the Aqua login session (${foreign%% *})" \
     "the guard did not name the foreign owner and its birth"
 done
+new_case running
+printf '%s\n' "$APP_SSHD_OWNER" > "$CASE_OWNER"
+load_job gui com.mitchellh.ghostty.test "$APP_SSHD_ANCESTOR"
+authorize
+guard
+expect_code 0 "$GUARD_RC" "the guard failed to take over an app owner with an sshd ancestor"
+assert_stop_before_start
+assert_contains "$GUARD_OUT" "pid $APP_SSHD_OWNER born outside the Aqua login session (ssh)" "an sshd ancestor did not defeat the app marker"
+
+new_case running
+printf '%s\n' "$APP_OWNER" > "$CASE_OWNER"
+load_job gui com.mitchellh.ghostty.test "$APP_ANCESTOR"
+load_job user com.mitchellh.ghostty.test
+authorize
+guard
+expect_code 0 "$GUARD_RC" "the guard failed to take over an app label also loaded in the user domain"
+assert_stop_before_start
+assert_contains "$GUARD_OUT" "pid $APP_OWNER born outside the Aqua login session (unknown)" "a user-domain app label was trusted as Aqua"
+
+new_case running
+printf '%s\n' "$APP_OWNER" > "$CASE_OWNER"
+load_job gui com.mitchellh.ghostty.test 999999
+authorize
+guard
+expect_code 0 "$GUARD_RC" "the guard failed to take over an app owner whose launchctl pid differs"
+assert_stop_before_start
+assert_contains "$GUARD_OUT" "pid $APP_OWNER born outside the Aqua login session (unknown)" "a launchctl pid mismatch was trusted as Aqua"
+
 assert_absent "$TAKEOVER_MARKER" "the guard left its one-shot takeover authorization behind"
 pass "background, inherited-XPC, SSH-born, SSH-descended, and unprovable owners are taken over when the operator authorizes it"
 

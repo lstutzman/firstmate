@@ -73,6 +73,28 @@ hold() { # <marker-env...> -> HOLDER_PID
 }
 hold XPC_SERVICE_NAME=dev.firstmate.herdr.fm-remote
 AQUA_HOLDER_PID=$HOLDER_PID
+# A server whose PARENT stands in for the GUI app (Ghostty) that carries the
+# XPC label: the Aqua `app` birth.
+APP_LABEL=com.mitchellh.ghostty.test
+APP_FIFO="$TMP_ROOT/holder-app.fifo"
+mkfifo "$APP_FIFO"
+eval "exec 9<>\"\$APP_FIFO\""
+APP_PIDFILE="$TMP_ROOT/holder-app.pid"
+APP_SCRIPT="$TMP_ROOT/app-holder.sh"
+cat > "$APP_SCRIPT" <<'SH'
+#!/usr/bin/env bash
+env -i FM_HOLDER=1 "$FM_HOLDER_JQ" . "$FM_HOLDER_FIFO" &
+printf '%s\n' "$!" > "$FM_HOLDER_PIDFILE"
+wait
+SH
+( FM_HOLDER_JQ="$HOLDER_JQ" FM_HOLDER_FIFO="$APP_FIFO" FM_HOLDER_PIDFILE="$APP_PIDFILE" XPC_SERVICE_NAME="$APP_LABEL" \
+    exec -a Ghostty bash "$APP_SCRIPT" ) &
+HOLDER_PIDS+=("$!")
+for _ in $(seq 100); do [ -s "$APP_PIDFILE" ] && break; sleep 0.05; done
+[ -s "$APP_PIDFILE" ] || fail "the app holder did not report its pid"
+APP_HOLDER_PID=$(cat "$APP_PIDFILE")
+HOLDER_PIDS+=("$APP_HOLDER_PID")
+APP_ANCESTOR_PID=$(ps -o ppid= -p "$APP_HOLDER_PID" | tr -d ' ')
 hold XPC_SERVICE_NAME=dev.firstmate.herdr.fm-remote
 BACKGROUND_HOLDER_PID=$HOLDER_PID
 hold XPC_SERVICE_NAME=0
@@ -1014,6 +1036,21 @@ doctor
 expect_code 0 "$DOCTOR_RC" "the gui-only remote-job worker owner was not reported ready"
 assert_contains "$DOCTOR_OUT" "check herdr-server=ok: session fm-remote is running in the Aqua login session (pid $WORKER_HOLDER_PID, worker)" \
   "the gui-only worker was not recognized"
+
+printf '%s\n' "$APP_HOLDER_PID" > "$CASE_STATE/socket-owner"
+printf 'pid = %s\n' "$APP_ANCESTOR_PID" > "$CASE_STATE/loaded-$APP_LABEL"
+doctor
+expect_code 0 "$DOCTOR_RC" "a server born from a gui-domain app was not reported ready"
+assert_contains "$DOCTOR_OUT" "check herdr-server=ok: session fm-remote is running in the Aqua login session (pid $APP_HOLDER_PID, app)" \
+  "the app-born server was not recognized"
+printf 'pid = 999999\n' > "$CASE_STATE/loaded-$APP_LABEL"
+doctor
+expect_code 1 "$DOCTOR_RC" "an app label whose launchctl pid differs was reported ready"
+printf 'pid = %s\n' "$APP_ANCESTOR_PID" > "$CASE_STATE/loaded-$APP_LABEL"
+printf 'background job\n' > "$CASE_STATE/user-loaded-$APP_LABEL"
+doctor
+expect_code 1 "$DOCTOR_RC" "an app label also loaded in the user domain was reported ready"
+rm -f "$CASE_STATE/user-loaded-$APP_LABEL" "$CASE_STATE/loaded-$APP_LABEL"
 
 printf '%s\n' "$SSH_HOLDER_PID" > "$CASE_STATE/socket-owner"
 : > "$CASE_LAUNCHCTL_LOG"

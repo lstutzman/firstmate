@@ -1607,6 +1607,7 @@ SSH-born herdr server (child of `herdr --session fm-remote remote-client-bridge`
 The owner classifier therefore accepts that label only when `launchctl print gui/<uid>/<label>` identifies the owner pid or the label is loaded in `gui/<uid>` but not `user/<uid>`.
 `XPC_SERVICE_NAME=0`, including a value inherited by a herdr live-handoff child, remains unknown.
 `FM_REMOTE_JOB_ACTIVE=1` proves the Aqua worker only when `dev.firstmate.remote-job` is loaded in `gui/<uid>` but not `user/<uid>`.
+On 2026-11-28 a server typed into Ghostty on the Mac mini (`XPC_SERVICE_NAME=0`, no `SSH_*`) was refused until the `app` birth existed: an ancestor's `XPC_SERVICE_NAME` label must be running in `gui/<uid>` with that ancestor's pid and absent from `user/<uid>`, and no ancestor may be sshd.
 
 The SSH-born row was read on the remote host whose `dev.firstmate.herdr.fm-remote` job showed `state = spawn scheduled`, `runs = 239`, `last exit code = 1` and a log repeating `error: herdr server is already running`: herdr's remote attach had started the session's server as its own child before the login session existed, and launchd's copy lost the socket on every retry.
 `pgrep -f` did not list the herdr server's argv on macOS; `lsof -U -a -c herdr -F pn` named the socket owner.
