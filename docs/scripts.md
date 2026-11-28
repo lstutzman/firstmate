@@ -127,7 +127,7 @@ The shared no-mistakes gate lifecycle boundary is summarized in [architecture.md
 | `fm-gate-files-lib.sh`   | Own the gate-file list shape that `fm-gate-grant.sh` records and `fm-brief.sh --gate-files` accepts |
 | `fm-gate-refuse-lib.sh`  | Shared gate-context lifecycle boundary for real and lab homes                      |
 | `fm-watch-arm.sh`        | Verified home-scoped watcher arm wrapper with loud cycle endings and bounded lifecycle ledger |
-| `fm-codex-stop-park.sh`  | On an opted-in home, register verified native Codex sessions and park supervision in the asynchronous Stop hook, delivering wakes through the native thread queue |
+| `fm-codex-stop-park.sh`  | Register native Codex sessions under the [Stop park configuration](configuration.md#codex-native-stop-park-configcodex-stop-park) and park supervision in the asynchronous Stop hook, delivering wakes through the native thread queue |
 | `fm-watch-checkpoint.sh` | Run one bounded foreground watcher checkpoint for Codex-style supervision            |
 | `fm-watch.sh`            | Singleton-safe watcher: absorb benign wakes, detect stalled local-secondmate wake queues, and exit on actionable ones |
 | `fm-watch-key-lib.sh`    | Shared per-window watcher marker identity for the watcher and away daemon             |

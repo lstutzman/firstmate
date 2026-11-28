@@ -236,7 +236,7 @@ It records the queue's high-water sequence before taking the watcher lock, and s
 - No PreToolUse hook denies fleet commands based on watcher status.
 - A genuine auto-arm failure describes the automatic mechanism as broken and never directs a routine manual background arm.
 - Terminal arm-output classification (`started`, `attached`, or `FAILED`) remains defense in depth for the manual recovery path.
-- Codex retains its bounded foreground checkpoint protocol unless the home opts in to its [native Stop park](supervision-protocols/codex.md).
+- Codex follows the [native Stop park policy](configuration.md#codex-native-stop-park-configcodex-stop-park).
 - Grok retains its tracked background-task notification protocol.
 
 No adapter starts a replacement with a fire-and-forget shell `&` from a model command.
@@ -607,7 +607,7 @@ The other harnesses rely on these mechanisms:
   The host's opt-in [acknowledged hand-back](supervision-host.md#acknowledged-hand-back) owns guarded retries when that continuation is lost.
 - Cursor depends on its awaited stop-hook park.
 - Grok retains native background-completion notifications.
-- Codex retains bounded foreground checkpoints unless the home opts in to its [native Stop park](supervision-protocols/codex.md).
+- Codex follows the [native Stop park policy](configuration.md#codex-native-stop-park-configcodex-stop-park).
 
 Every harness above re-arms only from inside a session that takes turns.
 The [out-of-session backstop](#out-of-session-backstop) covers an idle or resumed session only where its per-home timer is installed and an endpoint was recorded; session start reports a home whose timer is missing or disabled, and it waits at least its 15-minute threshold plus one timer interval.
