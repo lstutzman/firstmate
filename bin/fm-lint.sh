@@ -444,7 +444,7 @@ fm_lint_run_root() {  # <index> <path> <output-dir> <shard-index>
       # Same inputs, same pinned analysis, last time passed with reason ok:
       # this is that pass, so nothing is run and nothing is skipped.
       printf '%s\n' "$cache_key" >> "$FM_LINT_INTERNAL_CACHE_USED"
-      [ -z "${FM_LINT_INTERNAL_CACHE_KEEP_DAYS:-}" ] || touch "$FM_LINT_INTERNAL_CACHE_DIR/$cache_key" 2>/dev/null || true
+      [ -z "${FM_LINT_INTERNAL_CACHE_KEEP_DAYS:-}" ] || touch -c "$FM_LINT_INTERNAL_CACHE_DIR/$cache_key" 2>/dev/null || true
       end_ms=$(fm_lint_now_ms)
       if [ -n "${FM_LINT_INTERNAL_ROOTS_LOG:-}" ]; then
         printf 'cache\t%s\t%s\t%s\thit\n' "$index" "$path" "$shard_index" >> "$FM_LINT_INTERNAL_ROOTS_LOG"

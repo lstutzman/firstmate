@@ -2671,6 +2671,39 @@ test_cache_keep_days_retains_by_age_not_by_use() {
   pass "keep-days mode retains markers by age, refreshes them on a hit and refuses a bad value"
 }
 
+# no-mistakes runs commands.lint as `sh -c <command>` (shellenv in no-mistakes
+# v1.106.1) from the run worktree. Run the configured string the same way, with
+# stub scripts in a scratch tree, and check the variables the documented cache
+# contract names reach fm-lint.sh.
+test_no_mistakes_lint_command_enables_the_keep_days_cache() {
+  command -v ruby >/dev/null 2>&1 \
+    || fail "ruby is required to parse .no-mistakes.yaml for this check"
+  local tmp tree cmd got rc
+  tmp=$(fm_test_tmproot fm-lint-nm-wiring)
+  tree="$tmp/tree"
+  mkdir -p "$tree/bin" "$tree/tests" "$tmp/home" "$tmp/xdg"
+  cmd=$(ruby -ryaml -e 'print((YAML.load_file(ARGV[0])["commands"] || {})["lint"].to_s)' "$ROOT/.no-mistakes.yaml") \
+    || fail "failed to parse .no-mistakes.yaml as YAML"
+  [ -n "$cmd" ] || fail ".no-mistakes.yaml has no commands.lint"
+  printf '#!/bin/sh\nexit 0\n' > "$tree/bin/fm-secret-scan.sh"
+  cat > "$tree/bin/fm-lint.sh" <<'SH'
+#!/bin/sh
+printf '%s|%s\n' "${FM_LINT_CACHE_DIR-unset}" "${FM_LINT_CACHE_KEEP_DAYS-unset}" > "$FM_LINT_WIRING_SEEN"
+SH
+  printf 'exit 0\n' > "$tree/tests/fm-pi-primary-types.test.sh"
+  chmod +x "$tree/bin/fm-secret-scan.sh" "$tree/bin/fm-lint.sh"
+  rc=0; (cd "$tree" && env -u XDG_CACHE_HOME HOME="$tmp/home" FM_LINT_WIRING_SEEN="$tmp/seen" sh -c "$cmd") || rc=$?
+  got=$(cat "$tmp/seen" 2>/dev/null)
+  [ "$rc" -eq 0 ] && [ "$got" = "$tmp/home/.cache/fm-lint|30" ] \
+    || fail "commands.lint without XDG_CACHE_HOME gave rc=$rc and '$got', not '$tmp/home/.cache/fm-lint|30'"
+  : > "$tmp/seen"
+  rc=0; (cd "$tree" && HOME="$tmp/home" XDG_CACHE_HOME="$tmp/xdg" FM_LINT_WIRING_SEEN="$tmp/seen" sh -c "$cmd") || rc=$?
+  got=$(cat "$tmp/seen")
+  [ "$rc" -eq 0 ] && [ "$got" = "$tmp/xdg/fm-lint|30" ] \
+    || fail "commands.lint with XDG_CACHE_HOME gave rc=$rc and '$got', not '$tmp/xdg/fm-lint|30'"
+  pass "the no-mistakes lint command runs fm-lint.sh with the cache directory and FM_LINT_CACHE_KEEP_DAYS=30"
+}
+
 test_seeded_module_boundary_parity() {
   if ! pinned_ready; then
     pass "SKIP (ShellCheck $REQUIRED not resolved): seeded source-boundary parity check"
@@ -2783,6 +2816,7 @@ test_cache_never_stores_a_weaker_or_unproven_result
 test_cache_unusable_directory_lints_every_root
 test_cache_prune_keeps_only_markers_the_run_used
 test_cache_keep_days_retains_by_age_not_by_use
+test_no_mistakes_lint_command_enables_the_keep_days_cache
 test_seeded_module_boundary_parity
 test_changed_mode_lints_only_the_changed_file
 test_ci_forces_full_lint_even_with_empty_diff
