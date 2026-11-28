@@ -359,7 +359,8 @@ EOF
     local-only:* | *:gerrit | *:external) ;;
     *)
       printf '%s\n' "$(fm_pr_drain_rule "$FM_ROOT" "$BRANCH" "${PROMOTE_PROJECT:+$(basename "$PROMOTE_PROJECT")}")"
-      # A project that declares CI slots holds PR openings, never ship starts (bin/fm-pr-drain.py gate).
+      # A project that declares CI slots never holds a ship start: the worker runs the pre-PR check
+      # (bin/fm-pr-drain.py gate), which never holds today.
       if [ -n "$PROMOTE_PROJECT" ] &&
         [ -n "$(FM_HOME="$FM_HOME" FM_CONFIG_OVERRIDE="$CONFIG" "$FM_ROOT/bin/fm-project-mode.sh" --ci-slots "$(basename "$PROMOTE_PROJECT")" 2>/dev/null)" ]; then
         printf '\n%s\n' "$(fm_ci_slots_gate_rule "$FM_ROOT" "$BRANCH" "$(basename "$PROMOTE_PROJECT")")"
