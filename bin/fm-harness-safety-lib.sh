@@ -12,7 +12,7 @@
 #   Every other harness is `no` because no harness reference records the deletion,
 #   secret, push, or gate hooks as wired there; that is a default, not a finding.
 # A home states a different answer for its own machine in config/harness-safety-hooks,
-# one `<harness|*> yes|no` per line (blank lines and `#` comments ignored; the last
+# one `<harness> yes|no` per line (blank lines and `#` comments ignored; the last
 # matching line wins). docs/configuration/harnesses.md owns the contract.
 # FM_HARNESS_SAFETY_TABLE names a file in the same format that is applied after the
 # home's file, and only while FM_TEST_SEAM=1 (tests/lib.sh arms both): the suite points it
@@ -33,7 +33,7 @@ fm_harness_safety_hooks() {
     [ -n "$file" ] && [ -f "$file" ] || continue
     while read -r name value extra; do
       case "$name" in '' | '#'*) continue ;; esac
-      [ "$name" = "$harness" ] || [ "$name" = '*' ] || continue
+      [ "$name" = "$harness" ] || continue
       case "$value" in yes | no) [ -z "$extra" ] && verdict=$value ;; esac
     done < "$file"
   done

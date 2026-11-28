@@ -58,13 +58,14 @@ pass "a home's config/harness-safety-hooks overrides the built-in table"
 . "$ROOT/bin/fm-harness-safety-lib.sh"
 [ "$(fm_harness_safety_hooks agy)" = yes ] || fail 'agy must be hooked'
 [ "$(fm_harness_safety_hooks no-such-harness)" = no ] || fail 'an unknown harness must default to no'
-printf '%s\n' '* yes' 'kimi no' 'bogus maybe' > "$TMP_ROOT/table"
+printf '%s\n' 'pi yes' 'kimi yes' 'kimi no' '* yes' 'bogus maybe' > "$TMP_ROOT/table"
 [ "$(fm_harness_safety_hooks kimi "$TMP_ROOT")" = no ] || fail 'a table in a config dir is read only as harness-safety-hooks'
 mkdir -p "$TMP_ROOT/cfg"
 cp "$TMP_ROOT/table" "$TMP_ROOT/cfg/harness-safety-hooks"
-[ "$(fm_harness_safety_hooks pi "$TMP_ROOT/cfg")" = yes ] || fail 'a wildcard line must apply'
+[ "$(fm_harness_safety_hooks pi "$TMP_ROOT/cfg")" = yes ] || fail 'an exact line must apply'
+[ "$(fm_harness_safety_hooks omp "$TMP_ROOT/cfg")" = no ] || fail 'a * line must not switch other harnesses on'
 [ "$(fm_harness_safety_hooks kimi "$TMP_ROOT/cfg")" = no ] || fail 'the last matching line must win'
-pass 'the table defaults unknown harnesses to no and honors wildcard and last-line-wins'
+pass 'the table defaults unknown harnesses to no and honors only exact names and last-line-wins'
 
 # A raw launch command is not a verified adapter: a spoofed basename must not count as hooked.
 fm_test_spawn_brief "$home" ship-raw

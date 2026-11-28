@@ -1,2 +1,20 @@
-# Test-suite table: every harness counts as hooked (see bin/fm-harness-safety-lib.sh).
-* yes
+# Test-suite table: every adapter counts as hooked (see bin/fm-harness-safety-lib.sh).
+claude yes
+codex yes
+opencode yes
+pi yes
+pi-signed yes
+grok yes
+kimi yes
+cursor yes
+omp yes
+agy yes
+muse yes
+gemini yes
+rovo yes
+devin yes
+commandcode yes
+polytoken yes
+cortex yes
+kiro yes
+hermes yes

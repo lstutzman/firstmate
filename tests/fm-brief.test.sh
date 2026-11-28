@@ -239,6 +239,19 @@ test_browser_tool_comes_from_home_config() {
   brief="$home/data/brief-browser-scout/brief.md"
   assert_grep "3. Use gh-axi for GitHub operations and Playwright (npm run shot) for browser operations." "$brief" \
     "a configured browser tool must replace chrome-devtools-axi in the scout Rule 3 line"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-browser-forgejo some-proj --mode direct-PR --forge forgejo >/dev/null 2>&1 \
+    || fail "a forgejo ship brief with config/browser-tool should scaffold"
+  assert_grep "3. Use tea for Forgejo operations and Playwright (npm run shot) for browser operations." "$home/data/brief-browser-forgejo/brief.md" \
+    "a configured browser tool must replace chrome-devtools-axi in the forgejo Rule 3 line"
+  printf '%s\n' 'Run review-tool upload.' > "$home/config/external-review.md"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-browser-ext some-proj --mode direct-PR --forge external >/dev/null 2>&1 \
+    || fail "an external-review ship brief with config/browser-tool should scaffold"
+  assert_grep "and use Playwright (npm run shot) for browser operations." "$home/data/brief-browser-ext/brief.md" \
+    "a configured browser tool must replace chrome-devtools-axi in the external-review Rule 3 line"
+  printf 'bad\ttool\n' > "$home/config/browser-tool"
+  rc=0
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-browser-ctl some-proj --mode direct-PR >/dev/null 2>&1 || rc=$?
+  [ "$rc" -ne 0 ] || fail "a non-printable config/browser-tool must be refused"
   printf '%s\n' "$(printf 'x%.0s' $(seq 1 81))" > "$home/config/browser-tool"
   rc=0
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-browser-long some-proj --mode direct-PR >/dev/null 2>&1 || rc=$?
