@@ -48,6 +48,7 @@ h2	supervision.md	Waiting worker spends no turns
 h2	away-and-alarms.md	Away-mode supervisor backend
 h2	away-and-alarms.md	Away-mode wedge alarm channels
 h2	away-and-alarms.md	Turn-end pane-churn absorb
+h2	away-and-alarms.md	Aborted-run turn-end absorb
 h2	away-and-alarms.md	Parked-gate wait deferral
 h2	away-and-alarms.md	Wedge evidence guards
 h2	away-and-alarms.md	Worker-declared wait deferral
