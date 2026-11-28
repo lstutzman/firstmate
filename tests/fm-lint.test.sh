@@ -1981,7 +1981,7 @@ test_memory_cap_wraps_each_root_in_a_capped_scope() {
       rc=0
       out=$(PATH="$fakebin:$PATH" FM_LINT_JOBS=1 FM_LINT_REQUIRE_BOUNDS="$require_bounds" \
         FM_TEST_SD_LOG="$sd_log" \
-        FM_LINT_ROOT_CGROUP_MIB="$([ "$cap" = 8192 ] && echo "" || echo "$cap")" \
+        FM_LINT_ROOT_CGROUP_MIB="$cap" \
         "$LINT" --telemetry "$tmp/t.$require_bounds.$cap.tsv" "$tmp/a.sh" "$tmp/b.sh" 2>&1) || rc=$?
       [ "$rc" -eq 0 ] || fail "a clean run failed under the cap (bounds=$require_bounds cap=$cap)"$'\n'"$out"
       assert_contains "$out" "per-root memory cap $cap MiB" "the run did not say the cap was active"
@@ -2010,13 +2010,14 @@ test_memory_cap_unavailable_says_so_once_and_still_lints() {
   for mode in unavailable undelegated; do
     stub_log="$tmp/stub.$mode.log"
     rc=0
-    out=$(PATH="$fakebin:$PATH" FM_LINT_JOBS=1 FM_LINT_ROOT_CGROUP_MIB= \
+    out=$(PATH="$fakebin:$PATH" FM_LINT_JOBS=1 FM_LINT_ROOT_CGROUP_MIB='' \
       FM_TEST_SD_MODE="$mode" FM_TEST_STUB_LOG="$stub_log" \
       "$LINT" --telemetry "$tmp/t.$mode.tsv" "$tmp/a.sh" "$tmp/b.sh" 2>&1) || rc=$?
     [ "$rc" -eq 0 ] || fail "a host without the cap failed instead of linting as before ($mode)"$'\n'"$out"
     [ "$(grep -c 'no per-root memory cap' <<<"$out")" -eq 1 ] \
       || fail "the missing cap was not reported in exactly one line ($mode)"$'\n'"$out"
-    grep -q 'a.sh' "$stub_log" && grep -q 'b.sh' "$stub_log" || fail "roots were not linted without the cap ($mode)"
+    grep -q 'a.sh' "$stub_log" || fail "a.sh was not linted without the cap ($mode)"
+    grep -q 'b.sh' "$stub_log" || fail "b.sh was not linted without the cap ($mode)"
     grep -q "^meta"$'\t'"root_memory_cap_mib"$'\t'"none\$" "$tmp/t.$mode.roots.tsv" \
       || fail "the sidecar claimed a cap that was not applied ($mode)"
   done
@@ -2041,7 +2042,7 @@ test_memory_cap_kill_is_a_named_memory_limit_not_a_finding() {
 
   # A root the cap kills, with and without sources, fails by name as a memory limit.
   rc=0
-  out=$(PATH="$fakebin:$PATH" FM_LINT_JOBS=1 FM_LINT_ROOT_CGROUP_MIB= \
+  out=$(PATH="$fakebin:$PATH" FM_LINT_JOBS=1 FM_LINT_ROOT_CGROUP_MIB='' \
     "$LINT" --telemetry "$tmp/dead.tsv" "$tmp/ok.sh" "$tmp/cap-kill.sh" 2>&1) || rc=$?
   [ "$rc" -ne 0 ] || fail "a root killed by the cap passed silently"
   assert_contains "$out" "cap-kill.sh exceeded the per-root memory limit (cgroup cap 8192 MiB)" \
@@ -2053,7 +2054,7 @@ test_memory_cap_kill_is_a_named_memory_limit_not_a_finding() {
 
   # A root only the source-following pass kills takes the documented retry, as in CI.
   rc=0
-  out=$(PATH="$fakebin:$PATH" FM_LINT_JOBS=1 FM_LINT_ROOT_CGROUP_MIB= \
+  out=$(PATH="$fakebin:$PATH" FM_LINT_JOBS=1 FM_LINT_ROOT_CGROUP_MIB='' \
     "$LINT" --telemetry "$tmp/retry.tsv" "$tmp/cap-kill-sources.sh" 2>&1) || rc=$?
   [ "$rc" -eq 0 ] || fail "a root that fits without sources did not take the memory retry"$'\n'"$out"
   assert_contains "$out" "cap-kill-sources.sh hit the memory ceiling with --external-sources" \
