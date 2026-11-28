@@ -166,8 +166,8 @@
 # limit-unavailable, or error:<rc>; with the cache on, a `cache` record per
 # root says hit, miss or uncacheable.
 # Memory requires process-level evidence (a GHC exhaustion status or runtime
-# error on stderr), not an echoed source excerpt or an OOM phrase in a
-# filename. In partition mode begin/end
+# error on stderr, or a bare SIGKILL under an active cgroup cap), not an echoed
+# source excerpt or an OOM phrase in a filename. In partition mode begin/end
 # lines also stream to stderr, and an abnormal root end is always reported
 # there.
 #
