@@ -101,8 +101,8 @@
 # the primary by bin/fm-config-inherit-lib.sh, so every dispatching home reads
 # the same file) holds one `<project-name> <slots>` line per project, in the
 # same format as project-capacity, where <slots> (S) is the total concurrent
-# gate and admission slots across every host. They hold PR openings, never ship
-# starts (Lee, 2026-11-21T20:15:32Z): bin/fm-spawn.sh reads neither S nor any
+# gate and admission slots across every host. They never hold a ship start
+# (Lee, 2026-11-21T20:15:32Z): bin/fm-spawn.sh reads neither S nor any
 # cap, and a ship builds to a finished branch whatever the queue. No cap on open
 # PRs exists (Lee, main chat, 2026-11-24T07:55:24Z: "I don't want you limiting the
 # number of slots or anything like that. We need to keep pressing."), so the worker's
