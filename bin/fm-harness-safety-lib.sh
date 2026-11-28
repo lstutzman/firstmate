@@ -14,7 +14,7 @@
 # A home states a different answer for its own machine in config/harness-safety-hooks,
 # one `<harness|*> yes|no` per line (blank lines and `#` comments ignored; the last
 # matching line wins). docs/configuration/harnesses.md owns the contract.
-# FM_HARNESS_SAFETY_OVERRIDE names a file in the same format that is applied after the
+# FM_HARNESS_SAFETY_TABLE names a file in the same format that is applied after the
 # home's file, and only while FM_TEST_SEAM=1 (tests/lib.sh arms both): the suite points it
 # at a permissive table so launch-wiring tests can spawn any adapter, and
 # tests/fm-spawn-harness-safety.test.sh unsets it.
@@ -29,7 +29,7 @@ fm_harness_safety_hooks() {
   *) verdict=no ;;
   esac
   [ -z "$raw" ] || verdict=no
-  for file in "${config_dir:+$config_dir/harness-safety-hooks}" "${FM_TEST_SEAM:+${FM_HARNESS_SAFETY_OVERRIDE:-}}"; do
+  for file in "${config_dir:+$config_dir/harness-safety-hooks}" "${FM_TEST_SEAM:+${FM_HARNESS_SAFETY_TABLE:-}}"; do
     [ -n "$file" ] && [ -f "$file" ] || continue
     while read -r name value extra; do
       case "$name" in '' | '#'*) continue ;; esac

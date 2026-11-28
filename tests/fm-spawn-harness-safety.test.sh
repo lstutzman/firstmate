@@ -7,7 +7,7 @@
 set -u
 # shellcheck source=tests/fixtures.sh
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
-unset FM_HARNESS_SAFETY_OVERRIDE
+unset FM_HARNESS_SAFETY_TABLE
 TMP_ROOT=$(fm_test_tmproot fm-spawn-harness-safety)
 home="$TMP_ROOT/home"
 fakebin=$(fm_test_make_spawn_fakebin "$TMP_ROOT/fake" pi)
