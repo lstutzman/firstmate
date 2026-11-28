@@ -13,6 +13,14 @@ When the file is absent, worker launches do not add a board address and retain t
 Malformed or unreadable values refuse the launch before the worker starts.
 The address selects the existing shared server; it does not authorize starting or stopping the server, and the Lavish startup crash remains a vendor-tool concern.
 
+## Browser tool (config/browser-tool)
+
+The optional local, gitignored `config/browser-tool` names the browser tool that Rule 3 of every generated ship and scout brief requires.
+It holds one printable line of at most 80 characters, such as `Playwright (npm run shot)`; surrounding whitespace is trimmed.
+When the file is absent or empty, the brief keeps `chrome-devtools-axi`.
+Set it in a home whose brief additions forbid `chrome-devtools-axi`, so the brief never requires a tool that its own additions ban.
+`bin/fm-brief.sh` owns the read and refuses an over-long or non-printable value.
+
 ## Lavish URL domain map (config/lavish-url-domains)
 
 The optional local, gitignored `config/lavish-url-domains` maps captured website hosts to registered projects for `/lavish-url` feedback routing.

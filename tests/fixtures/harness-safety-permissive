@@ -1,0 +1,2 @@
+# Test-suite table: every harness counts as hooked (see bin/fm-harness-safety-lib.sh).
+* yes

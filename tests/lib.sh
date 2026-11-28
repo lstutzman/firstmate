@@ -53,6 +53,12 @@ export FM_GATE_REFUSE_BYPASS=1
 # leaked harness pin alone stays inert outside a suite.
 export FM_TEST_SEAM=1
 
+# Launch-wiring suites spawn ship tasks on every adapter; the production table
+# (bin/fm-harness-safety-lib.sh) refuses a ship on a harness with no wired safety
+# hooks, so the suite applies a permissive table. tests/fm-spawn-harness-safety.test.sh
+# unsets it to test the real table.
+export FM_HARNESS_SAFETY_OVERRIDE="$(dirname "${BASH_SOURCE[0]}")/fixtures/harness-safety-permissive"
+
 # Clear the task-worker marker bin/fm-spawn.sh exports into ship and scout
 # panes. This suite builds git-init fixture repositories whose primary checkout
 # it runs a copied bin/fm-test-run.sh in, and that runner refuses the primary
