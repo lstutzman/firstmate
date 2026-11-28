@@ -1212,8 +1212,8 @@ case "$MODE:$FORGE" in
   *) [ -n "$PR_DRAIN" ] || PR_DRAIN_DOD="
 $PR_DRAIN_RULE" ;;
 esac
-# A project that declares CI slots (config/ci-slots) holds PR openings, never ship starts: the worker checks them
-# just before it opens a PR, unless its class is exempt (bin/fm-pr-drain.py slots-class).
+# A project that declares CI slots (config/ci-slots) never holds a ship start: the worker runs the CI slots check
+# (bin/fm-pr-drain.py gate, which never holds today) just before it opens a PR, unless its class is exempt (bin/fm-pr-drain.py slots-class).
 CI_SLOTS_DOD=
 if [ "$KIND" = ship ]; then
   case "$MODE:$FORGE" in

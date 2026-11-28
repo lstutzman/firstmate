@@ -101,30 +101,20 @@
 # the primary by bin/fm-config-inherit-lib.sh, so every dispatching home reads
 # the same file) holds one `<project-name> <slots>` line per project, in the
 # same format as project-capacity, where <slots> (S) is the total concurrent
-# gate and admission slots across every host. They hold PR openings, never ship
-# starts (Lee, 2026-11-21T20:15:32Z): bin/fm-spawn.sh reads neither S nor the
-# cap, and a ship builds to a finished branch whatever the queue. The check
-# lives in the worker's pre-PR step: `bin/fm-pr-drain.py gate` holds the
-# opening while the project's open PRs (drafts and promotion PRs left out, a landing pile
-# and its member PRs counted once, as the pile) reach the open-PR cap, and the worker parks the branch pushed with
-# no PR. A project with no line is never held; a malformed file makes the gate
-# read unknown. A PR waiting for the captain's merge word (fm_ci_slots_held below) and a PR another home holds
-# (a Wednesday pile, a wait for the captain's word), which carries the GitHub label HELD_LABEL
-# (bin/fm-pr-drain.py), use no CI slot, so both leave the CI-slot count but not the cap (Lee,
-# 2026-11-22T12:51:39Z: PRs held for his word count toward the open-PR cap). bin/fm-project-mode.sh --ci-slots and --open-pr-cap read S and the
-# cap back; bin/fm-fleet-alarm.py announces P > S. Ready PRs of a remote home's
+# gate and admission slots across every host. They never hold a ship start
+# (Lee, 2026-11-21T20:15:32Z): bin/fm-spawn.sh reads neither S nor any
+# cap, and a ship builds to a finished branch whatever the queue. No cap on open
+# PRs exists (Lee, main chat, 2026-11-24T07:55:24Z: "I don't want you limiting the
+# number of slots or anything like that. We need to keep pressing."), so the worker's
+# pre-PR step, `bin/fm-pr-drain.py gate`, never holds. A PR waiting for the captain's merge word
+# (fm_ci_slots_held below) and a PR another home holds (a Wednesday pile, a wait for the captain's word),
+# which carries the GitHub label HELD_LABEL (bin/fm-pr-drain.py), use no CI slot, so both leave the
+# CI-slot count. bin/fm-project-mode.sh --ci-slots reads S back; bin/fm-fleet-alarm.py announces P > S. Ready PRs of a remote home's
 # ships that wait for the captain's merge word stay out of the slots too (Remote homes, below).
 #
 # PR drain off: config/pr-drain-off (one project name per line, same config
 # directory and inheritance as ci-slots) switches bin/fm-pr-drain.py state off for
 # the listed project; fm-project-mode.sh --pr-drain-off reads it back.
-#
-# Open-PR cap: config/open-pr-cap, same format and inheritance, holds one
-# `<project-name> <cap>` line; a project that declares S and no cap line gets
-# min(2 x S, FM_OPEN_PR_CAP_MAX) (Lee 2026-11-21: 2 x S, max 16). The cap counts open
-# PRs: drafts and promotion PRs are left out, PRs waiting for the captain's merge word and PRs labelled
-# HELD_LABEL (bin/fm-pr-drain.py) count, and a landing pile counts once with its members (bin/fm-pr-drain.py
-# tally, the one count behind state, open and gate); a project with no S has none.
 #
 # Remote homes: a remote secondmate's task records live on its own host and are
 # never walked. Its ships reach the CI-slot hold count and the landing-lag check through
@@ -298,29 +288,6 @@ fm_pr_drain_off_lookup() {  # <config-dir> <project-name>
     seen="$seen$line|"
     [ "$line" != "$name" ] || FM_PR_DRAIN_OFF=1
   done < "$file"
-  return 0
-}
-
-# The open-PR cap for a project that declares CI slots: its line in
-# <config-dir>/open-pr-cap, else min(2 x S, FM_OPEN_PR_CAP_MAX). Sets FM_OPEN_PR_CAP
-# (empty when the project declares no CI slots) and FM_OPEN_PR_CAP_ERROR;
-# returns 1 when either declaration is unreadable.
-FM_OPEN_PR_CAP_MAX=16
-fm_open_pr_cap_lookup() {  # <config-dir> <project-name>
-  local rc=0
-  FM_OPEN_PR_CAP=
-  FM_OPEN_PR_CAP_ERROR=
-  fm_ci_slots_lookup "$1" "$2" || {
-    FM_OPEN_PR_CAP_ERROR=$FM_CI_SLOTS_ERROR
-    return 1
-  }
-  [ -n "$FM_CI_SLOTS" ] || return 0
-  fm_declared_number_lookup "$1/open-pr-cap" "$2" "open-PR cap" || rc=$?
-  if [ "$rc" -ne 0 ]; then
-    FM_OPEN_PR_CAP_ERROR=$FM_DECLARED_ERROR
-    return 1
-  fi
-  FM_OPEN_PR_CAP=${FM_DECLARED:-$((FM_CI_SLOTS * 2 > FM_OPEN_PR_CAP_MAX ? FM_OPEN_PR_CAP_MAX : FM_CI_SLOTS * 2))}
   return 0
 }
 

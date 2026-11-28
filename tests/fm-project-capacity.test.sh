@@ -1477,48 +1477,40 @@ test_ci_slots_never_hold_a_ship_start() {
   out=$(spawn_ship "$case_dir" task-d) || rc=$?
   expect_code 0 "$rc" "a second ship was refused because open PRs and ships in flight reached the CI slots: $out"
   open_prs "$case_dir" 8 8
-  declare_cap "$home" "project 3"
   rc=0
   out=$(spawn_ship "$case_dir" task-e) || rc=$?
-  expect_code 0 "$rc" "a ship was refused because open PRs reached the open-PR cap: $out"
+  expect_code 0 "$rc" "a ship was refused because open PRs outnumbered the CI slots: $out"
   for line in "project four" "project 0" "project" "project 4 5"; do
     declare_slots "$home" "$line"
-    rm -f "$home/config/open-pr-cap"
     write_brief "$home" "m-${#line}"
     add_item "$home" "m-${#line}"
     rc=0
     out=$(spawn_ship "$case_dir" "m-${#line}") || rc=$?
     expect_code 0 "$rc" "a malformed ci-slots line '$line' refused a ship start: $out"
   done
-  pass "open PRs against the CI slots or the open-PR cap never refuse, queue or warn about a ship start"
+  pass "open PRs against the CI slots never refuse, queue or warn about a ship start"
 }
 
-test_ci_slots_gate_counts_every_pr_when_a_record_is_unreadable() {
+test_ci_slots_count_every_pr_when_a_record_is_unreadable() {
   local case_dir home
   if [ "$(id -u)" = 0 ]; then
-    pass "an unreadable task record makes the gate count every ready PR (skipped: root reads files regardless of mode)"
+    pass "an unreadable task record makes the CI-slot count include every ready PR (skipped: root reads files regardless of mode)"
     return 0
   fi
   case_dir=$(make_case slots-unreadable)
   home="$case_dir/home"
   declare_slots "$home" "project 3"
-  declare_cap "$home" "project 3"
   drain_gh "$case_dir" 0
   open_prs "$case_dir" 3 0
   write_ready "$home" held-a "$case_dir/project" 1 5 off
   write_ready "$home" held-b "$case_dir/project" 2 5 off
   write_live "$home" other-c "$case_dir/project"
-  # A readable record leaves the two yolo-off PRs out of the CI-slot count, and the cap still counts all 3.
-  assert_contains "$(slots_gate "$case_dir")" "hold o/r open-PR cap reached: 3 eligible open PR(s) against the open-PR cap of 3" "two yolo-off PRs of 3 were left out of the cap"
-  assert_contains "$(slots_gate "$case_dir")" "2 PR(s) waiting for the captain's merge word" "the hold did not name the two held PRs"
+  # A readable record leaves the two yolo-off PRs out of the CI-slot count.
   assert_equals "open o/r 1" "$(FM_HOME="$home" PATH="$case_dir/fakebin:$PATH" python3 "$ROOT/bin/fm-pr-drain.py" open "$case_dir/project")" "two yolo-off PRs took CI slots"
   chmod 000 "$home/state/other-c.meta"
-  assert_contains "$(slots_gate "$case_dir")" "hold o/r open-PR cap reached: 3 eligible open PR(s) against the open-PR cap of 3" \
-    "an unreadable task record did not make every ready PR count: $(slots_gate "$case_dir")"
-  assert_contains "$(slots_gate "$case_dir")" "0 PR(s) waiting for the captain's merge word" "an unreadable record still left held PRs out"
   assert_equals "open o/r 3" "$(FM_HOME="$home" PATH="$case_dir/fakebin:$PATH" python3 "$ROOT/bin/fm-pr-drain.py" open "$case_dir/project")" "an unreadable record still left held PRs out of the CI-slot count"
   chmod 600 "$home/state/other-c.meta"
-  pass "when a task record cannot be read every ready PR takes a CI slot rather than guessing which wait, and the cap count is unchanged"
+  pass "when a task record cannot be read every ready PR takes a CI slot rather than guessing which wait"
 }
 
 test_ready_branch_list_shows_parked_branches_only() {
@@ -1532,12 +1524,6 @@ test_ready_branch_list_shows_parked_branches_only() {
   assert_equals "parked-a fm/parked-a $case_dir/project" "$(FM_HOME="$home" "$ROOT/bin/fm-ready-branch.sh" list)" \
     "list did not show exactly the parked branch with no PR"
   pass "list shows each task with a recorded ready branch and no PR, with its branch and project"
-}
-
-declare_cap() {  # <home> <line>...
-  local home=$1
-  shift
-  printf '%s\n' "$@" > "$home/config/open-pr-cap"
 }
 
 remote_mate_with_summary() {  # <case-dir> <ships-json> <age-seconds>
@@ -1612,77 +1598,68 @@ test_the_capacity_lib_says_so_when_its_dependencies_are_missing() {
   pass "the capacity lib warns on stderr, never silently, when it cannot load what it needs"
 }
 
-test_ci_slots_gate_counts_captain_held_prs_toward_the_cap_not_the_slots() {
+test_ci_slots_exclude_captain_held_prs() {
   local case_dir home
   if [ "$HAVE_TASKS_AXI" = 0 ]; then
-    pass "a PR waiting for the captain's merge word counts toward the cap, not the CI slots (skipped: tasks-axi is not installed)"
+    pass "a PR waiting for the captain's merge word takes no CI slot (skipped: tasks-axi is not installed)"
     return 0
   fi
   case_dir=$(make_case slots-held)
   home="$case_dir/home"
   declare_slots "$home" "project 3"
-  declare_cap "$home" "project 3"
   drain_gh "$case_dir" 0
   open_prs "$case_dir" 4 0
   # No local record owns PR 4: only positive evidence marks a PR as waiting for the captain.
   write_ready "$home" held-a "$case_dir/project" 1 5
   write_ready "$home" held-b "$case_dir/project" 2 5 off
   write_ready "$home" ready-c "$case_dir/project" 3 5
-  # Lee, 2026-11-22T12:51:39Z (card open-pr-cap-recorded-holds): the yolo-off PR 2 uses no CI slot but counts toward the cap.
-  assert_contains "$(slots_gate "$case_dir")" "hold o/r open-PR cap reached: 4 eligible open PR(s) against the open-PR cap of 3" \
-    "a yolo-off PR was left out of the open-PR cap: $(slots_gate "$case_dir")"
-  assert_contains "$(slots_gate "$case_dir")" "1 PR(s) waiting for the captain's merge word" "the hold did not name the held PR"
+  assert_equals "open o/r" "$(slots_gate "$case_dir")" "the gate held a PR opening although no open-PR cap exists"
   assert_equals "open o/r 3" "$(FM_HOME="$home" PATH="$case_dir/fakebin:$PATH" python3 "$ROOT/bin/fm-pr-drain.py" open "$case_dir/project")" \
     "the PR waiting for the captain took a CI slot"
-  # Hold held-a in its backlog too: two PRs now wait for the captain, and the gate still counts all 4.
+  # Hold held-a in its backlog too: two PRs now wait for the captain.
   FM_ROOT_OVERRIDE='' FM_HOME="$home" FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE='' \
     "$ROOT/bin/fm-captain-hold.sh" hold held-a --reason "payments PR waits for the merge word" >/dev/null 2>&1 ||
     fail "the captain hold on held-a could not be recorded"
-  assert_contains "$(slots_gate "$case_dir")" "4 eligible open PR(s) against the open-PR cap of 3" "a PR held in its backlog was left out of the open-PR cap"
-  assert_contains "$(slots_gate "$case_dir")" "2 PR(s) waiting for the captain's merge word" "the hold did not name both held PRs"
   assert_equals "open o/r 2" "$(FM_HOME="$home" PATH="$case_dir/fakebin:$PATH" python3 "$ROOT/bin/fm-pr-drain.py" open "$case_dir/project")" \
     "a PR held in its backlog took a CI slot"
   tasks-axi unhold held-a --file "$home/data/backlog.md" >/dev/null
-  assert_contains "$(slots_gate "$case_dir")" "1 PR(s) waiting for the captain's merge word" "a PR whose captain hold was lifted stayed in the held count"
-  pass "a PR whose task waits for the captain's merge word (yolo off, or held in its backlog) counts toward the open-PR cap and not the CI slots"
+  assert_equals "open o/r 3" "$(FM_HOME="$home" PATH="$case_dir/fakebin:$PATH" python3 "$ROOT/bin/fm-pr-drain.py" open "$case_dir/project")" "a PR whose captain hold was lifted stayed out of the CI-slot count"
+  pass "a PR whose task waits for the captain's merge word (yolo off, or held in its backlog) takes no CI slot"
 }
 
-test_ci_slots_gate_counts_a_pr_no_local_record_owns() {
+test_ci_slots_count_a_pr_no_local_record_owns() {
   local case_dir home
   case_dir=$(make_case slots-unseen)
   home="$case_dir/home"
   declare_slots "$home" "project 4"
-  declare_cap "$home" "project 4"
   drain_gh "$case_dir" 0
   open_prs "$case_dir" 4 0
   # A remote home's PR, or a Wednesday pile, leaves no local sign that it waits, so it counts against the slots.
-  assert_contains "$(slots_gate "$case_dir")" "hold o/r open-PR cap reached: 4 eligible open PR(s)" "an unowned open PR was left out of the count"
+  assert_equals "open o/r 4" "$(FM_HOME="$home" PATH="$case_dir/fakebin:$PATH" python3 "$ROOT/bin/fm-pr-drain.py" open "$case_dir/project")" "an unowned open PR was left out of the count"
+  assert_equals "open o/r" "$(slots_gate "$case_dir")" "the gate held a PR opening at 4 open PRs against 4 CI slots"
   pass "an open PR no local record shows to be waiting for the captain still counts"
 }
 
-test_ci_slots_gate_counts_a_remote_captain_held_pr_toward_the_cap() {
+test_ci_slots_exclude_a_remote_captain_held_pr() {
   local case_dir home
   case_dir=$(make_case slots-remote-held)
   home="$case_dir/home"
   declare_slots "$home" "project 2"
   drain_gh "$case_dir" 0
   open_prs "$case_dir" 4 0
-  assert_contains "$(slots_gate "$case_dir")" "hold o/r open-PR cap reached: 4 eligible open PR(s) against the open-PR cap of 4" "no remote summary: every open PR must count"
+  assert_equals "open o/r 4" "$(FM_HOME="$home" PATH="$case_dir/fakebin:$PATH" python3 "$ROOT/bin/fm-pr-drain.py" open "$case_dir/project")" "no remote summary: every open PR must count"
   # PR 1 is a remote ship blocked by an unresolved dependency but not held for the captain: it still
   # takes a CI slot, as a local blocked PR does.
   remote_mate_with_summary "$case_dir" \
     '[{"id":"far-a","kind":"ship","project":"project","yolo":"on","pr":"https://github.com/o/r/pull/1","pr_at":1790000000,"captain_held":false,"blocked":true}]' 60
-  assert_contains "$(slots_gate "$case_dir")" "hold o/r open-PR cap reached: 4 eligible open PR(s) against the open-PR cap of 4" "a blocked remote PR not held for the captain was left out of the count"
+  assert_equals "open o/r 4" "$(FM_HOME="$home" PATH="$case_dir/fakebin:$PATH" python3 "$ROOT/bin/fm-pr-drain.py" open "$case_dir/project")" "a blocked remote PR not held for the captain was left out of the count"
   # PR 1 is a remote ship held for the captain, PR 2 a remote yolo-off ship, PR 3 a remote ready ship.
   remote_mate_with_summary "$case_dir" \
     '[{"id":"far-a","kind":"ship","project":"project","yolo":"on","pr":"https://github.com/o/r/pull/1","pr_at":1790000000,"captain_held":true,"blocked":false},
       {"id":"far-b","kind":"ship","project":"project","yolo":"off","pr":"https://github.com/o/r/pull/2","pr_at":1790000000,"captain_held":false,"blocked":false},
       {"id":"far-c","kind":"ship","project":"project","yolo":"on","pr":"https://github.com/o/r/pull/3","pr_at":1790000000,"captain_held":false,"blocked":false}]' 60
-  # They use no CI slot but count toward the open-PR cap (Lee, 2026-11-22T12:51:39Z), so the gate still holds on all 4.
-  assert_contains "$(slots_gate "$case_dir")" "hold o/r open-PR cap reached: 4 eligible open PR(s) against the open-PR cap of 4" "two remote PRs waiting for the captain were left out of the cap"
-  assert_contains "$(slots_gate "$case_dir")" "2 PR(s) waiting for the captain's merge word" "the hold did not name the two remote held PRs"
   assert_equals "open o/r 2" "$(FM_HOME="$home" PATH="$case_dir/fakebin:$PATH" python3 "$ROOT/bin/fm-pr-drain.py" open "$case_dir/project")" "a remote PR waiting for the captain took a CI slot"
-  pass "a remote ship's PR waiting for the captain's merge word uses no CI slot but counts toward the cap, read from its cached summary"
+  pass "a remote ship's PR waiting for the captain's merge word uses no CI slot, read from its cached summary"
 }
 
 test_undeclared_capacity_keeps_dispatch_uncapped
@@ -1732,10 +1709,10 @@ test_pr_drain_security_needs_a_qualifying_linear_item
 test_pr_drain_security_out_of_drain_reads_no_linear
 test_pr_drain_unknown_or_off_launches
 test_ci_slots_never_hold_a_ship_start
-test_ci_slots_gate_counts_captain_held_prs_toward_the_cap_not_the_slots
-test_ci_slots_gate_counts_a_pr_no_local_record_owns
-test_ci_slots_gate_counts_every_pr_when_a_record_is_unreadable
-test_ci_slots_gate_counts_a_remote_captain_held_pr_toward_the_cap
+test_ci_slots_exclude_captain_held_prs
+test_ci_slots_count_a_pr_no_local_record_owns
+test_ci_slots_count_every_pr_when_a_record_is_unreadable
+test_ci_slots_exclude_a_remote_captain_held_pr
 test_landing_lag_reads_a_remote_homes_ready_pr_from_its_cached_summary
 test_ready_branch_list_shows_parked_branches_only
 test_the_capacity_lib_reads_remote_ships_when_sourced_alone

@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 # fm-ci-slots-held.sh - which of a project's ready open PRs wait for the
-# captain's merge word, so the CI slots gate and the drain leave them out of their slot counts (the
-# open-PR cap counts them again).
+# captain's merge word, so the drain and the CI-slot count leave them out.
 #
 # Usage: fm-ci-slots-held.sh <project-dir> < <newline-separated ready open PR URLs>
 #
 # Prints the held PR URLs, one per line. bin/fm-project-capacity-lib.sh's fm_ci_slots_held owns
 # the signal (a task record in a local home whose yolo is not on, or whose backlog
-# row is held for the captain); bin/fm-pr-drain.py gate and state are the callers. A PR no
+# row is held for the captain); bin/fm-pr-drain.py state and open are the callers, through tally. A PR no
 # local record shows to be waiting is not counted as held here; a PR another home
 # holds carries the GitHub label HELD_LABEL, which bin/fm-pr-drain.py reads itself. Exits 1 with a message
 # on stderr when the task records cannot be read, which the caller reads as no
