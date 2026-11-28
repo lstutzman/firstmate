@@ -659,7 +659,7 @@ EOF
 
 # The CI slots check a ship worker runs just before it opens a new pull request,
 # for a project that declares CI slots (config/ci-slots); bin/fm-brief.sh decides
-# when a brief carries it. The slots hold PR openings, never ship starts.
+# when a brief carries it. No cap on open PRs exists, so `gate` prints `open` today.
 fm_ci_slots_gate_rule() {  # <fm-root> <branch> <project-name>
   local root=$1 branch=$2 name=$3 root_q branch_q name_q
   printf -v root_q '%q' "$root/bin/fm-pr-drain.py"
@@ -667,7 +667,7 @@ fm_ci_slots_gate_rule() {  # <fm-root> <branch> <project-name>
   printf -v name_q '%q' "$name"
   cat <<EOF
 CI slots check: just before you open a new pull request (in no-mistakes mode, before you run /no-mistakes, which opens one), run \`python3 $root_q gate . $name_q\` from your worktree.
-While it prints \`hold\`, the project's open-PR cap (2 x its CI slots, at most 16, of eligible open PRs) is full, and this overrides the rest of the Definition of done: open no pull request and do not run /no-mistakes; push the branch with \`git push -u origin $branch_q\`, append \`done [at=<epoch>]: branch $branch pushed, no PR (CI slots)\` and stop; firstmate opens the pull request when a place frees.
+While it prints \`hold\`, no CI slot is free (no cap on open PRs exists; the check never holds today), and this overrides the rest of the Definition of done: open no pull request and do not run /no-mistakes; push the branch with \`git push -u origin $branch_q\`, append \`done [at=<epoch>]: branch $branch pushed, no PR (CI slots)\` and stop; firstmate opens the pull request when a place frees.
 When it prints \`open\`, \`unknown\` or \`none\`, open the pull request as the Definition of done says.
 If your branch already has an open pull request, skip this check and finish through the Definition of done, /no-mistakes included.
 EOF

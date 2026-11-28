@@ -282,9 +282,8 @@
 #   marks a ship as a fix or landing work that is never held for lag, and is
 #   refused on --scout and --secondmate spawns, which are never held for it.
 #   PR drain (bin/fm-pr-drain.py owns the state and the accepted classes), CI
-#   slots (config/ci-slots) and the open-PR cap (config/open-pr-cap) never
-#   hold a ship start: they hold PR openings, checked by the worker just before
-#   it opens a PR (bin/fm-pr-drain.py gate; bin/fm-project-capacity-lib.sh).
+#   slots (config/ci-slots) never hold a ship start, and no cap on open PRs
+#   exists: the worker's pre-PR check (bin/fm-pr-drain.py gate) never holds.
 #   Office authority: in an office home (bin/fm-office-authority-lib.sh owns
 #   detection and the authority record) every spawn is refused when the home's
 #   office signals disagree or its published authority record is missing or

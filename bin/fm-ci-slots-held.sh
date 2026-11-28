@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # fm-ci-slots-held.sh - which of a project's ready open PRs wait for the
-# captain's merge word, so the CI slots gate and the drain leave them out of their slot counts (the
-# open-PR cap counts them again).
+# captain's merge word, so the drain and the CI-slot count leave them out.
 #
 # Usage: fm-ci-slots-held.sh <project-dir> < <newline-separated ready open PR URLs>
 #

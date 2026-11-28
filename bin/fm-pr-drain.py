@@ -13,7 +13,7 @@ A repository enters drain at 24 or more eligible open PRs and leaves it when its
 config/ci-slots line; 0 when it declares none). An eligible PR is a ready (non-draft) open PR that is not a promotion PR
 (head branch `staging`) and, where a local task record shows it, not waiting for the captain's merge word; a PR held
 for a release day (Wednesday) or another home's wait is left out when its holding home labels it `held`.
-One function, tally, counts for state, open and gate, so the three read the same PRs. It counts each landing unit once: a
+One function, tally, counts for state and open, so the two read the same PRs. It counts each landing unit once: a
 landing pile (a ready PR whose head branch starts `landing/pile-`) and the member PRs its body names (`Member: PR n` or
 `Members in order: PR n ... and PR m ...`, read only up to the end of that sentence) are one unit, counted as the pile,
 because the pile is the PR that takes the CI slot (one exact-head gate on its merged tree) and its members wait unmerged
@@ -39,18 +39,10 @@ CI slots (config/ci-slots; bin/fm-project-capacity-lib.sh owns it), from one `gh
   open <owner/repo> <n>        the repository has n eligible open PRs
   unknown <owner/repo> <why>   GitHub could not be read
   none                         the clone's origin is not on github.com
-gate is the worker's CI slots check, run just before it opens a pull request (bin/fm-dod-lib.sh writes the step into
-a brief). It prints one line: `hold <owner/repo> <why>` when the opening must wait, `open <owner/repo>` when it may
-go ahead (also for a project with no CI slots), `unknown <owner/repo> <why>` when a declaration or GitHub cannot be
-read, or `none` off github.com. It holds when the ready open PRs, less drafts and promotion PRs and with a pile and its
-members counted once, reach the open-PR cap (config/open-pr-cap, default min(2 x S, 16)). The PRs waiting for the
-captain's merge word (bin/fm-ci-slots-held.sh) and the PRs labelled `held` use no CI slot but are counted toward the cap
-(Lee, 2026-11-22T12:51:39Z, card open-pr-cap-recorded-holds). <project-name> is the registered name that
-names the project in those files; it defaults to the directory's name. FM_HOME picks the home whose config is read.
-While now is before the timestamp in the home's config/open-pr-cap-piles-free-until (one ISO UTC timestamp; absent
-means off; a malformed file is ignored and named in the line), the gate leaves every ready landing pile (each with its
-members, held or not) out of the cap count and names them in its line; state, open and the CI-slot count are unchanged.
-FM_PR_DRAIN_NOW (an ISO UTC timestamp) replaces the clock (tests).
+gate is the worker's pre-PR check, run just before it opens a pull request (bin/fm-dod-lib.sh writes the step into
+a brief). It prints `open <owner/repo>`, or `none` off github.com, and never holds: no cap on open PRs exists, because
+the CI slots cap running gates, never open PRs (Lee, main chat, 2026-11-24T07:55:24Z: "I don't want you limiting the
+number of slots or anything like that. We need to keep pressing."). It reads neither GitHub nor config.
 class exits 0 when <value> is a recognised drain declaration: an exemption class (production-outage,
 cve, security, wolverine, lee-research, lee-explicit, officer, scheduled) or a landing job (restack,
 red-gate-fix, returned-pr-fix, review), and 2 otherwise. bin/fm-brief.sh --pr-drain writes it into a
@@ -83,7 +75,7 @@ BIN = os.path.dirname(os.path.abspath(__file__))
 THRESHOLD = 24
 PROMOTION_HEAD = 'staging'
 # The one label a holding home sets on a PR it holds (Wednesday pile, waiting for the captain's word) and removes when the
-# hold ends: the PR uses no CI slot, so it leaves the slot counts, but it still counts toward the open-PR cap.
+# hold ends: the PR uses no CI slot, so it leaves the slot counts.
 HELD_LABEL = 'held'
 # A landing pile (Slarti's merge train: several member PRs merged onto one branch, gated once on its merged tree) is a PR
 # whose head branch starts with PILE_HEAD and whose body names its members in one clause: `Member: PR 6239 ...`,
@@ -177,12 +169,11 @@ def fold_piles(prs):
 
 
 def tally(project, prs):
-    """The one count behind `state`, `open` and `gate`. Returns a dict: `units`, the eligible landing units (ready, not a
+    """The one count behind `state` and `open`. Returns a dict: `units`, the eligible landing units (ready, not a
     promotion PR, not labelled held, not waiting for the captain, a pile and its members as the pile alone), and the
     counts left out of it: `drafts`, `promotion`, `held` (waiting for the captain, by a task record), `labelled`
     (labelled held, no record showing them waiting for the captain) and `folded` (members a pile carries). `held` and
-    `labelled` PRs use no CI slot, so `units` is the CI-slot count (state and open); the open-PR cap counts them too, so
-    `cap` (units + held + labelled) is the cap count (gate), by Lee's word of 2026-11-22. `carried` holds the folded
+    `labelled` PRs use no CI slot, so `units` is the CI-slot count (state and open). `carried` holds the folded
     members that were eligible on their own (ready, not held by label or record) before their pile existed, closed at
     that pile's creation (state's walk-back)."""
     prs, members = fold_piles(prs)
@@ -194,7 +185,7 @@ def tally(project, prs):
     held = recorded & {pr['url'] for pr in ready}
     units = [pr for pr in ready if pr['url'] not in held and not pr['labelHeld']]
     labelled = sum(1 for pr in ready if pr['labelHeld'] and pr['url'] not in held)
-    return {'units': units, 'cap': len(units) + len(held) + labelled, 'drafts': sum(1 for pr in prs if pr['isDraft']),
+    return {'units': units, 'drafts': sum(1 for pr in prs if pr['isDraft']),
             'held': len(held), 'promotion': sum(1 for pr in prs if pr['promotion'] and not pr['isDraft']),
             'labelled': labelled, 'folded': folded, 'carried': [pr for pr in members if pr['url'] not in recorded]}
 
@@ -209,7 +200,7 @@ def open_count(project):
 
 
 def project_mode(flag, name):
-    """What bin/fm-project-mode.sh answers for a project (S or the cap), or raises ValueError when it refuses."""
+    """What bin/fm-project-mode.sh answers for a project (S or the drain-off switch), or raises ValueError when it refuses."""
     out = subprocess.run([os.path.join(BIN, 'fm-project-mode.sh'), flag, name], stdin=subprocess.DEVNULL,
                          capture_output=True, text=True, check=False,
                          timeout=float(os.environ.get('FM_PR_DRAIN_TIMEOUT', 20)))
@@ -229,54 +220,10 @@ def held_urls(project, urls):
         return set()
 
 
-def piles_free_until():
-    """(expiry, note): the instant before which ready landing piles are left out of the open-PR cap count, read from the
-    home's config/open-pr-cap-piles-free-until (one ISO UTC timestamp). (None, '') when the file is absent or the expiry has
-    passed; (None, note) when the file is malformed, so the gate says so and counts as usual. FM_PR_DRAIN_NOW (an ISO UTC
-    timestamp) replaces the clock (tests)."""
-    path = os.path.join(os.environ.get('FM_HOME') or os.path.dirname(BIN), 'config', 'open-pr-cap-piles-free-until')
-    try:
-        with open(path) as handle:
-            text = handle.read().strip()
-    except OSError:
-        return None, ''
-    try:
-        expiry = when(text)
-        if expiry.tzinfo is None:
-            raise ValueError(text)
-        now = when(os.environ['FM_PR_DRAIN_NOW']) if os.environ.get('FM_PR_DRAIN_NOW') else datetime.now(timezone.utc)
-    except ValueError:
-        return None, ' (config/open-pr-cap-piles-free-until is not one ISO UTC timestamp, so it is ignored)'
-    return (text, '') if now < expiry else (None, '')
-
-
 def gate(project, name):
-    """The worker's CI slots check: `hold`, `open`, `unknown` or `none`, as one line."""
-    found = open_prs(project)
-    if isinstance(found, str):
-        return found
-    repo, prs = found
-    try:
-        slots = project_mode('--ci-slots', name)
-        cap = project_mode('--open-pr-cap', name)
-    except (ValueError, OSError, subprocess.TimeoutExpired) as error:
-        return f'unknown {repo} the CI slots declaration for {name} is unreadable: {error}'.replace('\n', ' ')
-    if not slots:
-        return f'open {repo}'
-    seen = tally(project, prs)
-    counted = seen['cap']
-    until, note = piles_free_until()
-    piles = sum(1 for pr in prs if pr['head'].startswith(PILE_HEAD) and not pr['isDraft'] and not pr['promotion']) if until else 0
-    counted -= piles
-    if piles:
-        note = f' ({piles} landing pile(s) not counted until {until})'
-    if counted >= int(cap):
-        return (f'hold {repo} open-PR cap reached: {counted} eligible open PR(s) against the open-PR cap of {cap} '
-                f"(config/open-pr-cap; min(2 x {slots} CI slots, 16) unless declared; {seen['drafts']} draft PR(s) and "
-                f"{seen['promotion']} promotion PR(s) are not counted; {seen['held']} PR(s) waiting for the captain's merge word and "
-                f"{seen['labelled']} PR(s) labelled `{HELD_LABEL}` use no CI slot but are counted; "
-                f"{seen['folded']} member PR(s) are counted in the landing pile that carries them); open no pull request until one merges or closes{note}")
-    return f'open {repo}{note}'
+    """The worker's pre-PR check: `open`, or `none` off github.com, as one line. No open-PR cap exists, so it never holds."""
+    repo = repo_of(project)
+    return f'open {repo}' if repo else 'none'
 
 
 def state(project, name=None):
