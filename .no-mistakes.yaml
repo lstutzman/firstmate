@@ -65,8 +65,14 @@ review:
 # docs/secret-scan.md the policy). The pipeline pushes after lint passes, so a
 # secret in the branch stops here instead of reaching the public fork. A home
 # that runs this gate needs gitleaks on PATH (bin/fm-install-gitleaks.sh).
+#
+# A run that changes a sourced helper lints the full canonical set, about 40
+# minutes of ShellCheck, so the lint step keeps a result cache outside every
+# worktree (bin/fm-lint.sh owns the cache and FM_LINT_CACHE_KEEP_DAYS). A cache
+# the host cannot write only costs the speed-up. no-mistakes reads commands from
+# the default-branch copy of this file, so a change here takes effect after merge.
 commands:
-  lint: 'bin/fm-secret-scan.sh --branch && bin/fm-lint.sh && bash tests/fm-pi-primary-types.test.sh'
+  lint: 'bin/fm-secret-scan.sh --branch && FM_LINT_CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/fm-lint" FM_LINT_CACHE_KEEP_DAYS=30 bin/fm-lint.sh && bash tests/fm-pi-primary-types.test.sh'
 
 test:
   instructions: |
